@@ -1,76 +1,30 @@
 # Testing
 
-This file is the single documentation entrypoint for the mechanics testing system.
+Tests use Vitest in a Node environment and live in `src/__tests__/`. They cover movement and collision rules, ghosts and collectibles, portals and map parsing, input and pause behavior, the runtime, camera, rendering, and HUD adapters. Browser dependencies are stubbed where needed.
 
-## Purpose
-- Validate game mechanics without UI assertions.
-- Keep checks deterministic and replayable for humans and agents.
-- Enforce blocking mechanics quality gates in CI.
+## Commands
 
-## Source of truth files
-Mechanics behavior definitions are machine-readable and live in:
-- `tests/specs/mechanics.spec.json`
-- `tests/specs/mechanics.roadmap.json`
-- `tests/specs/mechanics.diagnostics.json`
+- `pnpm test` — run the regression suite.
+- `pnpm typecheck` — check TypeScript types.
+- `pnpm lint` — run ESLint with zero warnings allowed.
+- `pnpm test:all` — run all three checks and build the production bundle.
 
-## Mechanics execution model
-- Domain-first harness validates movement, ghost behavior, jail/release, portals, animation, and scheduler interactions.
-- Runtime harness validates update ordering and pause/resume behavior with node stubs.
-- Fuzz suites run with deterministic seeds and emit repro bundles on failure.
+Run a focused test while working on a feature:
 
-## What to run
-
-### Fast local mechanics check
-```bash
-pnpm run test:mechanics
+```sh
+pnpm test src/__tests__/portalService.test.ts
 ```
 
-### Heavy deterministic fuzzing
-```bash
-pnpm run test:mechanics:fuzz
-```
+## Adding or changing tests
 
-### Coverage gate for mechanics-critical modules
-```bash
-pnpm run test:mechanics:coverage
-pnpm run check:mechanics:coverage
-```
+Keep tests focused on observable behavior. For a bug fix, add a small regression case to the relevant test file. Reuse existing fixtures when useful and use fixed seeds or controlled inputs for deterministic results. Run the relevant test first, then `pnpm test:all` before handing off code changes.
 
-### Full CI-equivalent mechanics gate
-```bash
-pnpm run test:mechanics:ci
-```
+## Visual checks and debugging
 
-## Targeted replay/debug runs
-Run one invariant/scenario with a fixed seed:
-```bash
-MECHANICS_SCENARIO_ID=INV-BOUNDS-001 MECHANICS_SEED=12345 pnpm vitest run src/__tests__/mechanics/fuzzInvariants*.mechanics.test.ts
-```
+The automated suite does not verify the actual browser appearance or touch experience. When changing rendering or controls, also check movement, pause/resume, resizing, and mobile swipes in the browser.
 
-Useful env vars:
-- `MECHANICS_SCENARIO_ID`
-- `MECHANICS_SEED`
-- `MECHANICS_FUZZ_RUNS`
-- `MECHANICS_FUZZ_MULTIPLIER`
-- `MECHANICS_FUZZ_TICKS`
+- `Alt+C` (`Option+C` on macOS) toggles the collision overlay and FPS/frame-time panel.
+- `Shift+C` copies the collision debug panel text.
+- `H` toggles the scared state of active ghosts for debugging.
 
-## Failure bundles and triage
-On mechanics assertion failure, repro bundles are written to:
-- `logs/mechanics/*.json`
-
-Use triage tooling:
-```bash
-pnpm run triage:mechanics
-```
-
-Or for a specific bundle:
-```bash
-pnpm run triage:mechanics logs/mechanics/<bundle-file>.json
-```
-
-## Updating mechanics tests when behavior changes
-1. Update scenario/invariant definitions in `tests/specs/mechanics.spec.json`.
-2. Update roadmap placeholders in `tests/specs/mechanics.roadmap.json` as needed.
-3. Update diagnostics mappings in `tests/specs/mechanics.diagnostics.json`.
-4. Update/add executable tests in `src/__tests__/mechanics/`.
-5. Run `pnpm run test:mechanics:ci`.
+After editing the demo Tiled map, run `pnpm map:demo:convert` and `pnpm test` to check the generated map and its gameplay rules.
