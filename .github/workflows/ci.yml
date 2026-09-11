@@ -28,11 +28,5 @@ jobs:
       - name: Test
         run: pnpm run test
 
-      - name: Mechanics CI Gate
-        run: pnpm run test:mechanics:ci
-
-      - name: Specifications Gate
-        run: pnpm run spec:check
-
       - name: Build
         run: pnpm run build

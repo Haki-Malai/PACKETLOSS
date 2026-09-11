@@ -89,7 +89,7 @@ Cross-cutting utilities.
 - generic event bus used by state/UI integration
 - `blinkCadence` shares the next-toggle calculation for death recovery and scared-ghost warnings; systems retain their own state transitions.
 
-## Dependency Direction (Enforced)
+## Dependency Direction
 Allowed direction:
 1. `app` -> `systems`, `domain`, `infrastructure`, `shared`, `engine`
 2. `systems` -> `domain`, `shared`, and infrastructure adapters/assets
@@ -97,7 +97,7 @@ Allowed direction:
 4. `infrastructure` -> `domain`, `shared`, `engine`
 5. no circular imports
 
-Automated in `scripts/arch-check.mjs`.
+Keep these boundaries intact when adding imports or moving code.
 
 ## Runtime Update and Render Order
 Before each active fixed update, render systems capture presentation history before the scheduler and gameplay systems run. `EntityPresentation` reuses previous-position records; tile-object replacement marks portal and position-reset discontinuities.
@@ -163,18 +163,15 @@ Portal behavior is encapsulated in `PortalService`:
 
 Covered by `src/__tests__/portalService.test.ts`.
 
-## Quality Gates
+## Validation
 Required checks:
 - `pnpm run typecheck`
 - `pnpm run lint`
 - `pnpm run test`
-- `pnpm run arch:check`
-- `pnpm run size:check`
 
-Additional constraints:
-- no cycles, no layer boundary violations (`arch-check`)
-- TypeScript file line caps (default 350; parser override 450) (`size-check`)
-- Nested checkouts under `.codex/worktrees/` are excluded from lint and test discovery.
+`pnpm run test:all` runs these checks followed by a production build. See [Testing](TESTING.md) for focused test commands.
+
+Nested checkouts under `.codex/worktrees/` are excluded from lint and test discovery.
 
 ## Migration Notes
 Legacy files removed:

@@ -1,12 +1,10 @@
-import { GHOST_SCARED_DURATION_MS, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
+import { SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { GhostEntity, GhostKey } from '../../game/domain/entities/GhostEntity';
 import { PacmanEntity } from '../../game/domain/entities/PacmanEntity';
 import { GhostDecisionService } from '../../game/domain/services/GhostDecisionService';
-import { clearGhostScaredWindow, setGhostScaredWindow } from '../../game/domain/services/GhostScaredStateService';
 import { GhostJailService, getObjectNumberProperty } from '../../game/domain/services/GhostJailService';
 import { MovementRules } from '../../game/domain/services/MovementRules';
 import { PortalService } from '../../game/domain/services/PortalService';
-import { Direction } from '../../game/domain/valueObjects/Direction';
 import { TilePosition } from '../../game/domain/valueObjects/TilePosition';
 import { CollisionGrid } from '../../game/domain/world/CollisionGrid';
 import { WorldState } from '../../game/domain/world/WorldState';
@@ -17,27 +15,10 @@ import { GhostMovementSystem } from '../../game/systems/GhostMovementSystem';
 import { GhostPacmanCollisionSystem } from '../../game/systems/GhostPacmanCollisionSystem';
 import { GhostReleaseSystem } from '../../game/systems/GhostReleaseSystem';
 import { PacmanMovementSystem } from '../../game/systems/PacmanMovementSystem';
-import { MechanicsScenario, MechanicsSnapshot } from './mechanicsTypes';
 import { createHarnessMap, HarnessFixture } from './mechanicsDomainMapFactory';
-
-export type { HarnessFixture } from './mechanicsDomainMapFactory';
 
 const DEFAULT_TICK_MS = 1000 / 60;
 const GHOST_KEYS: GhostKey[] = ['inky', 'clyde', 'pinky', 'blinky'];
-
-export interface HarnessAction {
-  tick: number;
-  type: 'set-pacman-next-direction' | 'pause' | 'resume' | 'set-ghost-scared';
-  direction?: Direction;
-  scared?: boolean;
-  ghostIndex?: number;
-}
-
-export interface MechanicsRunResult {
-  snapshots: MechanicsSnapshot[];
-  trace: string[];
-  finalSnapshot: MechanicsSnapshot;
-}
 
 export interface MechanicsDomainHarnessOptions {
   seed?: number;
@@ -68,13 +49,9 @@ export class MechanicsDomainHarness {
   readonly ghostMovementSystem: GhostMovementSystem;
   readonly ghostPacmanCollisionSystem: GhostPacmanCollisionSystem;
   readonly animationSystem: AnimationSystem;
-  readonly trace: string[] = [];
-  readonly snapshots: MechanicsSnapshot[] = [];
 
-  private schedulerPaused = false;
-
-  constructor(private readonly options: MechanicsDomainHarnessOptions = {}) {
-    const seed = options.seed ?? Number(process.env.MECHANICS_SEED ?? 1337);
+  constructor(options: MechanicsDomainHarnessOptions = {}) {
+    const seed = options.seed ?? 1337;
     const rng = new SeededRandom(seed);
     const fixture = options.fixture ?? 'default-map';
 
@@ -155,9 +132,6 @@ export class MechanicsDomainHarness {
       this.ghostReleaseSystem.start();
       this.animationSystem.start();
     }
-
-    this.trace.push(`seed=${seed}`);
-    this.trace.push(`fixture=${fixture}`);
   }
 
   destroy(): void {
@@ -165,77 +139,7 @@ export class MechanicsDomainHarness {
     this.scheduler.clear();
   }
 
-  setPacmanNextDirection(direction: Direction): void {
-    this.world.pacman.direction.next = direction;
-    this.trace.push(`tick=${this.world.tick} set-next-direction=${direction}`);
-  }
-
-  setGhostScared(scared: boolean, ghostIndex?: number): void {
-    if (typeof ghostIndex === 'number') {
-      const ghost = this.world.ghosts[ghostIndex];
-      if (ghost) {
-        if (scared) {
-          setGhostScaredWindow(this.world, ghost, GHOST_SCARED_DURATION_MS);
-        } else {
-          clearGhostScaredWindow(this.world, ghost);
-        }
-      }
-    } else {
-      this.world.ghosts.forEach((ghost) => {
-        if (scared) {
-          setGhostScaredWindow(this.world, ghost, GHOST_SCARED_DURATION_MS);
-        } else {
-          clearGhostScaredWindow(this.world, ghost);
-        }
-      });
-    }
-
-    this.trace.push(`tick=${this.world.tick} set-ghost-scared=${scared}`);
-  }
-
-  pause(): void {
-    this.world.isMoving = false;
-    this.schedulerPaused = true;
-    this.scheduler.setPaused(true);
-    this.trace.push(`tick=${this.world.tick} pause`);
-  }
-
-  resume(): void {
-    this.world.isMoving = true;
-    this.schedulerPaused = false;
-    this.scheduler.setPaused(false);
-    this.trace.push(`tick=${this.world.tick} resume`);
-  }
-
-  snapshot(): MechanicsSnapshot {
-    return {
-      tick: this.world.tick,
-      pacman: {
-        tile: { ...this.world.pacman.tile },
-        moved: { ...this.world.pacman.moved },
-        world: { x: this.world.pacman.x, y: this.world.pacman.y },
-        direction: this.world.pacman.direction.current,
-      },
-      ghosts: this.world.ghosts.map((ghost) => ({
-        tile: { ...ghost.tile },
-        moved: { ...ghost.moved },
-        world: { x: ghost.x, y: ghost.y },
-        direction: ghost.direction,
-        speed: ghost.speed,
-        free: ghost.state.free,
-      })),
-      worldFlags: {
-        isMoving: this.world.isMoving,
-        collisionDebugEnabled: this.world.collisionDebugEnabled,
-        ghostsExitingJail: this.world.ghostsExitingJail.size,
-      },
-      schedulerState: {
-        paused: this.schedulerPaused,
-      },
-    };
-  }
-
-  stepTick(deltaMs = DEFAULT_TICK_MS): MechanicsSnapshot {
+  stepTick(deltaMs = DEFAULT_TICK_MS): void {
     if (this.world.isMoving) {
       this.world.nextTick();
       this.scheduler.update(deltaMs);
@@ -245,66 +149,5 @@ export class MechanicsDomainHarness {
       this.ghostPacmanCollisionSystem.update();
       this.animationSystem.update(deltaMs);
     }
-
-    const snapshot = this.snapshot();
-    this.snapshots.push(snapshot);
-    return snapshot;
-  }
-
-  runTicks(ticks: number, deltaMs = DEFAULT_TICK_MS): MechanicsSnapshot[] {
-    const results: MechanicsSnapshot[] = [];
-    for (let i = 0; i < ticks; i += 1) {
-      results.push(this.stepTick(deltaMs));
-    }
-    return results;
-  }
-
-  runScenario(params: {
-    scenario: MechanicsScenario;
-    actions?: HarnessAction[];
-    tickMs?: number;
-  }): MechanicsRunResult {
-    const actions = [...(params.actions ?? [])].sort((a, b) => a.tick - b.tick);
-    const tickMs = params.tickMs ?? DEFAULT_TICK_MS;
-
-    this.trace.push(`scenario=${params.scenario.id}`);
-
-    for (let tick = 1; tick <= params.scenario.ticks; tick += 1) {
-      actions
-        .filter((action) => action.tick === tick)
-        .forEach((action) => {
-          this.applyAction(action);
-        });
-      this.stepTick(tickMs);
-    }
-
-    const finalSnapshot = this.snapshots[this.snapshots.length - 1] ?? this.snapshot();
-
-    return {
-      snapshots: [...this.snapshots],
-      trace: [...this.trace],
-      finalSnapshot,
-    };
-  }
-
-  private applyAction(action: HarnessAction): void {
-    if (action.type === 'pause') {
-      this.pause();
-      return;
-    }
-
-    if (action.type === 'resume') {
-      this.resume();
-      return;
-    }
-
-    if (action.type === 'set-pacman-next-direction') {
-      if (action.direction) {
-        this.setPacmanNextDirection(action.direction);
-      }
-      return;
-    }
-
-    this.setGhostScared(action.scared ?? true, action.ghostIndex);
   }
 }
