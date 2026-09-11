@@ -2,6 +2,7 @@ import { PACMAN_DEATH_RECOVERY, PACMAN_PORTAL_BLINK, SPEED } from '../../config/
 import { PortalService } from '../domain/services/PortalService';
 import { MovementRules } from '../domain/services/MovementRules';
 import { WorldState } from '../domain/world/WorldState';
+import { resolveNextBlinkToggleAt } from '../shared/blinkCadence';
 
 export class PacmanMovementSystem {
   constructor(
@@ -92,38 +93,15 @@ export class PacmanMovementSystem {
 
     let nextToggleAtMs = this.world.pacman.deathRecoveryNextToggleAtMs;
     if (!Number.isFinite(nextToggleAtMs) || nextToggleAtMs <= 0) {
-      nextToggleAtMs = this.resolveNextDeathRecoveryToggleAt(elapsedBefore);
+      nextToggleAtMs = resolveNextBlinkToggleAt(elapsedBefore, PACMAN_DEATH_RECOVERY.durationMs, PACMAN_DEATH_RECOVERY);
     }
 
     while (nextToggleAtMs > 0 && elapsedAfter >= nextToggleAtMs) {
       this.world.pacman.deathRecoveryVisible = !this.world.pacman.deathRecoveryVisible;
-      nextToggleAtMs = this.resolveNextDeathRecoveryToggleAt(nextToggleAtMs);
+      nextToggleAtMs = resolveNextBlinkToggleAt(nextToggleAtMs, PACMAN_DEATH_RECOVERY.durationMs, PACMAN_DEATH_RECOVERY);
     }
 
     this.world.pacman.deathRecoveryNextToggleAtMs = nextToggleAtMs;
-  }
-
-  private resolveNextDeathRecoveryToggleAt(fromElapsedMs: number): number {
-    if (fromElapsedMs >= PACMAN_DEATH_RECOVERY.durationMs) {
-      return 0;
-    }
-
-    const intervalMs = this.resolveDeathRecoveryBlinkInterval(fromElapsedMs);
-    const nextToggleAtMs = fromElapsedMs + intervalMs;
-    return nextToggleAtMs >= PACMAN_DEATH_RECOVERY.durationMs ? PACMAN_DEATH_RECOVERY.durationMs : nextToggleAtMs;
-  }
-
-  private resolveDeathRecoveryBlinkInterval(elapsedMs: number): number {
-    if (PACMAN_DEATH_RECOVERY.durationMs <= 0) {
-      return PACMAN_DEATH_RECOVERY.blinkStartIntervalMs;
-    }
-
-    const progress = Math.max(0, Math.min(1, elapsedMs / PACMAN_DEATH_RECOVERY.durationMs));
-    const interval =
-      PACMAN_DEATH_RECOVERY.blinkStartIntervalMs +
-      (PACMAN_DEATH_RECOVERY.blinkEndIntervalMs - PACMAN_DEATH_RECOVERY.blinkStartIntervalMs) * progress;
-
-    return Math.max(1, Math.round(interval));
   }
 
   private updateDirectionVisuals(): void {

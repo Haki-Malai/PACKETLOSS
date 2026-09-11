@@ -77,8 +77,7 @@ export class CollectibleSystem {
   }
 
   private consumePointAtPacmanTile(): void {
-    const currentTile = { x: this.world.pacman.tile.x, y: this.world.pacman.tile.y };
-    const key = tileKey(currentTile);
+    const key = tileKey(this.world.pacman.tile);
     const point = this.pointsByTile.get(key);
     if (!point || !this.isPacmanCenteredOnPoint(point)) {
       return;

@@ -16,10 +16,12 @@ const thresholds = {
   'src/game/domain/services/PortalService.ts': { lines: 98, branches: 95 },
   'src/game/domain/services/GhostDecisionService.ts': { lines: 95, branches: 92 },
   'src/game/domain/services/GhostJailService.ts': { lines: 95, branches: 90 },
+  'src/game/domain/services/GhostJailLayout.ts': { lines: 95, branches: 90 },
   'src/game/systems/PacmanMovementSystem.ts': { lines: 95, branches: 90 },
   'src/game/systems/GhostMovementSystem.ts': { lines: 95, branches: 90 },
   'src/game/systems/GhostReleaseSystem.ts': { lines: 95, branches: 90 },
   'src/game/systems/AnimationSystem.ts': { lines: 95, branches: 90 },
+  'src/game/shared/blinkCadence.ts': { lines: 95, branches: 90 },
   'src/game/app/GameRuntime.ts': { lines: 95, branches: 90 },
 };
 

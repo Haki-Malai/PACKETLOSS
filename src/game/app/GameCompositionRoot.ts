@@ -1,4 +1,5 @@
 import { Camera2D } from '../../engine/camera';
+import { clamp } from '../../engine/math';
 import { INITIAL_LIVES, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { resetGameState } from '../../state/gameState';
 import { GhostEntity, GhostKey } from '../domain/entities/GhostEntity';
@@ -32,16 +33,6 @@ import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
 import { ComposedGame, RuntimeControl } from './contracts';
 
 const GHOST_KEYS: GhostKey[] = ['inky', 'clyde', 'pinky', 'blinky'];
-
-function clamp(value: number, min: number, max: number): number {
-  if (value < min) {
-    return min;
-  }
-  if (value > max) {
-    return max;
-  }
-  return value;
-}
 
 export interface GameCompositionOptions {
   mountId?: string;
@@ -98,12 +89,13 @@ export class GameCompositionRoot {
     movementRules.setEntityTile(pacman, pacmanTile);
 
     const ghosts: GhostEntity[] = [];
+    const spawnRange = Math.max(1, ghostJailBounds.maxX - ghostJailBounds.minX + 1);
+    const spawnY = clamp(ghostJailBounds.y, 0, map.height - 1);
     for (let i = 0; i < ghostCount; i += 1) {
-      const range = ghostJailBounds.maxX - ghostJailBounds.minX + 1;
-      const randomSpawnX = ghostJailBounds.minX + rng.int(Math.max(1, range));
+      const randomSpawnX = ghostJailBounds.minX + rng.int(spawnRange);
       const spawnTile = {
         x: clamp(randomSpawnX, 0, map.width - 1),
-        y: clamp(ghostJailBounds.y, 0, map.height - 1),
+        y: spawnY,
       };
 
       const ghost = new GhostEntity({

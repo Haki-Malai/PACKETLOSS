@@ -56,6 +56,8 @@ Gameplay model and pure logic.
 - `valueObjects`: `Direction`, `TilePosition`, `MovementProgress`.
 - `world`: `WorldState`, `CollisionGrid`, map/world data types.
 - `services`: movement rules, ghost decisions, ghost jail behavior, portal behavior.
+- `GhostJailLayout` holds map-based jail and spawn inference; `GhostJailService` keeps its existing public operations.
+- Pixel-mask collision checks prepare transforms once per sample and reuse Pac-Man's preparation within one collision search.
 
 ### `systems`
 Frame-by-frame behavior execution.
@@ -75,13 +77,17 @@ Frame-by-frame behavior execution.
 ### `infrastructure`
 Browser/engine integration and data loading.
 - map parser/repository (`TiledParser`, `TiledMapRepository`)
+- `TiledMapTopology` handles portal inference and void-boundary guards after tile trimming.
 - assets (`AssetCatalog`)
 - adapters for renderer/input/timer/hud
+- `DeviceTileCache` owns device tile images and pixel normalization, with one cache per `RenderSystem`.
+- `MapLayerRenderer` visits only viewport-intersecting tiles and batches canvas state per layer. Its tile cache reuses the last image for unchanged tile attributes and scale.
 
 ### `shared`
 Cross-cutting utilities.
 - `RandomSource` and `SeededRandom` for deterministic behavior
 - generic event bus used by state/UI integration
+- `blinkCadence` shares the next-toggle calculation for death recovery and scared-ghost warnings; systems retain their own state transitions.
 
 ## Dependency Direction (Enforced)
 Allowed direction:
@@ -94,6 +100,8 @@ Allowed direction:
 Automated in `scripts/arch-check.mjs`.
 
 ## Runtime Update and Render Order
+Before each active fixed update, render systems capture presentation history before the scheduler and gameplay systems run. `EntityPresentation` reuses previous-position records; tile-object replacement marks portal and position-reset discontinuities.
+
 Update order (fixed):
 1. `InputSystem`
 2. `PacmanMovementSystem`
@@ -116,9 +124,14 @@ Render order:
 ## Camera Behavior Contract
 - `CameraSystem.start()` configures bounds, zoom, follow target, and viewport, then calls a one-time snap so the first gameplay frame is centered on Pac-Man instead of animating in from `(0, 0)`.
 - After startup, camera movement remains lerp-based via `CAMERA.followLerp` and updates each frame in `CameraSystem.update()`.
+- Rendering uses the fixed-step loop's alpha to present map and entity layers at the same interpolated camera position without mutating camera simulation state.
+- Moving sprites interpolate their previous/current positions using the same alpha. Portal, respawn, and jail position resets present the destination immediately without changing collision coordinates.
+- `RenderSystem` computes device metrics once per render and shares them across map, collectible, and effect layers.
+- Entity batches use the same snapped scale and origin as map layers, including fractional device pixel ratios.
+- Paused rendering uses current positions. After startup or resume, interpolation starts only after a fresh active fixed update so old movement is not replayed.
 - `Camera2D` applies per-axis bounds policy on both startup snap and regular updates: clamp on axes where the world is larger than the viewport, and center on axes where the viewport is larger than the world.
 - Resize handling updates renderer size and camera viewport dimensions before subsequent follow updates.
-- Regression coverage lives in `src/__tests__/camera2d.test.ts` and `src/__tests__/cameraSystem.test.ts`.
+- Regression coverage lives in `src/__tests__/camera2d.test.ts`, `src/__tests__/cameraPresentation.test.ts`, and `src/__tests__/cameraSystem.test.ts`.
 
 ## Core Runtime Contracts
 Public runtime contract:
@@ -161,6 +174,7 @@ Required checks:
 Additional constraints:
 - no cycles, no layer boundary violations (`arch-check`)
 - TypeScript file line caps (default 350; parser override 450) (`size-check`)
+- Nested checkouts under `.codex/worktrees/` are excluded from lint and test discovery.
 
 ## Migration Notes
 Legacy files removed:

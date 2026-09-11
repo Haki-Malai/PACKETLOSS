@@ -24,6 +24,7 @@ export interface UpdateCapableSystem {
 }
 
 export interface RenderCapableSystem {
+  capturePreviousState?(): void;
   render(alpha: number): void;
   destroy?(): void;
 }

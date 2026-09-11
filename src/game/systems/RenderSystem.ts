@@ -1,31 +1,21 @@
 import { Camera2D } from '../../engine/camera';
 import { COLLECTIBLE_CONFIG, PACMAN_PORTAL_BLINK } from '../../config/constants';
-import { WorldState, WorldTile } from '../domain/world/WorldState';
+import { WorldState } from '../domain/world/WorldState';
 import { CanvasRendererAdapter } from '../infrastructure/adapters/CanvasRendererAdapter';
+import { DeviceRenderMetrics, MapLayerRenderer } from '../infrastructure/adapters/MapLayerRenderer';
 import { AssetCatalog } from '../infrastructure/assets/AssetCatalog';
 import { CollectibleSystem } from './CollectibleSystem';
+import { EntityPresentation } from './EntityPresentation';
 import { resolveGhostSpriteSheetKey } from './resolveGhostSpriteSheetKey';
 
 const BACKGROUND_COLOR = '#2d2d2d';
-const BACKGROUND_RGB = { r: 45, g: 45, b: 45 };
 const BASE_POINT_SIZE = COLLECTIBLE_CONFIG[0].size;
 const POWER_POINT_SIZE = COLLECTIBLE_CONFIG[1].size;
-const WALL_ALPHA_THRESHOLD = 128;
-const JAIL_FOREGROUND_LOCAL_IDS = new Set([16, 17, 18, 19, 20, 21]);
-
-type TileCanvas = HTMLCanvasElement | OffscreenCanvas;
-type TileContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
-
-interface DeviceRenderMetrics {
-  tileDeviceSize: number;
-  deviceScale: number;
-  originX: number;
-  originY: number;
-}
 
 export class RenderSystem {
   private readonly collectibles: CollectibleSystem;
-  private readonly deviceTileCache = new Map<string, CanvasImageSource>();
+  private readonly mapRenderer: MapLayerRenderer;
+  private readonly presentation: EntityPresentation;
 
   constructor(
     private readonly world: WorldState,
@@ -35,39 +25,46 @@ export class RenderSystem {
     collectibles?: CollectibleSystem,
   ) {
     this.collectibles = collectibles ?? new CollectibleSystem(this.world);
+    this.mapRenderer = new MapLayerRenderer(this.world.map, this.world.tileSize, this.renderer, this.assets);
+    this.presentation = new EntityPresentation(this.world);
+  }
+
+  capturePreviousState(): void {
+    this.presentation.capturePreviousState();
   }
 
   update(deltaMs: number): void {
     this.collectibles.update(deltaMs);
   }
 
-  render(): void {
+  render(alpha = 1): void {
     this.renderer.clear(BACKGROUND_COLOR);
 
     if (!this.canDrawDeviceSnappedMap()) {
-      this.renderer.beginWorld(this.camera);
-      this.drawMap(false);
+      this.renderer.beginWorld(this.camera, alpha);
+      this.mapRenderer.drawWorld(false);
       this.drawPoints();
       this.drawEatEffects();
-      this.drawGhosts();
-      this.drawJailForeground();
-      this.drawPacman();
+      this.drawGhosts(alpha);
+      this.mapRenderer.drawWorld(true);
+      this.drawPacman(alpha);
       this.renderer.endWorld();
       return;
     }
 
-    this.drawMapDeviceSnapped(false);
-    this.drawPointsDeviceSnapped();
-    this.drawEatEffectsDeviceSnapped();
+    const metrics = this.resolveDeviceRenderMetrics(alpha);
+    this.mapRenderer.drawDevice(false, metrics);
+    this.drawPointsDeviceSnapped(metrics);
+    this.drawEatEffectsDeviceSnapped(metrics);
 
-    this.renderer.beginWorld(this.camera);
-    this.drawGhosts();
+    this.renderer.beginWorld(this.camera, alpha, metrics);
+    this.drawGhosts(alpha);
     this.renderer.endWorld();
 
-    this.drawMapDeviceSnapped(true);
+    this.mapRenderer.drawDevice(true, metrics);
 
-    this.renderer.beginWorld(this.camera);
-    this.drawPacman();
+    this.renderer.beginWorld(this.camera, alpha, metrics);
+    this.drawPacman(alpha);
     this.renderer.endWorld();
   }
 
@@ -90,228 +87,20 @@ export class RenderSystem {
     );
   }
 
-  private drawMapDeviceSnapped(jailForegroundOnly: boolean): void {
-    const metrics = this.resolveDeviceRenderMetrics();
-
-    this.world.map.tiles.forEach((row) => {
-      row.forEach((tile) => {
-        if (!this.isRenderableMapTile(tile)) {
-          return;
-        }
-
-        const isJailForeground = this.isJailForegroundTile(tile);
-        if (jailForegroundOnly !== isJailForeground) {
-          return;
-        }
-
-        const x = metrics.originX + tile.x * metrics.tileDeviceSize;
-        const y = metrics.originY + tile.y * metrics.tileDeviceSize;
-
-        if (
-          x + metrics.tileDeviceSize < 0 ||
-          y + metrics.tileDeviceSize < 0 ||
-          x > this.renderer.deviceWidth ||
-          y > this.renderer.deviceHeight
-        ) {
-          return;
-        }
-
-        const cachedTile = this.getCachedDeviceTile(tile, !jailForegroundOnly, metrics.tileDeviceSize);
-        if (!cachedTile) {
-          return;
-        }
-
-        this.renderer.drawImageDevice(cachedTile, x, y);
-      });
-    });
-  }
-
-  private resolveDeviceRenderMetrics(): DeviceRenderMetrics {
+  private resolveDeviceRenderMetrics(alpha: number): DeviceRenderMetrics {
     const tileDeviceSize = this.resolveTileDeviceSize();
     const deviceScale = tileDeviceSize / this.world.tileSize;
-
+    const cameraPosition = this.camera.getRenderPosition(alpha);
     return {
       tileDeviceSize,
       deviceScale,
-      originX: Math.round(-this.camera.x * deviceScale),
-      originY: Math.round(-this.camera.y * deviceScale),
+      originX: Math.round(-cameraPosition.x * deviceScale),
+      originY: Math.round(-cameraPosition.y * deviceScale),
     };
   }
 
   private resolveTileDeviceSize(): number {
     return Math.max(1, Math.round(this.world.tileSize * this.camera.getZoom() * this.renderer.pixelRatio));
-  }
-
-  private getCachedDeviceTile(
-    tile: WorldTile,
-    fillBackground: boolean,
-    tileDeviceSize: number,
-  ): CanvasImageSource | undefined {
-    const cacheKey = [
-      tile.imagePath,
-      tile.rotation,
-      tile.flipX ? 'flip-x' : 'no-flip-x',
-      tile.flipY ? 'flip-y' : 'no-flip-y',
-      fillBackground ? 'opaque-background' : 'transparent-background',
-      tileDeviceSize,
-    ].join('|');
-
-    const cached = this.deviceTileCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    const image = this.assets.getTileImage(tile.imagePath);
-    if (!image) {
-      return undefined;
-    }
-
-    const tileCanvas = this.createTileCanvas(tileDeviceSize);
-    if (!tileCanvas) {
-      return undefined;
-    }
-
-    const { canvas, context } = tileCanvas;
-    context.imageSmoothingEnabled = false;
-    context.clearRect(0, 0, tileDeviceSize, tileDeviceSize);
-
-    context.save();
-    context.translate(tileDeviceSize / 2, tileDeviceSize / 2);
-
-    if (tile.rotation !== 0) {
-      context.rotate(tile.rotation);
-    }
-
-    if (tile.flipX || tile.flipY) {
-      context.scale(tile.flipX ? -1 : 1, tile.flipY ? -1 : 1);
-    }
-
-    context.drawImage(image, -tileDeviceSize / 2, -tileDeviceSize / 2, tileDeviceSize, tileDeviceSize);
-    context.restore();
-
-    this.normalizeTilePixels(context, tileDeviceSize, tileDeviceSize, fillBackground);
-    this.deviceTileCache.set(cacheKey, canvas);
-
-    return canvas;
-  }
-
-  private createTileCanvas(size: number): { canvas: TileCanvas; context: TileContext } | undefined {
-    const canvasSize = Math.max(1, Math.ceil(size));
-
-    if (typeof OffscreenCanvas !== 'undefined') {
-      const canvas = new OffscreenCanvas(canvasSize, canvasSize);
-      const context = canvas.getContext('2d');
-      return context ? { canvas, context } : undefined;
-    }
-
-    if (typeof document === 'undefined') {
-      return undefined;
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = canvasSize;
-    canvas.height = canvasSize;
-
-    const context = canvas.getContext('2d');
-    return context ? { canvas, context } : undefined;
-  }
-
-  private normalizeTilePixels(
-    context: TileContext,
-    width: number,
-    height: number,
-    fillBackground: boolean,
-  ): void {
-    let imageData: ImageData;
-
-    try {
-      imageData = context.getImageData(0, 0, width, height);
-    } catch {
-      return;
-    }
-
-    const data = imageData.data;
-
-    for (let index = 0; index < data.length; index += 4) {
-      const alpha = data[index + 3];
-
-      if (alpha < WALL_ALPHA_THRESHOLD) {
-        if (fillBackground) {
-          data[index] = BACKGROUND_RGB.r;
-          data[index + 1] = BACKGROUND_RGB.g;
-          data[index + 2] = BACKGROUND_RGB.b;
-          data[index + 3] = 255;
-        } else {
-          data[index] = 0;
-          data[index + 1] = 0;
-          data[index + 2] = 0;
-          data[index + 3] = 0;
-        }
-
-        continue;
-      }
-
-      data[index + 3] = 255;
-    }
-
-    context.putImageData(imageData, 0, 0);
-  }
-
-  private drawMap(includeJailForeground: boolean): void {
-    this.world.map.tiles.forEach((row) => {
-      row.forEach((tile) => {
-        if (!this.isRenderableMapTile(tile)) {
-          return;
-        }
-
-        if (!includeJailForeground && this.isJailForegroundTile(tile)) {
-          return;
-        }
-
-        this.drawMapTile(tile);
-      });
-    });
-  }
-
-  private drawJailForeground(): void {
-    this.world.map.tiles.forEach((row) => {
-      row.forEach((tile) => {
-        if (!this.isRenderableMapTile(tile) || !this.isJailForegroundTile(tile)) {
-          return;
-        }
-
-        this.drawMapTile(tile);
-      });
-    });
-  }
-
-  private drawMapTile(tile: WorldTile): void {
-    const image = this.assets.getTileImage(tile.imagePath);
-    if (!image) {
-      return;
-    }
-
-    const x = tile.x * this.world.tileSize + this.world.tileSize / 2;
-    const y = tile.y * this.world.tileSize + this.world.tileSize / 2;
-
-    this.renderer.drawImageCentered(
-      image,
-      x,
-      y,
-      this.world.tileSize,
-      this.world.tileSize,
-      tile.rotation,
-      tile.flipX,
-      tile.flipY,
-    );
-  }
-
-  private isRenderableMapTile(tile: WorldTile): boolean {
-    return tile.gid !== null && tile.imagePath !== '(empty)' && tile.imagePath !== '(unknown)';
-  }
-
-  private isJailForegroundTile(tile: WorldTile): boolean {
-    return tile.localId !== null && JAIL_FOREGROUND_LOCAL_IDS.has(tile.localId);
   }
 
   private drawPoints(): void {
@@ -326,14 +115,13 @@ export class RenderSystem {
     }
   }
 
-  private drawPointsDeviceSnapped(): void {
+  private drawPointsDeviceSnapped(metrics: DeviceRenderMetrics): void {
     const pointImage = this.assets.getCollectibleImage('point');
     if (!pointImage) {
       return;
     }
 
     const context = this.renderer.context;
-    const metrics = this.resolveDeviceRenderMetrics();
 
     context.save();
     context.setTransform(1, 0, 0, 1, 0, 0);
@@ -357,9 +145,9 @@ export class RenderSystem {
     const context = this.renderer.context;
     eatEffects.forEach((effect) => {
       const progress = Math.min(1, effect.elapsedMs / effect.durationMs);
-      const growProgress = 1 - (1 - progress) * (1 - progress);
-      const size = effect.sizeStart + (effect.sizeEnd - effect.sizeStart) * growProgress;
       const alpha = (1 - progress) * (1 - progress);
+      const growProgress = 1 - alpha;
+      const size = effect.sizeStart + (effect.sizeEnd - effect.sizeStart) * growProgress;
 
       context.save();
       context.globalAlpha = alpha;
@@ -368,7 +156,7 @@ export class RenderSystem {
     });
   }
 
-  private drawEatEffectsDeviceSnapped(): void {
+  private drawEatEffectsDeviceSnapped(metrics: DeviceRenderMetrics): void {
     const pointImage = this.assets.getCollectibleImage('point');
     const eatEffects = this.collectibles.getEatEffects();
     if (!pointImage || !eatEffects.length) {
@@ -376,7 +164,6 @@ export class RenderSystem {
     }
 
     const context = this.renderer.context;
-    const metrics = this.resolveDeviceRenderMetrics();
 
     context.save();
     context.setTransform(1, 0, 0, 1, 0, 0);
@@ -384,9 +171,9 @@ export class RenderSystem {
 
     eatEffects.forEach((effect) => {
       const progress = Math.min(1, effect.elapsedMs / effect.durationMs);
-      const growProgress = 1 - (1 - progress) * (1 - progress);
-      const size = effect.sizeStart + (effect.sizeEnd - effect.sizeStart) * growProgress;
       const alpha = (1 - progress) * (1 - progress);
+      const growProgress = 1 - alpha;
+      const size = effect.sizeStart + (effect.sizeEnd - effect.sizeStart) * growProgress;
 
       context.globalAlpha = alpha;
       this.drawCollectibleDeviceSnapped(context, pointImage, effect.x, effect.y, size, metrics);
@@ -419,7 +206,7 @@ export class RenderSystem {
     context.drawImage(image, x, y, size, size);
   }
 
-  private drawPacman(): void {
+  private drawPacman(alpha: number): void {
     if (!this.isPacmanVisible()) {
       return;
     }
@@ -429,11 +216,12 @@ export class RenderSystem {
       return;
     }
 
+    const position = this.presentation.getPosition(this.world.pacman, alpha);
     this.renderer.drawSpriteFrame(
       pacmanSheet,
       this.world.pacmanAnimation.frame,
-      this.world.pacman.x,
-      this.world.pacman.y,
+      position.x,
+      position.y,
       this.world.pacman.displayWidth,
       this.world.pacman.displayHeight,
       (this.world.pacman.angle * Math.PI) / 180,
@@ -458,7 +246,7 @@ export class RenderSystem {
     return blinkPhase % 2 === 0;
   }
 
-  private drawGhosts(): void {
+  private drawGhosts(alpha: number): void {
     this.world.ghosts.forEach((ghost) => {
       const sheetKey = resolveGhostSpriteSheetKey(this.world, ghost);
       const sheet = this.assets.getSpriteSheet(sheetKey);
@@ -467,11 +255,12 @@ export class RenderSystem {
       }
 
       const frame = this.world.ghostAnimations.get(ghost)?.frame ?? 0;
+      const position = this.presentation.getPosition(ghost, alpha);
       this.renderer.drawSpriteFrame(
         sheet,
         frame,
-        ghost.x,
-        ghost.y,
+        position.x,
+        position.y,
         ghost.displayWidth,
         ghost.displayHeight,
         (ghost.angle * Math.PI) / 180,

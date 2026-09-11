@@ -202,9 +202,7 @@ export class MovementRules {
   }
 
   applyBufferedDirection(entity: BufferedEntity, collisionTiles: CollisionTiles): Direction {
-    return applyBufferedDirection(entity, collisionTiles, this.tileSize, (direction, movedY, movedX, tiles, tileSize, actor) =>
-      canMove(direction, movedY, movedX, tiles, tileSize, actor),
-    );
+    return applyBufferedDirection(entity, collisionTiles, this.tileSize);
   }
 
   advanceEntity(entity: MovableEntity, direction: Direction, speed: number): void {

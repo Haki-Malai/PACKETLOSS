@@ -1,6 +1,7 @@
 import { GHOST_SCARED_WARNING_DURATION_MS, PACMAN_DEATH_RECOVERY } from '../../config/constants';
 import { GhostEntity } from '../domain/entities/GhostEntity';
 import { clearGhostScaredWindow } from '../domain/services/GhostScaredStateService';
+import { resolveNextBlinkToggleAt } from '../shared/blinkCadence';
 import {
   AnimationKey,
   AnimationPlayback,
@@ -170,7 +171,7 @@ export class AnimationSystem {
     if (!warning) {
       warning = {
         elapsedMs: warningElapsedBeforeTick,
-        nextToggleAtMs: this.resolveNextGhostWarningToggleAt(warningElapsedBeforeTick),
+        nextToggleAtMs: resolveNextBlinkToggleAt(warningElapsedBeforeTick, GHOST_SCARED_WARNING_DURATION_MS, PACMAN_DEATH_RECOVERY),
         showBaseColor: false,
       };
     }
@@ -180,39 +181,16 @@ export class AnimationSystem {
 
     let nextToggleAtMs = warning.nextToggleAtMs;
     if (!Number.isFinite(nextToggleAtMs) || nextToggleAtMs <= 0) {
-      nextToggleAtMs = this.resolveNextGhostWarningToggleAt(elapsedBefore);
+      nextToggleAtMs = resolveNextBlinkToggleAt(elapsedBefore, GHOST_SCARED_WARNING_DURATION_MS, PACMAN_DEATH_RECOVERY);
     }
 
     while (nextToggleAtMs > 0 && warning.elapsedMs >= nextToggleAtMs) {
       warning.showBaseColor = !warning.showBaseColor;
-      nextToggleAtMs = this.resolveNextGhostWarningToggleAt(nextToggleAtMs);
+      nextToggleAtMs = resolveNextBlinkToggleAt(nextToggleAtMs, GHOST_SCARED_WARNING_DURATION_MS, PACMAN_DEATH_RECOVERY);
     }
 
     warning.nextToggleAtMs = nextToggleAtMs;
     this.world.ghostScaredWarnings.set(ghost, warning);
-  }
-
-  private resolveNextGhostWarningToggleAt(fromElapsedMs: number): number {
-    if (fromElapsedMs >= GHOST_SCARED_WARNING_DURATION_MS) {
-      return 0;
-    }
-
-    const intervalMs = this.resolveGhostWarningBlinkInterval(fromElapsedMs);
-    const nextToggleAtMs = fromElapsedMs + intervalMs;
-    return nextToggleAtMs >= GHOST_SCARED_WARNING_DURATION_MS ? GHOST_SCARED_WARNING_DURATION_MS : nextToggleAtMs;
-  }
-
-  private resolveGhostWarningBlinkInterval(elapsedMs: number): number {
-    if (GHOST_SCARED_WARNING_DURATION_MS <= 0) {
-      return PACMAN_DEATH_RECOVERY.blinkStartIntervalMs;
-    }
-
-    const progress = Math.max(0, Math.min(1, elapsedMs / GHOST_SCARED_WARNING_DURATION_MS));
-    const interval =
-      PACMAN_DEATH_RECOVERY.blinkStartIntervalMs +
-      (PACMAN_DEATH_RECOVERY.blinkEndIntervalMs - PACMAN_DEATH_RECOVERY.blinkStartIntervalMs) * progress;
-
-    return Math.max(1, Math.round(interval));
   }
 
   private createAnimationPlayback(key: AnimationKey): AnimationPlayback {

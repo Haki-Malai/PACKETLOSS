@@ -11,6 +11,15 @@ interface Aabb {
   maxY: number;
 }
 
+interface PreparedMaskSample {
+  sample: CollisionMaskSample;
+  bounds: Aabb;
+  halfWidth: number;
+  halfHeight: number;
+  inverseRotation?: { cos: number; sin: number };
+  valid: boolean;
+}
+
 export interface GhostPacmanCollision {
   ghost: GhostEntity;
   contact: GhostPacmanContactType;
@@ -78,16 +87,33 @@ function intersectAabb(a: Aabb, b: Aabb): Aabb | null {
   return { minX, minY, maxX, maxY };
 }
 
-function toMaskPixel(sample: CollisionMaskSample, worldX: number, worldY: number): { x: number; y: number } | null {
-  if (sample.width <= 0 || sample.height <= 0 || sample.mask.width <= 0 || sample.mask.height <= 0) {
-    return null;
-  }
+function prepareMaskSample(sample: CollisionMaskSample): PreparedMaskSample {
+  return {
+    sample,
+    bounds: computeAabb(sample),
+    halfWidth: sample.width / 2,
+    halfHeight: sample.height / 2,
+    valid: !(sample.width <= 0 || sample.height <= 0 || sample.mask.width <= 0 || sample.mask.height <= 0),
+  };
+}
 
+function getInverseRotation(prepared: PreparedMaskSample): { cos: number; sin: number } {
+  if (!prepared.inverseRotation) {
+    const radians = toRadians(-prepared.sample.angle);
+    prepared.inverseRotation = { cos: Math.cos(radians), sin: Math.sin(radians) };
+  }
+  return prepared.inverseRotation;
+}
+
+function isOpaqueAt(
+  prepared: PreparedMaskSample,
+  { cos, sin }: { cos: number; sin: number },
+  worldX: number,
+  worldY: number,
+): boolean {
+  const { sample, halfWidth, halfHeight } = prepared;
   const dx = worldX - sample.x;
   const dy = worldY - sample.y;
-  const radians = toRadians(-sample.angle);
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
 
   let localX = dx * cos - dy * sin;
   let localY = dx * sin + dy * cos;
@@ -99,39 +125,40 @@ function toMaskPixel(sample: CollisionMaskSample, worldX: number, worldY: number
     localY *= -1;
   }
 
-  const normalizedX = (localX + sample.width / 2) / sample.width;
-  const normalizedY = (localY + sample.height / 2) / sample.height;
+  const normalizedX = (localX + halfWidth) / sample.width;
+  const normalizedY = (localY + halfHeight) / sample.height;
 
   if (normalizedX < 0 || normalizedX >= 1 || normalizedY < 0 || normalizedY >= 1) {
-    return null;
+    return false;
   }
 
   const x = Math.floor(normalizedX * sample.mask.width);
   const y = Math.floor(normalizedY * sample.mask.height);
 
   if (x < 0 || x >= sample.mask.width || y < 0 || y >= sample.mask.height) {
-    return null;
-  }
-
-  return { x, y };
-}
-
-function isOpaqueAt(sample: CollisionMaskSample, worldX: number, worldY: number): boolean {
-  const pixel = toMaskPixel(sample, worldX, worldY);
-  if (!pixel) {
     return false;
   }
 
-  const index = pixel.y * sample.mask.width + pixel.x;
+  const index = y * sample.mask.width + x;
   return (sample.mask.opaque[index] ?? 0) > 0;
 }
 
 export function isPixelMaskOverlap(pacman: CollisionMaskSample, ghost: CollisionMaskSample): boolean {
-  const overlap = intersectAabb(computeAabb(pacman), computeAabb(ghost));
+  return isPreparedMaskOverlap(prepareMaskSample(pacman), prepareMaskSample(ghost));
+}
+
+function isPreparedMaskOverlap(pacman: PreparedMaskSample, ghost: PreparedMaskSample): boolean {
+  if (!pacman.valid || !ghost.valid) {
+    return false;
+  }
+
+  const overlap = intersectAabb(pacman.bounds, ghost.bounds);
   if (!overlap) {
     return false;
   }
 
+  const pacmanRotation = getInverseRotation(pacman);
+  const ghostRotation = getInverseRotation(ghost);
   const startX = Math.floor(overlap.minX);
   const endX = Math.ceil(overlap.maxX);
   const startY = Math.floor(overlap.minY);
@@ -142,7 +169,7 @@ export function isPixelMaskOverlap(pacman: CollisionMaskSample, ghost: Collision
       const worldX = x + 0.5;
       const worldY = y + 0.5;
 
-      if (isOpaqueAt(pacman, worldX, worldY) && isOpaqueAt(ghost, worldX, worldY)) {
+      if (isOpaqueAt(pacman, pacmanRotation, worldX, worldY) && isOpaqueAt(ghost, ghostRotation, worldX, worldY)) {
         return true;
       }
     }
@@ -161,9 +188,13 @@ export function findFirstCollision(params: {
   resolveOutcome?: CollisionOutcomeResolver;
 }): GhostPacmanCollision | null {
   const resolveOutcome = params.resolveOutcome ?? defaultOutcomeResolver;
+  if (params.ghosts.length === 0) {
+    return null;
+  }
 
+  const pacman = prepareMaskSample(params.pacman);
   for (const candidate of params.ghosts) {
-    if (isPixelMaskOverlap(params.pacman, candidate.sample)) {
+    if (isPreparedMaskOverlap(pacman, prepareMaskSample(candidate.sample))) {
       return {
         ghost: candidate.ghost,
         contact: 'pixel-mask-overlap',

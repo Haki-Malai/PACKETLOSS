@@ -1,6 +1,12 @@
 import { Camera2D } from './camera';
 import { SpriteSheetAsset } from './assets';
 
+export interface WorldRenderTransform {
+  deviceScale: number;
+  originX: number;
+  originY: number;
+}
+
 export class CanvasRenderer {
   readonly canvas: HTMLCanvasElement;
   readonly context: CanvasRenderingContext2D;
@@ -73,9 +79,14 @@ export class CanvasRenderer {
     this.context.restore();
   }
 
-  beginWorld(camera: Camera2D): void {
+  beginWorld(camera: Camera2D, alpha = 1, transform?: WorldRenderTransform): void {
     this.context.save();
-    camera.applyTransform(this.context, this.backingPixelRatio);
+    if (transform) {
+      const { deviceScale, originX, originY } = transform;
+      this.context.setTransform(deviceScale, 0, 0, deviceScale, originX, originY);
+    } else {
+      camera.applyTransform(this.context, this.backingPixelRatio, alpha);
+    }
   }
 
   endWorld(): void {
