@@ -12,6 +12,7 @@ export class DebugOverlaySystem {
   private runtimePanel?: HTMLPreElement;
   private lastRenderTimestampMs: number | null = null;
   private smoothedFps: number | null = null;
+  private panelsVisible: boolean | null = null;
 
   constructor(
     private readonly world: WorldState,
@@ -46,12 +47,16 @@ export class DebugOverlaySystem {
     this.world.hoveredDebugTile = { x: tileX, y: tileY };
   }
 
-  render(): void {
+  render(alpha = 1): void {
     if (!this.collisionPanel || !this.runtimePanel) {
       return;
     }
 
     if (!this.world.collisionDebugEnabled) {
+      if (this.panelsVisible === false) {
+        return;
+      }
+      this.panelsVisible = false;
       this.collisionPanel.style.display = 'none';
       this.collisionPanel.textContent = '';
       this.runtimePanel.style.display = 'none';
@@ -62,10 +67,13 @@ export class DebugOverlaySystem {
       return;
     }
 
-    this.collisionPanel.style.display = 'block';
-    this.runtimePanel.style.display = 'block';
+    if (this.panelsVisible !== true) {
+      this.panelsVisible = true;
+      this.collisionPanel.style.display = 'block';
+      this.runtimePanel.style.display = 'block';
+    }
 
-    this.renderer.beginWorld(this.camera as never);
+    this.renderer.beginWorld(this.camera as never, alpha);
     this.drawCollisionDebugOverlay();
     this.renderer.endWorld();
 
@@ -86,6 +94,7 @@ export class DebugOverlaySystem {
     this.runtimePanel = undefined;
     this.lastRenderTimestampMs = null;
     this.smoothedFps = null;
+    this.panelsVisible = null;
   }
 
   private createPanels(): void {

@@ -105,7 +105,8 @@
     {
       "id": "MEC-ANI-001",
       "suspectModules": [
-        "src/game/systems/AnimationSystem.ts"
+        "src/game/systems/AnimationSystem.ts",
+        "src/game/shared/blinkCadence.ts"
       ],
       "fixPlan": [
         "verify scared/default transition conditions",
@@ -127,7 +128,8 @@
       "id": "INV-BOUNDS-001",
       "suspectModules": [
         "src/game/domain/services/MovementRules.ts",
-        "src/game/domain/services/GhostJailService.ts"
+        "src/game/domain/services/GhostJailService.ts",
+        "src/game/domain/services/GhostJailLayout.ts"
       ],
       "fixPlan": [
         "check tile wrapping and clamping logic",

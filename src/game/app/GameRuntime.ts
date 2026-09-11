@@ -9,6 +9,7 @@ export class GameRuntime implements PacmanGame {
   private destroyed = false;
   private pausedByFocusLoss = false;
   private focusListenersBound = false;
+  private presentationReady = false;
 
   constructor(private readonly compositionRoot: GameCompositionRoot) {}
 
@@ -34,6 +35,7 @@ export class GameRuntime implements PacmanGame {
     }
 
     this.composed.world.isMoving = false;
+    this.presentationReady = false;
     this.composed.scheduler.setPaused(true);
   }
 
@@ -43,6 +45,7 @@ export class GameRuntime implements PacmanGame {
     }
 
     this.pausedByFocusLoss = false;
+    this.presentationReady = false;
     this.composed.world.isMoving = true;
     this.composed.scheduler.setPaused(false);
   }
@@ -53,6 +56,7 @@ export class GameRuntime implements PacmanGame {
     }
 
     this.destroyed = true;
+    this.presentationReady = false;
     this.started = false;
     this.unbindFocusListeners();
     this.pausedByFocusLoss = false;
@@ -182,12 +186,16 @@ export class GameRuntime implements PacmanGame {
       return;
     }
 
+    this.composed.renderSystems.forEach((system) => {
+      system.capturePreviousState?.();
+    });
     this.composed.world.nextTick();
     this.composed.scheduler.update(deltaMs);
 
     this.composed.updateSystems.forEach((system) => {
       system.update(deltaMs);
     });
+    this.presentationReady = this.composed.world.isMoving;
   };
 
   private readonly render = (alpha: number): void => {
@@ -195,8 +203,9 @@ export class GameRuntime implements PacmanGame {
       return;
     }
 
+    const renderAlpha = this.presentationReady && this.composed.world.isMoving ? alpha : 1;
     this.composed.renderSystems.forEach((system) => {
-      system.render(alpha);
+      system.render(renderAlpha);
     });
   };
 

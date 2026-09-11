@@ -1,5 +1,5 @@
 import { Camera2D } from '../../../engine/camera';
-import { CanvasRenderer } from '../../../engine/renderer';
+import { CanvasRenderer, WorldRenderTransform } from '../../../engine/renderer';
 
 export class CanvasRendererAdapter {
   readonly renderer: CanvasRenderer;
@@ -40,8 +40,8 @@ export class CanvasRendererAdapter {
     this.renderer.clear(color);
   }
 
-  beginWorld(camera: Camera2D): void {
-    this.renderer.beginWorld(camera);
+  beginWorld(camera: Camera2D, alpha = 1, transform?: WorldRenderTransform): void {
+    this.renderer.beginWorld(camera, alpha, transform);
   }
 
   endWorld(): void {

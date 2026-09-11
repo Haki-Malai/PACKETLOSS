@@ -9,6 +9,9 @@ export class Camera2D {
   x = 0;
   y = 0;
 
+  private previousX = 0;
+  private previousY = 0;
+
   private zoom = 1;
   private viewportWidth = 1;
   private viewportHeight = 1;
@@ -23,17 +26,20 @@ export class Camera2D {
     this.viewportWidth = Math.max(1, width);
     this.viewportHeight = Math.max(1, height);
     this.clampToBounds();
+    this.syncPreviousPosition();
   }
 
   setBounds(width: number, height: number): void {
     this.worldWidth = Math.max(1, width);
     this.worldHeight = Math.max(1, height);
     this.clampToBounds();
+    this.syncPreviousPosition();
   }
 
   setZoom(zoom: number): void {
     this.zoom = Math.max(0.001, zoom);
     this.clampToBounds();
+    this.syncPreviousPosition();
   }
 
   getZoom(): number {
@@ -50,18 +56,22 @@ export class Camera2D {
     const desired = this.getDesiredFollowPosition();
     if (!desired) {
       this.clampToBounds();
+      this.syncPreviousPosition();
       return;
     }
 
     this.x = desired.x;
     this.y = desired.y;
     this.clampToBounds();
+    this.syncPreviousPosition();
   }
 
   update(): void {
+    this.syncPreviousPosition();
     const desired = this.getDesiredFollowPosition();
     if (!desired) {
       this.clampToBounds();
+      this.syncPreviousPosition();
       return;
     }
 
@@ -77,9 +87,23 @@ export class Camera2D {
     };
   }
 
-  applyTransform(ctx: CanvasRenderingContext2D, pixelRatio = 1): void {
+  getRenderPosition(alpha = 1): { x: number; y: number } {
+    const renderAlpha = clamp(alpha, 0, 1);
+    return {
+      x: lerp(this.previousX, this.x, renderAlpha),
+      y: lerp(this.previousY, this.y, renderAlpha),
+    };
+  }
+
+  applyTransform(ctx: CanvasRenderingContext2D, pixelRatio = 1, alpha = 1): void {
     const scale = this.zoom * pixelRatio;
-    ctx.setTransform(scale, 0, 0, scale, -this.x * scale, -this.y * scale);
+    const position = this.getRenderPosition(alpha);
+    ctx.setTransform(scale, 0, 0, scale, -position.x * scale, -position.y * scale);
+  }
+
+  private syncPreviousPosition(): void {
+    this.previousX = this.x;
+    this.previousY = this.y;
   }
 
   private getDesiredFollowPosition(): { x: number; y: number } | undefined {

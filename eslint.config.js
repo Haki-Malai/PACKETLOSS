@@ -5,7 +5,7 @@ import vitest from 'eslint-plugin-vitest';
 
 export default tseslint.config(
   {
-    ignores: ['dist', 'node_modules', 'public/**/*.tsx'],
+    ignores: ['dist', 'node_modules', 'public/**/*.tsx', '.codex/worktrees/**'],
   },
   {
     files: ['**/*.{ts,tsx}'],

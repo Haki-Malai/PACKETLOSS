@@ -37,6 +37,25 @@ describe('Camera2D', () => {
     expect(camera.y).toBeCloseTo(53, 5);
   });
 
+  it('interpolates presentation between previous and current fixed-step positions', () => {
+    const camera = new Camera2D();
+    const target = { x: 150, y: 100 };
+
+    camera.setBounds(300, 200);
+    camera.setViewport(100, 100);
+    camera.setZoom(1);
+    camera.startFollow(target, 0.1, 0.1);
+    camera.snapToFollowTarget();
+
+    target.x = 190;
+    target.y = 130;
+    camera.update();
+
+    expect(camera.getRenderPosition(0)).toEqual({ x: 100, y: 50 });
+    expect(camera.getRenderPosition(0.5)).toEqual({ x: 102, y: 51.5 });
+    expect(camera.getRenderPosition(1)).toEqual({ x: 104, y: 53 });
+  });
+
   it('clamps camera coordinates while following near world edges', () => {
     const camera = new Camera2D();
     const target = { x: -100, y: -100 };
