@@ -200,9 +200,6 @@
       "tiles": [
         {
           "id": 0,
-          "image": "source/tiles/tile-00.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -243,9 +240,6 @@
         },
         {
           "id": 1,
-          "image": "source/tiles/tile-01.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -286,9 +280,6 @@
         },
         {
           "id": 2,
-          "image": "source/tiles/tile-02.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -329,9 +320,6 @@
         },
         {
           "id": 5,
-          "image": "source/tiles/tile-05.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -372,9 +360,6 @@
         },
         {
           "id": 7,
-          "image": "source/tiles/tile-07.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -415,9 +400,6 @@
         },
         {
           "id": 10,
-          "image": "source/tiles/tile-10.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -458,9 +440,6 @@
         },
         {
           "id": 14,
-          "image": "source/tiles/tile-14.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -501,9 +480,6 @@
         },
         {
           "id": 15,
-          "image": "source/tiles/tile-15.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -544,9 +520,6 @@
         },
         {
           "id": 16,
-          "image": "source/tiles/tile-16.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -587,9 +560,6 @@
         },
         {
           "id": 17,
-          "image": "source/tiles/tile-17.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -630,9 +600,6 @@
         },
         {
           "id": 18,
-          "image": "source/tiles/tile-18.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -673,9 +640,6 @@
         },
         {
           "id": 19,
-          "image": "source/tiles/tile-19.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -716,9 +680,6 @@
         },
         {
           "id": 20,
-          "image": "source/tiles/tile-20.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -759,9 +720,6 @@
         },
         {
           "id": 21,
-          "image": "source/tiles/tile-21.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
@@ -802,9 +760,6 @@
         },
         {
           "id": 23,
-          "image": "source/tiles/tile-23.png",
-          "imagewidth": 16,
-          "imageheight": 16,
           "properties": [
             {
               "name": "collides",
