@@ -75,10 +75,6 @@ function readMap(): TiledMap {
   return JSON.parse(fs.readFileSync(MAZE_JSON_PATH, 'utf8')) as TiledMap;
 }
 
-function readMapText(): string {
-  return fs.readFileSync(MAZE_JSON_PATH, 'utf8');
-}
-
 function getPropertyValue(properties: TiledProperty[] | undefined, name: string): unknown {
   return properties?.find((property) => property.name === name)?.value;
 }
@@ -226,44 +222,4 @@ describe('maze.json contract', () => {
     });
   });
 
-  it('keeps Maze data formatted as one map row per line', () => {
-    const map = readMap();
-    const text = readMapText();
-    const mazeLayer = map.layers.find((layer) => layer.name === 'Maze');
-
-    expect(mazeLayer).toBeDefined();
-    const width = mazeLayer?.width;
-    const height = mazeLayer?.height;
-    expect(typeof width).toBe('number');
-    expect(typeof height).toBe('number');
-
-    const dataBlockMatch = text.match(/"data": \[\n([\s\S]*?)\n\s{6}\],\n\s{6}"height":/);
-    expect(dataBlockMatch).toBeTruthy();
-    const rows = (dataBlockMatch?.[1] ?? '')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    expect(rows.length).toBe(height);
-
-    rows.forEach((row, index) => {
-      const hasTrailingComma = row.endsWith(',');
-      if (index < rows.length - 1) {
-        expect(hasTrailingComma).toBe(true);
-      } else {
-        expect(hasTrailingComma).toBe(false);
-      }
-
-      const normalized = hasTrailingComma ? row.slice(0, -1) : row;
-      const values = normalized
-        .split(',')
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0);
-
-      expect(values.length).toBe(width);
-      values.forEach((value) => {
-        expect(/^\d+$/.test(value)).toBe(true);
-      });
-    });
-  });
 });

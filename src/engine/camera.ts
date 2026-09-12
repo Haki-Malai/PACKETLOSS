@@ -95,12 +95,6 @@ export class Camera2D {
     };
   }
 
-  applyTransform(ctx: CanvasRenderingContext2D, pixelRatio = 1, alpha = 1): void {
-    const scale = this.zoom * pixelRatio;
-    const position = this.getRenderPosition(alpha);
-    ctx.setTransform(scale, 0, 0, scale, -position.x * scale, -position.y * scale);
-  }
-
   private syncPreviousPosition(): void {
     this.previousX = this.x;
     this.previousY = this.y;

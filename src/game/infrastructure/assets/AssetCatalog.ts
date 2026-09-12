@@ -1,6 +1,7 @@
 import { AssetStore, SpriteSheetAsset } from '../../../engine/assets';
 import { CollisionMaskFrame } from '../../domain/valueObjects/CollisionMask';
 import { WorldMapData } from '../../domain/world/WorldState';
+import type { TileAlphaMask } from '../three/MazeGeometry';
 
 const SPRITE_SHEET_FRAME_WIDTH = 85;
 const SPRITE_SHEET_FRAME_HEIGHT = 91;
@@ -20,8 +21,8 @@ export class AssetCatalog {
   private readonly assets = new AssetStore();
   private readonly tileImageCache = new Map<string, HTMLImageElement>();
   private readonly spritesheets = new Map<SpriteSheetKey, SpriteSheetAsset>();
-  private readonly collectibles = new Map<string, HTMLImageElement>();
   private readonly spriteMaskCache = new Map<string, CollisionMaskFrame>();
+  private readonly tileMaskCache = new Map<string, TileAlphaMask>();
   private maskCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
   private maskContext: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
 
@@ -46,8 +47,6 @@ export class AssetCatalog {
       jobs.push(this.assets.loadSpriteSheet(key, src, SPRITE_SHEET_FRAME_WIDTH, SPRITE_SHEET_FRAME_HEIGHT));
     });
 
-    jobs.push(this.assets.loadImage('point', 'assets/sprites/Point.png'));
-
     await Promise.all(jobs);
 
     uniqueTileImages.forEach((imagePath) => {
@@ -58,20 +57,38 @@ export class AssetCatalog {
       const typedKey = key as SpriteSheetKey;
       this.spritesheets.set(typedKey, this.assets.getSpriteSheet(key));
     });
-
-    this.collectibles.set('point', this.assets.getImage('point'));
   }
 
   getTileImage(path: string): HTMLImageElement | undefined {
     return this.tileImageCache.get(path);
   }
 
-  getSpriteSheet(key: SpriteSheetKey): SpriteSheetAsset | undefined {
-    return this.spritesheets.get(key);
+  getTileMask(path: string): TileAlphaMask | undefined {
+    const cached = this.tileMaskCache.get(path);
+    if (cached) {
+      return cached;
+    }
+    const image = this.getTileImage(path);
+    if (!image) {
+      return undefined;
+    }
+    const width = image.naturalWidth;
+    const height = image.naturalHeight;
+    const context = this.getMaskContext(width, height);
+    context.clearRect(0, 0, width, height);
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, width, height).data;
+    const opaque = new Uint8Array(width * height);
+    for (let index = 0; index < opaque.length; index += 1) {
+      opaque[index] = pixels[index * 4 + 3] >= 128 ? 1 : 0;
+    }
+    const mask = { width, height, opaque };
+    this.tileMaskCache.set(path, mask);
+    return mask;
   }
 
-  getCollectibleImage(key: string): HTMLImageElement | undefined {
-    return this.collectibles.get(key);
+  getSpriteSheet(key: SpriteSheetKey): SpriteSheetAsset | undefined {
+    return this.spritesheets.get(key);
   }
 
   getSpriteMask(

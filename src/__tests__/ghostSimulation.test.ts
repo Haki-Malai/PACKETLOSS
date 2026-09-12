@@ -1,73 +1,59 @@
 import { describe, expect, it } from 'vitest';
-import { simulateGhostMovement } from '../game/domain/services/GhostDecisionService';
-import { CollisionTile } from '../game/domain/world/CollisionGrid';
+import { GhostDecisionService, simulateGhostMovement } from '../game/domain/services/GhostDecisionService';
+import { CollisionGrid } from '../game/domain/world/CollisionGrid';
 import { SeededRandom } from '../game/shared/random/SeededRandom';
+import { createCollisionTile } from './fixtures/pointLayoutFixtures';
 
-const passableTile = (): CollisionTile => ({
-  collides: false,
-  penGate: false,
-  portal: false,
-  up: false,
-  down: false,
-  left: false,
-  right: false,
-});
+function gridFromRows(rows: string[]): CollisionGrid {
+  return new CollisionGrid(rows.map((row) => [...row].map((tile) => createCollisionTile(
+    tile === '#' ? { collides: true, up: true, down: true, left: true, right: true } : {},
+  ))));
+}
 
-const wallTile = (): CollisionTile => ({
-  collides: true,
-  penGate: false,
-  portal: false,
-  up: true,
-  down: true,
-  left: true,
-  right: true,
-});
+describe('ghost movement decisions', () => {
+  it('continues through a corridor and reverses only at the dead end', () => {
+    const grid = gridFromRows(['#####', '#...#', '#####']);
+    const decisions = new GhostDecisionService();
+    const rng = new SeededRandom(42);
 
-const createSimulationGrid = (size: number): CollisionTile[][] => {
-  const grid: CollisionTile[][] = [];
-  for (let y = 0; y < size; y += 1) {
-    const row: CollisionTile[] = [];
-    for (let x = 0; x < size; x += 1) {
-      const isBorder = x === 0 || y === 0 || x === size - 1 || y === size - 1;
-      row.push(isBorder ? wallTile() : passableTile());
+    expect(decisions.chooseDirectionAtCenter('right', grid.getTilesAt({ x: 2, y: 1 }), 16, rng)).toBe('right');
+    expect(decisions.chooseDirectionAtCenter('right', grid.getTilesAt({ x: 3, y: 1 }), 16, rng)).toBe('left');
+    expect(decisions.chooseDirectionWhenBlocked('right', 0, 0, grid.getTilesAt({ x: 3, y: 1 }), 16, rng)).toBe('left');
+  });
+
+  it('turns into the open perpendicular corridor when forward movement is blocked', () => {
+    const grid = gridFromRows(['#####', '#..##', '##.##', '#####']);
+    const decisions = new GhostDecisionService();
+
+    expect(decisions.chooseDirectionWhenBlocked('right', 0, 0, grid.getTilesAt({ x: 2, y: 1 }), 16, new SeededRandom(42))).toBe('down');
+  });
+
+  it.each([12345, 99999])('keeps a moving ghost out of walls and turns only at tile centers with seed %s', (seed) => {
+    const rows = ['#######', '#.....#', '#..#..#', '#..#..#', '#..#..#', '#.....#', '#######'];
+    const snapshots = simulateGhostMovement({
+      collisionGrid: gridFromRows(rows), steps: 256, rng: new SeededRandom(seed), tileSize: 16, speed: 4,
+      startTile: { x: 1, y: 1 }, startDirection: 'right',
+    });
+    let previous: typeof snapshots[number] = { tile: { x: 1, y: 1 }, moved: { x: 0, y: 0 }, direction: 'right' };
+    const visited = new Set<string>();
+    for (const state of snapshots) {
+      const x = state.tile.x * 16 + 8 + state.moved.x;
+      const y = state.tile.y * 16 + 8 + state.moved.y;
+      const dx = x - (previous.tile.x * 16 + 8 + previous.moved.x);
+      const dy = y - (previous.tile.y * 16 + 8 + previous.moved.y);
+      const distance = Math.abs(dx) + Math.abs(dy);
+
+      expect(rows[Math.floor(y / 16)]?.[Math.floor(x / 16)]).toBe('.');
+      expect(distance === 0 || distance === 4).toBe(true);
+      expect(dx === 0 || dy === 0).toBe(true);
+      if (dx > 0) expect(state.direction).toBe('right');
+      if (dx < 0) expect(state.direction).toBe('left');
+      if (dy > 0) expect(state.direction).toBe('down');
+      if (dy < 0) expect(state.direction).toBe('up');
+      if (state.direction !== previous.direction) expect(previous.moved).toEqual({ x: 0, y: 0 });
+      visited.add(`${state.tile.x},${state.tile.y}`);
+      previous = state;
     }
-    grid.push(row);
-  }
-  return grid;
-};
-
-describe('simulateGhostMovement', () => {
-  it('produces deterministic movement when seeded RNG is injected', () => {
-    const grid = createSimulationGrid(9);
-
-    const runA = simulateGhostMovement({
-      collisionGrid: grid,
-      steps: 120,
-      rng: new SeededRandom(12345),
-      tileSize: 16,
-      startTile: { x: 4, y: 4 },
-      startDirection: 'left',
-    });
-
-    const runB = simulateGhostMovement({
-      collisionGrid: grid,
-      steps: 120,
-      rng: new SeededRandom(12345),
-      tileSize: 16,
-      startTile: { x: 4, y: 4 },
-      startDirection: 'left',
-    });
-
-    const runC = simulateGhostMovement({
-      collisionGrid: grid,
-      steps: 120,
-      rng: new SeededRandom(99999),
-      tileSize: 16,
-      startTile: { x: 4, y: 4 },
-      startDirection: 'left',
-    });
-
-    expect(runA).toEqual(runB);
-    expect(runA).not.toEqual(runC);
+    expect(visited.size).toBeGreaterThan(1);
   });
 });

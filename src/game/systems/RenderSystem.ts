@@ -1,233 +1,161 @@
-import { Camera2D } from '../../engine/camera';
+import {
+  Color, DirectionalLight, Group, HemisphereLight, InstancedMesh, Matrix4,
+  Mesh, MeshBasicMaterial, RingGeometry, Scene,
+} from 'three';
+import { Camera3D } from '../../engine/camera3d';
 import { COLLECTIBLE_CONFIG, PACMAN_PORTAL_BLINK } from '../../config/constants';
+import { GhostEntity } from '../domain/entities/GhostEntity';
 import { WorldState } from '../domain/world/WorldState';
-import { CanvasRendererAdapter } from '../infrastructure/adapters/CanvasRendererAdapter';
-import { DeviceRenderMetrics, MapLayerRenderer } from '../infrastructure/adapters/MapLayerRenderer';
-import { AssetCatalog } from '../infrastructure/assets/AssetCatalog';
-import { CollectibleSystem } from './CollectibleSystem';
+import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
+import { ArcadeAssets } from '../infrastructure/three/ArcadeAssets';
+import { CollisionDebugScene } from '../infrastructure/three/CollisionDebugScene';
+import { MazeAssets, MazeScene } from '../infrastructure/three/MazeScene';
+import { CollectibleKind, CollectibleSystem, EatEffect } from './CollectibleSystem';
 import { EntityPresentation } from './EntityPresentation';
 import { resolveGhostSpriteSheetKey } from './resolveGhostSpriteSheetKey';
 
-const BACKGROUND_COLOR = '#2d2d2d';
-const BASE_POINT_SIZE = COLLECTIBLE_CONFIG[0].size;
-const POWER_POINT_SIZE = COLLECTIBLE_CONFIG[1].size;
-
 export class RenderSystem {
-  private readonly collectibles: CollectibleSystem;
-  private readonly mapRenderer: MapLayerRenderer;
+  readonly scene = new Scene();
   private readonly presentation: EntityPresentation;
+  private readonly assets = new ArcadeAssets();
+  private readonly maze: MazeScene;
+  private readonly debug: CollisionDebugScene;
+  private readonly pacman: Group;
+  private readonly ghosts = new Map<GhostEntity, Group>();
+  private readonly points = new Map<CollectibleKind, InstancedMesh>();
+  private readonly effects = new Map<EatEffect, Mesh<RingGeometry, MeshBasicMaterial>>();
+  private readonly effectGeometry = new RingGeometry(0.7, 1, 24);
+  private readonly pointMatrix = new Matrix4();
+  private lastPointCount = -1;
+  private destroyed = false;
 
   constructor(
     private readonly world: WorldState,
-    private readonly renderer: CanvasRendererAdapter,
-    private readonly camera: Camera2D,
-    private readonly assets: AssetCatalog,
-    collectibles?: CollectibleSystem,
+    private readonly renderer: Pick<ThreeRendererAdapter, 'render' | 'dispose' | 'pixelRatio'>,
+    private readonly camera: Camera3D,
+    mazeAssets: MazeAssets,
+    private readonly collectibles: CollectibleSystem,
   ) {
-    this.collectibles = collectibles ?? new CollectibleSystem(this.world);
-    this.mapRenderer = new MapLayerRenderer(this.world.map, this.world.tileSize, this.renderer, this.assets);
-    this.presentation = new EntityPresentation(this.world);
+    this.presentation = new EntityPresentation(world);
+    this.scene.background = new Color('#02040b');
+    this.scene.add(new HemisphereLight('#a7c5ff', '#160b30', 0.85));
+    const key = new DirectionalLight('#c7dfff', 1.4);
+    key.position.set(-150, 300, 100);
+    this.scene.add(key);
+    this.maze = new MazeScene(world, mazeAssets);
+    this.debug = new CollisionDebugScene(world);
+    this.scene.add(this.maze.group, this.debug.group);
+
+    this.pacman = this.assets.createPacman();
+    this.pacman.name = 'pacman';
+    this.pacman.add(this.assets.createContactShadow(world.pacman.displayWidth));
+    this.scene.add(this.pacman);
+    for (const ghost of world.ghosts) {
+      const model = this.assets.createGhost(ghost.key);
+      model.name = 'ghost-' + ghost.key;
+      model.add(this.assets.createContactShadow(ghost.displayWidth));
+      this.ghosts.set(ghost, model);
+      this.scene.add(model);
+    }
+
+    const initialPoints = Array.from(this.collectibles.getPoints());
+    for (const kind of ['base', 'power'] as const) {
+      const count = initialPoints.filter((point) => point.kind === kind).length;
+      const material = kind === 'power' ? this.assets.powerPelletMaterial : this.assets.pelletMaterial;
+      const points = new InstancedMesh(this.assets.pelletGeometry, material, count);
+      points.name = 'pellets-' + kind;
+      this.points.set(kind, points);
+      this.scene.add(points);
+    }
+    this.syncPoints();
   }
 
   capturePreviousState(): void {
     this.presentation.capturePreviousState();
   }
 
-  update(deltaMs: number): void {
-    this.collectibles.update(deltaMs);
-  }
-
   render(alpha = 1): void {
-    this.renderer.clear(BACKGROUND_COLOR);
-
-    if (!this.canDrawDeviceSnappedMap()) {
-      this.renderer.beginWorld(this.camera, alpha);
-      this.mapRenderer.drawWorld(false);
-      this.drawPoints();
-      this.drawEatEffects();
-      this.drawGhosts(alpha);
-      this.mapRenderer.drawWorld(true);
-      this.drawPacman(alpha);
-      this.renderer.endWorld();
-      return;
-    }
-
-    const metrics = this.resolveDeviceRenderMetrics(alpha);
-    this.mapRenderer.drawDevice(false, metrics);
-    this.drawPointsDeviceSnapped(metrics);
-    this.drawEatEffectsDeviceSnapped(metrics);
-
-    this.renderer.beginWorld(this.camera, alpha, metrics);
-    this.drawGhosts(alpha);
-    this.renderer.endWorld();
-
-    this.mapRenderer.drawDevice(true, metrics);
-
-    this.renderer.beginWorld(this.camera, alpha, metrics);
-    this.drawPacman(alpha);
-    this.renderer.endWorld();
-  }
-
-  private canDrawDeviceSnappedMap(): boolean {
-    const renderer = this.renderer as CanvasRendererAdapter & {
-      drawImageDevice?: CanvasRendererAdapter['drawImageDevice'];
-      pixelRatio?: number;
-      deviceWidth?: number;
-      deviceHeight?: number;
-    };
-
-    return (
-      typeof renderer.drawImageDevice === 'function' &&
-      Number.isFinite(renderer.pixelRatio) &&
-      Number.isFinite(renderer.deviceWidth) &&
-      Number.isFinite(renderer.deviceHeight) &&
-      renderer.pixelRatio > 0 &&
-      renderer.deviceWidth > 0 &&
-      renderer.deviceHeight > 0
-    );
-  }
-
-  private resolveDeviceRenderMetrics(alpha: number): DeviceRenderMetrics {
-    const tileDeviceSize = this.resolveTileDeviceSize();
-    const deviceScale = tileDeviceSize / this.world.tileSize;
-    const cameraPosition = this.camera.getRenderPosition(alpha);
-    return {
-      tileDeviceSize,
-      deviceScale,
-      originX: Math.round(-cameraPosition.x * deviceScale),
-      originY: Math.round(-cameraPosition.y * deviceScale),
-    };
-  }
-
-  private resolveTileDeviceSize(): number {
-    return Math.max(1, Math.round(this.world.tileSize * this.camera.getZoom() * this.renderer.pixelRatio));
-  }
-
-  private drawPoints(): void {
-    const pointImage = this.assets.getCollectibleImage('point');
-    if (!pointImage) {
-      return;
-    }
-
-    for (const point of this.collectibles.getPoints()) {
-      const size = point.kind === 'power' ? POWER_POINT_SIZE : BASE_POINT_SIZE;
-      this.renderer.drawImageCentered(pointImage, point.x, point.y, size, size, 0, false, false);
-    }
-  }
-
-  private drawPointsDeviceSnapped(metrics: DeviceRenderMetrics): void {
-    const pointImage = this.assets.getCollectibleImage('point');
-    if (!pointImage) {
-      return;
-    }
-
-    const context = this.renderer.context;
-
-    context.save();
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.imageSmoothingEnabled = false;
-
-    for (const point of this.collectibles.getPoints()) {
-      const size = point.kind === 'power' ? POWER_POINT_SIZE : BASE_POINT_SIZE;
-      this.drawCollectibleDeviceSnapped(context, pointImage, point.x, point.y, size, metrics);
-    }
-
-    context.restore();
-  }
-
-  private drawEatEffects(): void {
-    const pointImage = this.assets.getCollectibleImage('point');
-    const eatEffects = this.collectibles.getEatEffects();
-    if (!pointImage || !eatEffects.length) {
-      return;
-    }
-
-    const context = this.renderer.context;
-    eatEffects.forEach((effect) => {
-      const progress = Math.min(1, effect.elapsedMs / effect.durationMs);
-      const alpha = (1 - progress) * (1 - progress);
-      const growProgress = 1 - alpha;
-      const size = effect.sizeStart + (effect.sizeEnd - effect.sizeStart) * growProgress;
-
-      context.save();
-      context.globalAlpha = alpha;
-      context.drawImage(pointImage, effect.x - size / 2, effect.y - size / 2, size, size);
-      context.restore();
-    });
-  }
-
-  private drawEatEffectsDeviceSnapped(metrics: DeviceRenderMetrics): void {
-    const pointImage = this.assets.getCollectibleImage('point');
-    const eatEffects = this.collectibles.getEatEffects();
-    if (!pointImage || !eatEffects.length) {
-      return;
-    }
-
-    const context = this.renderer.context;
-
-    context.save();
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.imageSmoothingEnabled = false;
-
-    eatEffects.forEach((effect) => {
-      const progress = Math.min(1, effect.elapsedMs / effect.durationMs);
-      const alpha = (1 - progress) * (1 - progress);
-      const growProgress = 1 - alpha;
-      const size = effect.sizeStart + (effect.sizeEnd - effect.sizeStart) * growProgress;
-
-      context.globalAlpha = alpha;
-      this.drawCollectibleDeviceSnapped(context, pointImage, effect.x, effect.y, size, metrics);
-    });
-
-    context.restore();
-  }
-
-  private drawCollectibleDeviceSnapped(
-    context: CanvasRenderingContext2D,
-    image: CanvasImageSource,
-    worldX: number,
-    worldY: number,
-    worldSize: number,
-    metrics: DeviceRenderMetrics,
-  ): void {
-    const size = Math.max(1, Math.round(worldSize * metrics.deviceScale));
-    const x = Math.round(metrics.originX + worldX * metrics.deviceScale - size / 2);
-    const y = Math.round(metrics.originY + worldY * metrics.deviceScale - size / 2);
-
-    if (
-      x + size < 0 ||
-      y + size < 0 ||
-      x > this.renderer.deviceWidth ||
-      y > this.renderer.deviceHeight
-    ) {
-      return;
-    }
-
-    context.drawImage(image, x, y, size, size);
-  }
-
-  private drawPacman(alpha: number): void {
-    if (!this.isPacmanVisible()) {
-      return;
-    }
-
-    const pacmanSheet = this.assets.getSpriteSheet('pacman');
-    if (!pacmanSheet) {
-      return;
-    }
-
+    if (this.destroyed) return;
+    this.camera.present(alpha, this.renderer.pixelRatio);
     const position = this.presentation.getPosition(this.world.pacman, alpha);
-    this.renderer.drawSpriteFrame(
-      pacmanSheet,
-      this.world.pacmanAnimation.frame,
-      position.x,
-      position.y,
-      this.world.pacman.displayWidth,
-      this.world.pacman.displayHeight,
-      (this.world.pacman.angle * Math.PI) / 180,
-      this.world.pacman.flipX,
-      this.world.pacman.flipY,
-    );
+    this.pacman.position.set(position.x, 0, position.y);
+    this.pacman.rotation.y = -(this.world.pacman.angle * Math.PI) / 180;
+    this.pacman.visible = this.isPacmanVisible();
+    this.assets.setPacmanFrame(this.pacman, this.world.pacmanAnimation.frame);
+
+    this.ghosts.forEach((model, ghost) => {
+      const position = this.presentation.getPosition(ghost, alpha);
+      model.position.set(position.x, 0, position.y);
+      this.assets.setGhostAppearance(model, resolveGhostSpriteSheetKey(this.world, ghost),
+        this.world.ghostAnimations.get(ghost)?.frame ?? 0, ghost.direction);
+    });
+    this.syncPoints();
+    this.syncEffects();
+    this.debug.sync();
+    this.renderer.render(this.scene, this.camera.camera);
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.maze.dispose();
+    this.debug.dispose();
+    this.points.forEach((mesh) => mesh.dispose());
+    this.effects.forEach((mesh) => mesh.material.dispose());
+    this.effects.clear();
+    this.effectGeometry.dispose();
+    this.assets.dispose();
+    this.scene.clear();
+    this.renderer.dispose();
+  }
+
+  private syncPoints(): void {
+    const pointCount = this.collectibles.getPointCount();
+    if (pointCount === this.lastPointCount) return;
+    this.lastPointCount = pointCount;
+    const counts = { base: 0, power: 0 };
+    for (const point of this.collectibles.getPoints()) {
+      const mesh = this.points.get(point.kind)!;
+      const radius = COLLECTIBLE_CONFIG[point.kind === 'power' ? 1 : 0].size / 2;
+      this.pointMatrix.makeScale(radius, radius, radius);
+      this.pointMatrix.setPosition(point.x, radius + 0.12, point.y);
+      mesh.setMatrixAt(counts[point.kind], this.pointMatrix);
+      counts[point.kind] += 1;
+    }
+    this.points.forEach((mesh, kind) => {
+      mesh.count = counts[kind];
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    });
+  }
+
+  private syncEffects(): void {
+    const active = this.collectibles.getEatEffects();
+    this.effects.forEach((mesh, effect) => {
+      if (!active.includes(effect)) {
+        this.scene.remove(mesh);
+        mesh.material.dispose();
+        this.effects.delete(effect);
+      }
+    });
+    for (const effect of active) {
+      let mesh = this.effects.get(effect);
+      if (!mesh) {
+        mesh = new Mesh(this.effectGeometry, new MeshBasicMaterial({
+          color: '#c8ba9c', transparent: true, depthWrite: false,
+        }));
+        mesh.name = 'pellet-effect';
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(effect.x, 0.08, effect.y);
+        this.effects.set(effect, mesh);
+        this.scene.add(mesh);
+      }
+      const progress = Math.min(1, effect.elapsedMs / effect.durationMs);
+      const opacity = (1 - progress) * (1 - progress);
+      const diameter = effect.sizeStart + (effect.sizeEnd - effect.sizeStart) * (1 - opacity);
+      mesh.scale.setScalar(diameter / 2);
+      mesh.material.opacity = opacity;
+    }
   }
 
   private isPacmanVisible(): boolean {
@@ -244,29 +172,5 @@ export class RenderSystem {
     const elapsed = this.world.pacman.portalBlinkElapsedMs ?? 0;
     const blinkPhase = Math.floor(elapsed / PACMAN_PORTAL_BLINK.intervalMs);
     return blinkPhase % 2 === 0;
-  }
-
-  private drawGhosts(alpha: number): void {
-    this.world.ghosts.forEach((ghost) => {
-      const sheetKey = resolveGhostSpriteSheetKey(this.world, ghost);
-      const sheet = this.assets.getSpriteSheet(sheetKey);
-      if (!sheet) {
-        return;
-      }
-
-      const frame = this.world.ghostAnimations.get(ghost)?.frame ?? 0;
-      const position = this.presentation.getPosition(ghost, alpha);
-      this.renderer.drawSpriteFrame(
-        sheet,
-        frame,
-        position.x,
-        position.y,
-        ghost.displayWidth,
-        ghost.displayHeight,
-        (ghost.angle * Math.PI) / 180,
-        ghost.flipX,
-        ghost.flipY,
-      );
-    });
   }
 }

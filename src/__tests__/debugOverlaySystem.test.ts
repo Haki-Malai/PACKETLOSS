@@ -50,24 +50,6 @@ function createWorld(): WorldState {
   } as unknown as WorldState;
 }
 
-function createRenderer() {
-  return {
-    beginWorld: vi.fn(),
-    endWorld: vi.fn(),
-    context: {
-      fillStyle: '',
-      strokeStyle: '',
-      lineWidth: 1,
-      fillRect: vi.fn(),
-      beginPath: vi.fn(),
-      moveTo: vi.fn(),
-      lineTo: vi.fn(),
-      stroke: vi.fn(),
-      strokeRect: vi.fn(),
-    },
-  };
-}
-
 describe('DebugOverlaySystem', () => {
   let fakeDocument: FakeDocument;
 
@@ -84,11 +66,10 @@ describe('DebugOverlaySystem', () => {
   it('hides and clears diagnostics panels when diagnostics mode is disabled', () => {
     const world = createWorld();
     world.debugPanelText = 'stale';
-    const renderer = createRenderer();
     const camera = {
       screenToWorld: () => ({ x: 0, y: 0 }),
     };
-    const system = new DebugOverlaySystem(world, renderer as never, camera);
+    const system = new DebugOverlaySystem(world, camera);
 
     system.start();
     system.render();
@@ -107,11 +88,10 @@ describe('DebugOverlaySystem', () => {
   it('shows FPS and frame time while diagnostics mode is enabled', () => {
     const world = createWorld();
     world.collisionDebugEnabled = true;
-    const renderer = createRenderer();
     const camera = {
       screenToWorld: () => ({ x: 0, y: 0 }),
     };
-    const system = new DebugOverlaySystem(world, renderer as never, camera);
+    const system = new DebugOverlaySystem(world, camera);
     const nowSpy = vi
       .spyOn(performance, 'now')
       .mockReturnValueOnce(100)
@@ -135,11 +115,10 @@ describe('DebugOverlaySystem', () => {
 
   it('removes diagnostics panels on destroy', () => {
     const world = createWorld();
-    const renderer = createRenderer();
     const camera = {
       screenToWorld: () => ({ x: 0, y: 0 }),
     };
-    const system = new DebugOverlaySystem(world, renderer as never, camera);
+    const system = new DebugOverlaySystem(world, camera);
 
     system.start();
     expect(fakeDocument.getElementById('runtime-debug-panel')).not.toBeNull();

@@ -1,6 +1,6 @@
 import { WorldState } from '../domain/world/WorldState';
 import { BrowserInputAdapter } from '../infrastructure/adapters/BrowserInputAdapter';
-import { CanvasRendererAdapter } from '../infrastructure/adapters/CanvasRendererAdapter';
+import { RendererViewport } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { TimerSchedulerAdapter } from '../infrastructure/adapters/TimerSchedulerAdapter';
 
 export interface PacmanGame {
@@ -31,7 +31,7 @@ export interface RenderCapableSystem {
 
 export interface ComposedGame {
   world: WorldState;
-  renderer: CanvasRendererAdapter;
+  renderer: RendererViewport;
   input: BrowserInputAdapter;
   scheduler: TimerSchedulerAdapter;
   updateSystems: UpdateCapableSystem[];

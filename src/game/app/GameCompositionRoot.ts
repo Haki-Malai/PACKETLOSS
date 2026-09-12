@@ -1,4 +1,4 @@
-import { Camera2D } from '../../engine/camera';
+import { Camera3D } from '../../engine/camera3d';
 import { clamp } from '../../engine/math';
 import { INITIAL_LIVES, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { resetGameState } from '../../state/gameState';
@@ -13,7 +13,7 @@ import { CollisionGrid } from '../domain/world/CollisionGrid';
 import { WorldState } from '../domain/world/WorldState';
 import { AssetCatalog } from '../infrastructure/assets/AssetCatalog';
 import { BrowserInputAdapter } from '../infrastructure/adapters/BrowserInputAdapter';
-import { CanvasRendererAdapter } from '../infrastructure/adapters/CanvasRendererAdapter';
+import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { TimerSchedulerAdapter } from '../infrastructure/adapters/TimerSchedulerAdapter';
 import { TiledMapRepository } from '../infrastructure/map/TiledMapRepository';
 import { toRandomSource } from '../shared/random/RandomSource';
@@ -43,23 +43,13 @@ export interface GameCompositionOptions {
 export class GameCompositionRoot {
   constructor(private readonly options: GameCompositionOptions = {}) {}
 
-  async compose(runtimeControl: RuntimeControl): Promise<ComposedGame> {
+  async compose(runtimeControl: RuntimeControl, signal?: AbortSignal): Promise<ComposedGame> {
     const mountId = this.options.mountId ?? 'game-root';
     const mount = document.getElementById(mountId);
     if (!mount) {
       throw new Error(`Game mount element not found: #${mountId}`);
     }
 
-    mount.replaceChildren();
-
-    const canvas = document.createElement('canvas');
-    canvas.className = 'block h-full w-full touch-none transition-[filter] duration-200 ease-out';
-    mount.appendChild(canvas);
-
-    const camera = new Camera2D();
-    const renderer = new CanvasRendererAdapter(canvas);
-    const input = new BrowserInputAdapter(canvas);
-    const scheduler = new TimerSchedulerAdapter();
     const mapRepository = new TiledMapRepository();
     const assets = new AssetCatalog();
 
@@ -67,8 +57,14 @@ export class GameCompositionRoot {
     const mapVariant = this.options.mapVariant ?? 'default';
     const { mapJsonPath, tileBasePath } = resolveMapPathsForVariant(mapVariant);
     const map = await this.loadMapForVariant(mapRepository, mapVariant, mapJsonPath);
+    signal?.throwIfAborted();
     const tileSize = map.tileWidth || TILE_SIZE;
     await assets.loadForMap(map, tileBasePath);
+    // A replaced game must not reset shared state or allocate a new scene after loading.
+    signal?.throwIfAborted();
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'block h-full w-full touch-none transition-[filter] duration-200 ease-out';
 
     const collisionGrid = new CollisionGrid(map.tiles.map((row) => row.map((tile) => ({ ...tile.collision }))));
     const movementRules = new MovementRules(tileSize);
@@ -123,6 +119,11 @@ export class GameCompositionRoot {
       ghostJailBounds,
     });
 
+    const camera = new Camera3D();
+    const renderer = new ThreeRendererAdapter(canvas);
+    const input = new BrowserInputAdapter(canvas);
+    const scheduler = new TimerSchedulerAdapter();
+
     const portalService = new PortalService(collisionGrid, map.portalPairs ?? []);
     const ghostDecisions = new GhostDecisionService();
 
@@ -147,8 +148,16 @@ export class GameCompositionRoot {
     const collectibleSystem = new CollectibleSystem(world);
     const hudSystem = new HudSystem(mount);
     const pauseOverlaySystem = new PauseOverlaySystem(world, mount);
-    const debugSystem = new DebugOverlaySystem(world, renderer, camera);
-    const renderSystem = new RenderSystem(world, renderer, camera, assets, collectibleSystem);
+    const debugSystem = new DebugOverlaySystem(world, camera);
+    let renderSystem: RenderSystem;
+    try {
+      renderSystem = new RenderSystem(world, renderer, camera, assets, collectibleSystem);
+    } catch (error) {
+      input.destroy();
+      renderer.dispose();
+      canvas.remove();
+      throw error;
+    }
 
     const updateSystems = [
       inputSystem,
@@ -166,6 +175,7 @@ export class GameCompositionRoot {
 
     const renderSystems = [renderSystem, debugSystem, hudSystem];
 
+    mount.replaceChildren(canvas);
     return {
       world,
       renderer,
@@ -174,7 +184,7 @@ export class GameCompositionRoot {
       updateSystems,
       renderSystems,
       destroy: () => {
-        mount.replaceChildren();
+        canvas.remove();
       },
     };
   }

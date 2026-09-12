@@ -1,6 +1,6 @@
 # Product overview
 
-Pacman is a personal, work-in-progress remake of Pac-Man for desktop and mobile browsers. The core experience is navigating a maze, collecting pellets, avoiding ghosts, and turning the chase around with power pellets. It uses animated sprites, a following camera, and maps authored in Tiled.
+Pacman is a personal, work-in-progress remake of Pac-Man for desktop and mobile browsers. The core experience is navigating a maze, collecting pellets, avoiding ghosts, and turning the chase around with power pellets. It uses animated 3D meshes, a following camera, and maps authored in Tiled.
 
 ## Gameplay
 
@@ -32,7 +32,9 @@ Pausing freezes movement and gameplay timers and dims/desaturates the scene. Swi
 
 ## Presentation
 
-The camera follows Pac-Man smoothly and adapts to the viewport. Rendering interpolates movement between simulation updates, while portals and respawns show the destination immediately. The maze and sprites share a pixel-aligned Canvas2D renderer; the HUD and pause UI are HTML overlays.
+The camera follows Pac-Man smoothly and adapts to the viewport. Its orthographic view combines a 20-degree forward tilt with a fixed 5-degree lean from the right to reveal more wall faces. Maze rows and columns stay aligned with the screen, and the viewing angle stays constant as Pac-Man moves. Rendering interpolates movement between simulation updates, while portals and respawns show the destination immediately. The displayed camera aligns to physical pixels to stabilize the maze outlines; slow panning can advance in tiny pixel steps.
+
+Three.js renders dark, 12-unit-high walls with muted cyan outlines along their top, bottom, and main vertical corners, muted magenta pen outlines, matte cream pellets, and raised 3D PACMAN lettering. Rounded characters retain their recognizable colors. The 3D outlines are approximately 1.75 CSS pixels wide at the default zoom and use normal depth testing and antialiasing without brightness boosts or bloom. The wall footprints preserve the existing corridors and Pac-Man's clearance. The HUD, pause UI, and debug panels remain HTML overlays. A WebGL 2-capable browser is required.
 
 ## Maps
 

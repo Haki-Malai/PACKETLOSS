@@ -1,4 +1,3 @@
-import { CanvasRendererAdapter } from '../infrastructure/adapters/CanvasRendererAdapter';
 import { WorldState } from '../domain/world/WorldState';
 import { TilePosition } from '../domain/valueObjects/TilePosition';
 
@@ -16,7 +15,6 @@ export class DebugOverlaySystem {
 
   constructor(
     private readonly world: WorldState,
-    private readonly renderer: CanvasRendererAdapter,
     private readonly camera: CameraLike,
   ) {}
 
@@ -47,7 +45,7 @@ export class DebugOverlaySystem {
     this.world.hoveredDebugTile = { x: tileX, y: tileY };
   }
 
-  render(alpha = 1): void {
+  render(): void {
     if (!this.collisionPanel || !this.runtimePanel) {
       return;
     }
@@ -72,10 +70,6 @@ export class DebugOverlaySystem {
       this.collisionPanel.style.display = 'block';
       this.runtimePanel.style.display = 'block';
     }
-
-    this.renderer.beginWorld(this.camera as never, alpha);
-    this.drawCollisionDebugOverlay();
-    this.renderer.endWorld();
 
     if (!this.world.hoveredDebugTile) {
       this.world.debugPanelText = 'Collision Debug\nmove mouse over a block to inspect';
@@ -182,76 +176,6 @@ export class DebugOverlaySystem {
     }
 
     return Date.now();
-  }
-
-  private drawCollisionDebugOverlay(): void {
-    const ctx = this.renderer.context;
-
-    for (let y = 0; y < this.world.map.height; y += 1) {
-      for (let x = 0; x < this.world.map.width; x += 1) {
-        const tile = this.world.collisionGrid.getTileAt(x, y);
-        if (!tile.collides && !tile.up && !tile.down && !tile.left && !tile.right && !tile.penGate) {
-          continue;
-        }
-
-        const worldX = x * this.world.tileSize;
-        const worldY = y * this.world.tileSize;
-
-        if (tile.up && tile.right && tile.down && tile.left) {
-          ctx.fillStyle = 'rgba(255, 51, 85, 0.06)';
-          ctx.fillRect(worldX, worldY, this.world.tileSize, this.world.tileSize);
-        }
-
-        ctx.strokeStyle = tile.penGate ? '#00ffff' : '#ff3355';
-        ctx.lineWidth = 1;
-
-        if (tile.up) {
-          ctx.beginPath();
-          ctx.moveTo(worldX, worldY);
-          ctx.lineTo(worldX + this.world.tileSize, worldY);
-          ctx.stroke();
-        }
-
-        if (tile.down) {
-          ctx.beginPath();
-          ctx.moveTo(worldX, worldY + this.world.tileSize);
-          ctx.lineTo(worldX + this.world.tileSize, worldY + this.world.tileSize);
-          ctx.stroke();
-        }
-
-        if (tile.left) {
-          ctx.beginPath();
-          ctx.moveTo(worldX, worldY);
-          ctx.lineTo(worldX, worldY + this.world.tileSize);
-          ctx.stroke();
-        }
-
-        if (tile.right) {
-          ctx.beginPath();
-          ctx.moveTo(worldX + this.world.tileSize, worldY);
-          ctx.lineTo(worldX + this.world.tileSize, worldY + this.world.tileSize);
-          ctx.stroke();
-        }
-      }
-    }
-
-    this.drawDebugMarker(this.world.pacman.tile, '#ffdd00');
-    this.world.ghosts.forEach((ghost) => {
-      this.drawDebugMarker(ghost.tile, '#00ff66');
-    });
-
-    if (this.world.hoveredDebugTile) {
-      this.drawDebugMarker(this.world.hoveredDebugTile, '#33ccff');
-    }
-  }
-
-  private drawDebugMarker(tile: TilePosition, color: string): void {
-    const x = tile.x * this.world.tileSize;
-    const y = tile.y * this.world.tileSize;
-    const ctx = this.renderer.context;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 1, y + 1, this.world.tileSize - 2, this.world.tileSize - 2);
   }
 
   private getTileDebugInfo(tilePosition: TilePosition): string {
