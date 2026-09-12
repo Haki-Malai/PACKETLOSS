@@ -146,15 +146,10 @@ describe('demo.json contract', () => {
     expect(parsed.tiles[0]?.length).toBe(parsed.width);
   });
 
-  it('resolves known image paths for all non-empty tiles', () => {
-    const parsed = parseTiledMap(readMap());
-    const nonEmptyTiles = parsed.tiles.flat().filter((tile) => tile.gid !== null);
-
-    expect(nonEmptyTiles.length).toBeGreaterThan(0);
-    nonEmptyTiles.forEach((tile) => {
-      expect(tile.imagePath).not.toBe('(unknown)');
-      expect(tile.imagePath.startsWith('source/tiles/')).toBe(true);
-    });
+  it('omits raster image metadata from tile definitions', () => {
+    const tiles = readMap().tilesets.flatMap((tileset) => tileset.tiles ?? []);
+    expect(tiles.length).toBeGreaterThan(0);
+    expect(tiles.some((tile) => 'image' in tile || 'imagewidth' in tile || 'imageheight' in tile)).toBe(false);
   });
 
   it('keeps canonical TSX collision metadata complete for each used demo tile id', () => {

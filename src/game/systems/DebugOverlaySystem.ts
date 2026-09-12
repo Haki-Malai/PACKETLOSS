@@ -196,7 +196,6 @@ export class DebugOverlaySystem {
     return [
       'Collision Debug',
       `tile: (${tilePosition.x}, ${tilePosition.y}) gid:${tile.gid} local:${tile.localId}`,
-      `image: ${tile.imagePath}`,
       `collides:${collision.collides} penGate:${collision.penGate} portal:${collision.portal}`,
       `edges: up:${collision.up} right:${collision.right} down:${collision.down} left:${collision.left}`,
       `transform: rot:${rotationSteps * 90}deg flipX:${tile.flipX} flipY:${tile.flipY}`,

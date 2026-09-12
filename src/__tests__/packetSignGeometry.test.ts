@@ -34,7 +34,7 @@ describe('extruded PACKETLOSS sign', () => {
     const originalMap = structuredClone(map);
     const grid = new CollisionGrid(map.tiles.map((row) => row.map((tile) => tile.collision)));
     const world = createWorld(map, grid, { x: 0, y: 0 });
-    const scene = new MazeScene(world, { getTileMask: () => undefined });
+    const scene = new MazeScene(world);
     scene.group.updateMatrixWorld(true);
     const signs = scene.group.children.filter((object) => object.name === 'sign-artwork');
     expect(signs).toHaveLength(1);
@@ -66,9 +66,7 @@ describe('extruded PACKETLOSS sign', () => {
     map.tiles[0][1].localId = 18;
     map.tiles[0][3].localId = 17;
     const world = createWorld(map, collisionGrid, { x: 0, y: 0 });
-    const scene = new MazeScene(world, {
-      getTileMask: () => ({ width: 1, height: 1, opaque: new Uint8Array([1]) }),
-    });
+    const scene = new MazeScene(world);
     const signs = scene.group.children.filter((object) => object.name === 'sign-artwork');
     expect(signs).toHaveLength(2);
     for (const [index, [left, right]] of [[0, 32], [48, 64]].entries()) {

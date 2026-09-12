@@ -25,7 +25,6 @@ function createMapFixture(collisionRows: CollisionTile[][]): { map: WorldMapData
       rawGid: 1,
       gid: 1,
       localId: 1,
-      imagePath: 'tile.png',
       rotation: 0,
       flipX: false,
       flipY: false,
@@ -42,7 +41,6 @@ function createMapFixture(collisionRows: CollisionTile[][]): { map: WorldMapData
     heightInPixels: height * TILE_SIZE,
     tiles,
     collisionByGid: new Map([[1, openTile()]]),
-    imageByGid: new Map([[1, 'tile.png']]),
     spawnObjects: [],
   };
 

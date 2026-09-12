@@ -15,14 +15,12 @@ describe('mapRuntimeConfig', () => {
   it('resolves runtime paths for default variant', () => {
     expect(resolveMapPathsForVariant('default')).toEqual({
       mapJsonPath: 'assets/mazes/default/maze.json',
-      tileBasePath: 'assets/mazes/default',
     });
   });
 
   it('resolves runtime paths for demo variant', () => {
     expect(resolveMapPathsForVariant('demo')).toEqual({
       mapJsonPath: 'assets/mazes/default/demo.json',
-      tileBasePath: 'assets/mazes/default',
     });
   });
 });

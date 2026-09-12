@@ -16,7 +16,7 @@ describe('HudOverlayAdapter', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders bottom status bar in mount and updates score/lives heart display from events', () => {
+  it('renders bottom status bar in mount and updates score/lives display from events', () => {
     const mount = fakeDocument.createElement('div');
     fakeDocument.body.appendChild(mount);
 
@@ -27,7 +27,6 @@ describe('HudOverlayAdapter', () => {
     const livesSection = mount.querySelector('[data-hud-lives]');
     const scoreValue = mount.querySelector('[data-hud-score-value]');
     const livesValue = mount.querySelector('[data-hud-lives-value]');
-    const livesIcons = mount.querySelector('[data-hud-lives-icons]');
 
     expect(container).not.toBeNull();
     expect(container?.classList.contains('bottom-0')).toBe(true);
@@ -36,16 +35,12 @@ describe('HudOverlayAdapter', () => {
     expect(livesSection).not.toBeNull();
     expect(scoreValue?.textContent).toBe('0');
     expect(livesValue?.textContent).toBe('3');
-    expect(livesIcons?.children.length).toBe(3);
-    expect(livesIcons?.children[0]?.src).toBe('assets/sprites/Heart.png');
 
     addScore(120);
     setLives(2);
 
     expect(scoreValue?.textContent).toBe('120');
     expect(livesValue?.textContent).toBe('2');
-    expect(livesIcons?.children.length).toBe(2);
-    expect(livesIcons?.children[1]?.src).toBe('assets/sprites/Heart.png');
 
     hud.destroy();
     expect(mount.querySelector('[data-game-hud]')).toBeNull();

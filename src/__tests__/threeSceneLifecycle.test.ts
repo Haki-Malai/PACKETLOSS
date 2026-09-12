@@ -15,7 +15,6 @@ import { GhostEntity } from '../game/domain/entities/GhostEntity';
 import { PacketEntity } from '../game/domain/entities/PacketEntity';
 import { CollisionGrid, createEmptyCollisionTile } from '../game/domain/world/CollisionGrid';
 import { WorldState, type WorldMapData } from '../game/domain/world/WorldState';
-import type { MazeAssets } from '../game/infrastructure/three/MazeScene';
 import { CollectibleSystem } from '../game/systems/CollectibleSystem';
 import { RenderSystem } from '../game/systems/RenderSystem';
 
@@ -26,7 +25,6 @@ function createSceneHarness() {
     rawGid: 1,
     gid: 1,
     localId: x === 1 && y === 1 ? 16 : x === 1 && y === 2 ? 17 : 1,
-    imagePath: x === 0 && y === 0 ? 'wall.png' : 'open.png',
     rotation: 0,
     flipX: false,
     flipY: false,
@@ -43,7 +41,6 @@ function createSceneHarness() {
     heightInPixels: 48,
     tiles,
     collisionByGid: new Map(),
-    imageByGid: new Map(),
     spawnObjects: [],
     collectibleObjects: [
       { type: 'pellet', x: 8, y: 24 },
@@ -67,9 +64,6 @@ function createSceneHarness() {
     ghosts: [ghost],
     ghostJailBounds: { minX: 1, maxX: 2, y: 1 },
   });
-  const mazeAssets: MazeAssets = {
-    getTileMask: (path) => ({ width: 16, height: 16, opaque: new Uint8Array(256).fill(path === 'wall.png' ? 1 : 0) }),
-  };
   const camera = new Camera3D();
   camera.setBounds(64, 48);
   camera.setZoom(5);
@@ -78,7 +72,7 @@ function createSceneHarness() {
   camera.snapToFollowTarget();
   const renderer = { pixelRatio: 1, render: vi.fn(), dispose: vi.fn() };
   const collectibles = new CollectibleSystem(world);
-  const system = new RenderSystem(world, renderer, camera, mazeAssets, collectibles);
+  const system = new RenderSystem(world, renderer, camera, collectibles);
   return { world, ghost, camera, renderer, collectibles, system };
 }
 

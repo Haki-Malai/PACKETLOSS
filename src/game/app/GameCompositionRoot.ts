@@ -11,7 +11,6 @@ import { PortalService } from '../domain/services/PortalService';
 import { TilePosition } from '../domain/valueObjects/TilePosition';
 import { CollisionGrid } from '../domain/world/CollisionGrid';
 import { WorldState } from '../domain/world/WorldState';
-import { AssetCatalog } from '../infrastructure/assets/AssetCatalog';
 import { BrowserInputAdapter } from '../infrastructure/adapters/BrowserInputAdapter';
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { TimerSchedulerAdapter } from '../infrastructure/adapters/TimerSchedulerAdapter';
@@ -22,7 +21,7 @@ import { CameraSystem } from '../systems/CameraSystem';
 import { CollectibleSystem } from '../systems/CollectibleSystem';
 import { DebugOverlaySystem } from '../systems/DebugOverlaySystem';
 import { GhostMovementSystem } from '../systems/GhostMovementSystem';
-import { GhostPacketCollisionSystem, SpriteMaskProvider } from '../systems/GhostPacketCollisionSystem';
+import { GhostPacketCollisionSystem } from '../systems/GhostPacketCollisionSystem';
 import { GhostReleaseSystem } from '../systems/GhostReleaseSystem';
 import { HudSystem } from '../systems/HudSystem';
 import { InputSystem } from '../systems/InputSystem';
@@ -51,17 +50,12 @@ export class GameCompositionRoot {
     }
 
     const mapRepository = new TiledMapRepository();
-    const assets = new AssetCatalog();
-
     const rng = toRandomSource(this.options.rng ?? Math.random);
     const mapVariant = this.options.mapVariant ?? 'default';
-    const { mapJsonPath, tileBasePath } = resolveMapPathsForVariant(mapVariant);
+    const { mapJsonPath } = resolveMapPathsForVariant(mapVariant);
     const map = await this.loadMapForVariant(mapRepository, mapVariant, mapJsonPath);
     signal?.throwIfAborted();
     const tileSize = map.tileWidth || TILE_SIZE;
-    await assets.loadForMap(map, tileBasePath);
-    // A replaced game must not reset shared state or allocate a new scene after loading.
-    signal?.throwIfAborted();
 
     const canvas = document.createElement('canvas');
     canvas.className = 'block h-full w-full touch-none transition-[filter] duration-200 ease-out';
@@ -131,18 +125,7 @@ export class GameCompositionRoot {
     const packetSystem = new PacketMovementSystem(world, movementRules, portalService);
     const ghostReleaseSystem = new GhostReleaseSystem(world, movementRules, jailService, scheduler, rng);
     const ghostMovementSystem = new GhostMovementSystem(world, movementRules, ghostDecisions, portalService, rng);
-    const spriteMaskProvider: SpriteMaskProvider = {
-      getPacketMask: (frame, width, height, alphaThreshold) =>
-        assets.getSpriteMask('packet', frame, width, height, alphaThreshold),
-      getGhostMask: (key, frame, width, height, alphaThreshold) =>
-        assets.getSpriteMask(key, frame, width, height, alphaThreshold),
-    };
-    const ghostPacketCollisionSystem = new GhostPacketCollisionSystem(
-      world,
-      movementRules,
-      SPEED.ghost,
-      spriteMaskProvider,
-    );
+    const ghostPacketCollisionSystem = new GhostPacketCollisionSystem(world, movementRules, SPEED.ghost);
     const animationSystem = new AnimationSystem(world, SPEED.ghost);
     const cameraSystem = new CameraSystem(world, camera, renderer, canvas);
     const collectibleSystem = new CollectibleSystem(world);
@@ -151,7 +134,7 @@ export class GameCompositionRoot {
     const debugSystem = new DebugOverlaySystem(world, camera);
     let renderSystem: RenderSystem;
     try {
-      renderSystem = new RenderSystem(world, renderer, camera, assets, collectibleSystem);
+      renderSystem = new RenderSystem(world, renderer, camera, collectibleSystem);
     } catch (error) {
       input.destroy();
       renderer.dispose();

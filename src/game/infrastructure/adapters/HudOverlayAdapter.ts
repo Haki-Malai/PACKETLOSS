@@ -4,7 +4,6 @@ export class HudOverlayAdapter {
   private readonly container: HTMLDivElement;
   private readonly scoreText: HTMLSpanElement;
   private readonly livesCountText: HTMLSpanElement;
-  private readonly livesIcons: HTMLDivElement;
   private readonly onScoreChanged: (_score: number) => void;
   private readonly onLivesChanged: (_lives: number) => void;
 
@@ -68,20 +67,13 @@ export class HudOverlayAdapter {
     livesLabel.style.color = '#a1a1aa';
     livesLabel.textContent = 'Lives';
 
-    this.livesIcons = document.createElement('div');
-    this.livesIcons.className = 'flex items-center gap-1';
-    this.livesIcons.style.display = 'flex';
-    this.livesIcons.style.alignItems = 'center';
-    this.livesIcons.style.gap = '0.25rem';
-    this.livesIcons.setAttribute('data-hud-lives-icons', 'true');
-
     this.livesCountText = document.createElement('span');
     this.livesCountText.className = 'tabular-nums text-zinc-300';
     this.livesCountText.style.color = '#d4d4d8';
     this.livesCountText.style.fontVariantNumeric = 'tabular-nums';
     this.livesCountText.setAttribute('data-hud-lives-value', 'true');
 
-    livesSection.append(livesLabel, this.livesIcons, this.livesCountText);
+    livesSection.append(livesLabel, this.livesCountText);
     this.container.append(scoreSection, livesSection);
 
     const state = getGameState();
@@ -115,22 +107,5 @@ export class HudOverlayAdapter {
   private setLives(lives: number): void {
     const safeLives = Math.max(0, Math.floor(lives));
     this.livesCountText.textContent = String(safeLives);
-    this.livesIcons.replaceChildren();
-
-    for (let i = 0; i < safeLives; i += 1) {
-      this.livesIcons.appendChild(this.createHeartIcon());
-    }
-  }
-
-  private createHeartIcon(): HTMLImageElement {
-    const icon = document.createElement('img');
-    icon.src = 'assets/sprites/Heart.png';
-    icon.alt = '';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.className = 'h-4 w-4 object-contain';
-    icon.style.width = '16px';
-    icon.style.height = '16px';
-    icon.style.objectFit = 'contain';
-    return icon;
   }
 }

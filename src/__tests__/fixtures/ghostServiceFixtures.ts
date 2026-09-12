@@ -35,7 +35,6 @@ export function makeMap(grid: CollisionTile[][], ghostHome?: WorldMapData['ghost
         rawGid: 0,
         gid: null,
         localId: null,
-        imagePath: '(empty)',
         rotation: 0,
         flipX: false,
         flipY: false,
@@ -43,7 +42,6 @@ export function makeMap(grid: CollisionTile[][], ghostHome?: WorldMapData['ghost
       })),
     ),
     collisionByGid: new Map(),
-    imageByGid: new Map(),
     spawnObjects: [],
     packetSpawn: {
       type: 'packet',

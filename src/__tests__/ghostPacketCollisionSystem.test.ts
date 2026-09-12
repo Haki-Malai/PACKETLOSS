@@ -49,7 +49,7 @@ describe('GhostPacketCollisionSystem', () => {
     }
   });
 
-  it('applies life loss when adjacent-tile sprites overlap in world space', () => {
+  it('applies life loss when adjacent-tile bodies overlap in world space', () => {
     const harness = new MechanicsDomainHarness({ seed: 4111, fixture: 'default-map', ghostCount: 1, autoStartSystems: false });
 
     try {

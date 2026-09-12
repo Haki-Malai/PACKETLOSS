@@ -37,4 +37,4 @@ After editing its Tiled map, run `pnpm map:demo:convert` to regenerate the demo 
 - `src/main.ts` starts the game.
 - `src/engine/` contains the loop, camera, input, timers, and tweens.
 - `src/game/` contains gameplay logic, runtime wiring, map loading, Three.js presentation, and UI integration.
-- `public/assets/` contains sprites, fonts, and maze data.
+- `public/assets/` contains fonts and maze data.

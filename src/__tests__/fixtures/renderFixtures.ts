@@ -5,7 +5,6 @@ import { PacketEntity } from '../../game/domain/entities/PacketEntity';
 import { GhostJailService } from '../../game/domain/services/GhostJailService';
 import { RenderSystem } from '../../game/systems/RenderSystem';
 import type { ThreeRendererAdapter } from '../../game/infrastructure/adapters/ThreeRendererAdapter';
-import type { MazeAssets } from '../../game/infrastructure/three/MazeScene';
 import { CollectibleSystem } from '../../game/systems/CollectibleSystem';
 import { CollisionGrid, CollisionTile, createEmptyCollisionTile } from '../../game/domain/world/CollisionGrid';
 import { WorldMapData, WorldState, WorldTile } from '../../game/domain/world/WorldState';
@@ -31,7 +30,6 @@ export function createMapFixture(collisionRows: CollisionTile[][]): {
       rawGid: 1,
       gid: 1,
       localId: 1,
-      imagePath: 'tile.png',
       rotation: 0,
       flipX: false,
       flipY: false,
@@ -48,7 +46,6 @@ export function createMapFixture(collisionRows: CollisionTile[][]): {
     heightInPixels: height * 16,
     tiles,
     collisionByGid: new Map([[1, createCollisionTile()]]),
-    imageByGid: new Map([[1, 'tile.png']]),
     spawnObjects: [],
   };
 
@@ -102,10 +99,6 @@ export function createRenderHarness(options: RenderHarnessOptions = {}) {
     dispose: vi.fn<ThreeRendererAdapter['dispose']>(),
   };
 
-  const assets: MazeAssets = {
-    getTileMask: () => undefined,
-  };
-
   const camera = new Camera3D();
   camera.setBounds(world.map.widthInPixels, world.map.heightInPixels);
   camera.setZoom(CAMERA.zoom);
@@ -113,7 +106,7 @@ export function createRenderHarness(options: RenderHarnessOptions = {}) {
   camera.startFollow(world.packet, CAMERA.followLerp.x, CAMERA.followLerp.y);
   camera.snapToFollowTarget();
   const collectibles = new CollectibleSystem(world);
-  const renderSystem = new RenderSystem(world, renderer, camera, assets, collectibles);
+  const renderSystem = new RenderSystem(world, renderer, camera, collectibles);
 
   return {
     world,

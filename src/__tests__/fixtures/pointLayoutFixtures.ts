@@ -32,7 +32,6 @@ export function createMapFixture(collisionRows: CollisionTile[][], rawGidRows?: 
         rawGid,
         gid,
         localId: gid,
-        imagePath: gid === null ? '(empty)' : 'tile.png',
         rotation: 0,
         flipX: false,
         flipY: false,
@@ -60,7 +59,6 @@ export function createMapFixture(collisionRows: CollisionTile[][], rawGidRows?: 
     heightInPixels: height * 16,
     tiles,
     collisionByGid,
-    imageByGid: new Map(),
     spawnObjects: [],
   };
 
