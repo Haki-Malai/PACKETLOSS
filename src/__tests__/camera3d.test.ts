@@ -21,7 +21,7 @@ function project(camera: Camera3D, x: number, z: number, width = 800, height = 6
 }
 
 describe('Camera3D', () => {
-  it('starts centered on Pac-Man with north up, the same horizontal scale, and a slight tilt', () => {
+  it('starts centered on Packet with north up, the same horizontal scale, and a slight tilt', () => {
     const camera = createCamera();
     const center = project(camera, 400, 300);
     const east = project(camera, 416, 300);
@@ -51,7 +51,7 @@ describe('Camera3D', () => {
     expect(project(camera, 400, 316).x).toBeCloseTo(project(camera, 400, 300).x);
   });
 
-  it('holds the same angle while following Pac-Man across the maze', () => {
+  it('holds the same angle while following Packet across the maze', () => {
     const target = { x: 400, y: 300 };
     const camera = createCamera(target);
     const orientation = camera.camera.quaternion.clone();

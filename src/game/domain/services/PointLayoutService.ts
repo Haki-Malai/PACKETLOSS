@@ -143,7 +143,7 @@ function getNavigablePlayableNeighbors(
       return;
     }
 
-    if (!canMove(direction, 0, 0, collisionTiles, tileSize, 'pacman')) {
+    if (!canMove(direction, 0, 0, collisionTiles, tileSize, 'packet')) {
       return;
     }
 

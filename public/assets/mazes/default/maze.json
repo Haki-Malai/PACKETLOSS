@@ -74,9 +74,9 @@
       "objects": [
         {
           "id": 1,
-          "name": "pacman",
+          "name": "packet",
           "rotation": 0,
-          "type": "pacman",
+          "type": "packet",
           "visible": true,
           "x": 410,
           "y": 426,

@@ -396,7 +396,7 @@ export function parseTiledMap(map: TiledMap): WorldMapData {
     portalPairs,
     spawnObjects,
     collectibleObjects,
-    pacmanSpawn: spawnObjects.find((object) => object.type === 'pacman'),
+    packetSpawn: spawnObjects.find((object) => object.type === 'packet'),
     ghostHome: spawnObjects.find((object) => object.type === 'ghost-home'),
   };
 }

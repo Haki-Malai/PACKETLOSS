@@ -1,4 +1,4 @@
-# Working on Pacman
+# Working on PACKETLOSS
 
 - Read `docs/PRODUCT.md` for gameplay and scope, and `docs/ARCHITECTURE.md` before changing runtime structure.
 - Keep changes small, readable, and limited to the request.

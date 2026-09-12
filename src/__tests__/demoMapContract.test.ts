@@ -217,7 +217,7 @@ describe('demo.json contract', () => {
     expect(hasPair(first.portalPairs, { x: 6, y: 1 }, { x: 6, y: 11 })).toBe(true);
   });
 
-  it('infers pacman and jail anchors when spawn objects are missing', () => {
+  it('infers packet and jail anchors when spawn objects are missing', () => {
     const parsed = parseTiledMap(readMap());
     const jailService = new GhostJailService();
     const fallback = {
@@ -225,14 +225,14 @@ describe('demo.json contract', () => {
       y: Math.floor(parsed.height / 2),
     };
 
-    expect(parsed.pacmanSpawn).toBeUndefined();
+    expect(parsed.packetSpawn).toBeUndefined();
     expect(parsed.ghostHome).toBeUndefined();
 
-    const pacmanTile = jailService.resolveSpawnTile(parsed.pacmanSpawn, fallback, parsed);
-    const jailBounds = jailService.resolveGhostJailBounds(parsed, pacmanTile);
+    const packetTile = jailService.resolveSpawnTile(parsed.packetSpawn, fallback, parsed);
+    const jailBounds = jailService.resolveGhostJailBounds(parsed, packetTile);
 
     expect(jailBounds).toEqual({ minX: 4, maxX: 8, y: 8 });
-    expect(pacmanTile).toEqual({ x: 6, y: 7 });
+    expect(packetTile).toEqual({ x: 6, y: 7 });
   });
 
   it('blocks representative interior movement edges from tile center', () => {
@@ -242,7 +242,7 @@ describe('demo.json contract', () => {
     const blockedRight = collisionGrid.getTilesAt({ x: 2, y: 2 });
     const blockedDown = collisionGrid.getTilesAt({ x: 4, y: 4 });
 
-    expect(canMove('right', 0, 0, blockedRight, DEFAULT_TILE_SIZE, 'pacman')).toBe(false);
-    expect(canMove('down', 0, 0, blockedDown, DEFAULT_TILE_SIZE, 'pacman')).toBe(false);
+    expect(canMove('right', 0, 0, blockedRight, DEFAULT_TILE_SIZE, 'packet')).toBe(false);
+    expect(canMove('down', 0, 0, blockedDown, DEFAULT_TILE_SIZE, 'packet')).toBe(false);
   });
 });

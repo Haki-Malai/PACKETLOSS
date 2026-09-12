@@ -13,8 +13,8 @@ The project moved from a single large runtime file to a layered OOP structure fo
 The runtime is now composed from small, explicit systems operating on a shared `WorldState`.
 
 Entrypoint flow:
-1. `src/main.ts` creates a game instance through `createPacmanGame`.
-2. `createPacmanGame` builds a `GameRuntime` with `GameCompositionRoot`.
+1. `src/main.ts` creates a game instance through `createPacketGame`.
+2. `createPacketGame` builds a `GameRuntime` with `GameCompositionRoot`.
 3. `GameCompositionRoot` wires map/assets/adapters/domain services/systems.
 4. `GameRuntime` drives ordered updates and rendering via fixed-step loop.
 
@@ -22,7 +22,7 @@ Entrypoint flow:
 ```text
 src/game/
   app/
-    createPacmanGame.ts
+    createPacketGame.ts
     GameRuntime.ts
     GameCompositionRoot.ts
     contracts.ts
@@ -46,27 +46,27 @@ src/game/
 
 ### `app`
 Composition and lifecycle orchestration.
-- `createPacmanGame.ts`: public API factory (`start`, `pause`, `resume`, `destroy`).
+- `createPacketGame.ts`: public API factory (`start`, `pause`, `resume`, `destroy`).
 - `GameRuntime.ts`: fixed-step runtime loop and system execution. Concurrent `start()` calls share initialization; destruction cancels pending startup before it can mount a scene or reset shared game state. Composition checks cancellation after map and asset loading, mounts only after scene construction, and removes only its owned canvas. A failed system startup releases the partial composition and listeners before allowing a retry.
 - `GameCompositionRoot.ts`: composition root; builds world + systems + adapters.
 - `contracts.ts`: runtime and system interfaces.
 
 ### `domain`
 Gameplay model and pure logic.
-- `entities`: `PacmanEntity`, `GhostEntity`.
+- `entities`: `PacketEntity`, `GhostEntity`.
 - `valueObjects`: `Direction`, `TilePosition`, `MovementProgress`.
 - `world`: `WorldState`, `CollisionGrid`, map/world data types.
 - `services`: movement rules, ghost decisions, ghost jail behavior, portal behavior.
 - `GhostJailLayout` holds map-based jail and spawn inference; `GhostJailService` keeps its existing public operations.
-- Pixel-mask collision checks retain the original sprite masks, prepare transforms once per sample, and reuse Pac-Man's preparation within one collision search. The 3D meshes do not change gameplay collision coordinates or rules.
+- Pixel-mask collision checks retain the original sprite masks, prepare transforms once per sample, and reuse Packet's preparation within one collision search. The 3D meshes do not change gameplay collision coordinates or rules.
 
 ### `systems`
 Frame-by-frame behavior execution.
 - `InputSystem`
-- `PacmanMovementSystem`
+- `PacketMovementSystem`
 - `GhostReleaseSystem`
 - `GhostMovementSystem`
-- `GhostPacmanCollisionSystem`
+- `GhostPacketCollisionSystem`
 - `AnimationSystem`
 - `CameraSystem`
 - `CollectibleSystem`
@@ -84,7 +84,7 @@ Browser/engine integration and data loading.
 - `ThreeRendererAdapter` owns the WebGL renderer and viewport sizing. It renders directly to the antialiased canvas with sRGB output and tone mapping, without bloom or intermediate postprocessing targets, and disposes the renderer on destruction.
 - `RenderSystem` owns a Three.js scene with `MazeScene`, procedural `ArcadeAssets`, and `CollisionDebugScene`, and disposes their GPU resources when destroyed. It reads the injected `CollectibleSystem`; only the update pipeline advances collection and effect timers. `MazeScene` consumes tile masks.
 - `MazeGeometry` unions transformed native tile alpha masks before tracing and extruding wall contours. This preserves thin rails, corridor clearance, holes, and portal openings without treating `collides` as solid tile occupancy. The 12-unit-high walls have a square profile with dark faces and colored top, bottom, and main vertical contour edges. Top and bottom outlines share the authored contour, and straight side outlines meet the top directly at right angles; diagonal contacts share one vertical connection. Authored corner shapes retain side connections at long-edge ends while intermediate single-pixel stair-steps omit vertical stripes. `MazeScene` batches the outline strips into static instanced meshes with normal depth testing and unboosted colors, and supplies the floor, prison, and extruded vector lettering separately.
-- `buildMazePenMask` selects prison tiles (local ID 16) and uses the same alpha-mask transformation/union code as the walls. The complete original PNG pattern is extruded and outlined at the authored tile positions, preserving joins and rectangular holes. No entrance is carved into the prison or adjoining maze rails; the bars are presentation only and gameplay pass-through rules remain unchanged. `PacmanSignGeometry` uses the shared wall height and square profile, with no plaque or bevel; edges are extracted from the glyph geometry, including letter holes. Maze walls, the prison, and lettering share a material factory and outline-strip renderer, differing in their face and outline colors (cyan, magenta, and gold respectively). None uses emissive materials.
+- `buildMazePenMask` selects prison tiles (local ID 16) and uses the same alpha-mask transformation/union code as the walls. The complete original PNG pattern is extruded and outlined at the authored tile positions, preserving joins and rectangular holes. The wall mask and faces remain intact. Wall outline generation uses the prison mask to omit touching edge segments and vertical seams, preserving outside pink edges. Prison outline generation skips exterior contours, removing only the cyan bounding box while retaining internal opening contours and all bar faces. No entrance is carved into the prison bars; gameplay collision masks and pass-through rules remain unchanged. `PacketSignGeometry` uses the shared wall height and square profile, with no plaque or bevel; edges are extracted from the glyph geometry, including letter holes. Maze walls, the prison, and lettering share a material factory and outline-strip renderer, differing in their face and outline colors (pink, cyan, and gold respectively). None uses emissive materials.
 - Character meshes and instanced pellets share reusable geometry and materials. Pellet transforms refresh only when the collectible count changes, avoiding per-frame array copies. Collision markings render in the 3D scene; `DebugOverlaySystem` owns the HTML debug panels.
 
 ### `shared`
@@ -108,10 +108,10 @@ Before each active fixed update, render systems capture presentation history bef
 
 Update order (fixed):
 1. `InputSystem`
-2. `PacmanMovementSystem`
+2. `PacketMovementSystem`
 3. `GhostReleaseSystem`
 4. `GhostMovementSystem`
-5. `GhostPacmanCollisionSystem`
+5. `GhostPacketCollisionSystem`
 6. `AnimationSystem`
 7. `CameraSystem`
 8. `CollectibleSystem`
@@ -126,7 +126,7 @@ Render order:
 4. HUD and pause UI remain DOM-based.
 
 ## Camera Behavior Contract
-- `CameraSystem.start()` configures bounds, zoom, follow target, and viewport, then calls a one-time snap so the first gameplay frame is centered on Pac-Man instead of animating in from `(0, 0)`.
+- `CameraSystem.start()` configures bounds, zoom, follow target, and viewport, then calls a one-time snap so the first gameplay frame is centered on Packet instead of animating in from `(0, 0)`.
 - After startup, camera movement remains lerp-based via `CAMERA.followLerp` and updates each frame in `CameraSystem.update()`.
 - `Camera3D` wraps the existing `Camera2D` follow tracker and presents an orthographic camera with a fixed 20-degree forward tilt and 5-degree lean from the right, with north as its up reference. Projection correction cancels the side lean's ground-plane shear and horizontal compression, keeping maze rows and columns aligned with the screen at the original scale while height reveals wall sides. Bounds, zoom, and viewport changes rebuild this correction and the inverse projection used for ground-plane ray picking.
 - Rendering interpolates the camera using the fixed-step loop's alpha, then rounds its displayed translation to physical pixels using the renderer's capped DPR, integer drawing-buffer dimensions, and tilt-adjusted ground scale. Follow simulation state remains continuous; exact boundary stops and small-world centering are preserved. Pointer picking uses this displayed camera transform.

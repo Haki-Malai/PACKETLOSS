@@ -94,7 +94,7 @@ export function pointer(overrides: Partial<PointerState> = {}): PointerState {
 
 function createWorld(): WorldState {
   return {
-    pacman: {
+    packet: {
       direction: {
         current: 'left',
         next: 'left',

@@ -1,0 +1,158 @@
+import { PACKET_DEATH_RECOVERY, PACKET_PORTAL_BLINK, SPEED } from '../../config/constants';
+import { PortalService } from '../domain/services/PortalService';
+import { MovementRules } from '../domain/services/MovementRules';
+import { WorldState } from '../domain/world/WorldState';
+import { resolveNextBlinkToggleAt } from '../shared/blinkCadence';
+
+export class PacketMovementSystem {
+  constructor(
+    private readonly world: WorldState,
+    private readonly movementRules: MovementRules,
+    private readonly portalService: PortalService,
+  ) {}
+
+  update(deltaMs = 0): void {
+    this.updatePortalBlink(deltaMs);
+    this.updateDeathRecovery(deltaMs);
+    this.updateDirectionVisuals();
+
+    const collisionTiles = this.world.collisionGrid.getTilesAt(this.world.packet.tile);
+    this.movementRules.applyBufferedDirection(this.world.packet, collisionTiles);
+    this.applyPortalTurnOverride(collisionTiles);
+
+    const canMoveCurrent = this.movementRules.canMove(
+      this.world.packet.direction.current,
+      this.world.packet.moved.y,
+      this.world.packet.moved.x,
+      collisionTiles,
+    );
+    const canAdvanceOutward = this.portalService.canAdvanceOutward(this.world.packet, this.world.collisionGrid);
+
+    if (canMoveCurrent || canAdvanceOutward) {
+      this.movementRules.advanceEntity(this.world.packet, this.world.packet.direction.current, SPEED.packet);
+    }
+
+    const teleported = this.portalService.tryTeleport(
+      this.world.packet,
+      this.world.collisionGrid,
+      this.world.tick,
+      this.world.tileSize,
+    );
+    if (teleported) {
+      this.world.packet.portalBlinkRemainingMs = PACKET_PORTAL_BLINK.durationMs;
+      this.world.packet.portalBlinkElapsedMs = 0;
+    }
+
+    this.movementRules.syncEntityPosition(this.world.packet);
+  }
+
+  private updatePortalBlink(deltaMs: number): void {
+    const remaining = this.world.packet.portalBlinkRemainingMs ?? 0;
+    if (remaining <= 0) {
+      this.world.packet.portalBlinkRemainingMs = 0;
+      this.world.packet.portalBlinkElapsedMs = 0;
+      return;
+    }
+
+    const safeDelta = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
+    const nextRemaining = Math.max(0, remaining - safeDelta);
+    this.world.packet.portalBlinkRemainingMs = nextRemaining;
+
+    if (nextRemaining <= 0) {
+      this.world.packet.portalBlinkElapsedMs = 0;
+      return;
+    }
+
+    const elapsed = this.world.packet.portalBlinkElapsedMs ?? 0;
+    this.world.packet.portalBlinkElapsedMs = elapsed + safeDelta;
+  }
+
+  private updateDeathRecovery(deltaMs: number): void {
+    const remaining = this.world.packet.deathRecoveryRemainingMs ?? 0;
+    if (remaining <= 0) {
+      this.world.packet.deathRecoveryRemainingMs = 0;
+      this.world.packet.deathRecoveryElapsedMs = 0;
+      this.world.packet.deathRecoveryNextToggleAtMs = 0;
+      this.world.packet.deathRecoveryVisible = true;
+      return;
+    }
+
+    const safeDelta = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
+    const elapsedBefore = this.world.packet.deathRecoveryElapsedMs ?? 0;
+    const elapsedAfter = Math.min(PACKET_DEATH_RECOVERY.durationMs, elapsedBefore + safeDelta);
+    const nextRemaining = Math.max(0, remaining - safeDelta);
+    this.world.packet.deathRecoveryElapsedMs = elapsedAfter;
+    this.world.packet.deathRecoveryRemainingMs = nextRemaining;
+
+    if (nextRemaining <= 0) {
+      this.world.packet.deathRecoveryElapsedMs = 0;
+      this.world.packet.deathRecoveryNextToggleAtMs = 0;
+      this.world.packet.deathRecoveryVisible = true;
+      return;
+    }
+
+    let nextToggleAtMs = this.world.packet.deathRecoveryNextToggleAtMs;
+    if (!Number.isFinite(nextToggleAtMs) || nextToggleAtMs <= 0) {
+      nextToggleAtMs = resolveNextBlinkToggleAt(elapsedBefore, PACKET_DEATH_RECOVERY.durationMs, PACKET_DEATH_RECOVERY);
+    }
+
+    while (nextToggleAtMs > 0 && elapsedAfter >= nextToggleAtMs) {
+      this.world.packet.deathRecoveryVisible = !this.world.packet.deathRecoveryVisible;
+      nextToggleAtMs = resolveNextBlinkToggleAt(nextToggleAtMs, PACKET_DEATH_RECOVERY.durationMs, PACKET_DEATH_RECOVERY);
+    }
+
+    this.world.packet.deathRecoveryNextToggleAtMs = nextToggleAtMs;
+  }
+
+  private updateDirectionVisuals(): void {
+    if (this.world.packet.direction.current === 'right') {
+      this.world.packet.angle = 0;
+      this.world.packet.flipY = false;
+      return;
+    }
+
+    if (this.world.packet.direction.current === 'left') {
+      this.world.packet.angle = 180;
+      this.world.packet.flipY = true;
+      return;
+    }
+
+    if (this.world.packet.direction.current === 'up') {
+      this.world.packet.angle = -90;
+      return;
+    }
+
+    if (this.world.packet.direction.current === 'down') {
+      this.world.packet.angle = 90;
+    }
+  }
+
+  private applyPortalTurnOverride(collisionTiles: ReturnType<WorldState['collisionGrid']['getTilesAt']>): void {
+    if (this.world.packet.moved.x !== 0 || this.world.packet.moved.y !== 0) {
+      return;
+    }
+
+    const currentDirection = this.world.packet.direction.current;
+    const nextDirection = this.world.packet.direction.next;
+    if (nextDirection === currentDirection) {
+      return;
+    }
+
+    if (this.movementRules.canMove(nextDirection, this.world.packet.moved.y, this.world.packet.moved.x, collisionTiles)) {
+      return;
+    }
+
+    const canTurnIntoPortalOutward = this.portalService.canAdvanceOutward(
+      {
+        tile: this.world.packet.tile,
+        moved: this.world.packet.moved,
+        direction: nextDirection,
+      },
+      this.world.collisionGrid,
+    );
+
+    if (canTurnIntoPortalOutward) {
+      this.world.packet.direction.current = nextDirection;
+    }
+  }
+}

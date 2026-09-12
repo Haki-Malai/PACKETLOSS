@@ -64,7 +64,7 @@ export class CollectibleSystem {
   }
 
   update(deltaMs: number): void {
-    this.consumePointAtPacmanTile();
+    this.consumePointAtPacketTile();
     this.updateEatEffects(deltaMs);
   }
 
@@ -80,10 +80,10 @@ export class CollectibleSystem {
     return this.eatEffects;
   }
 
-  private consumePointAtPacmanTile(): void {
-    const key = tileKey(this.world.pacman.tile);
+  private consumePointAtPacketTile(): void {
+    const key = tileKey(this.world.packet.tile);
     const point = this.pointsByTile.get(key);
-    if (!point || !this.isPacmanCenteredOnPoint(point)) {
+    if (!point || !this.isPacketCenteredOnPoint(point)) {
       return;
     }
 
@@ -94,7 +94,7 @@ export class CollectibleSystem {
     if (point.kind === 'power') {
       this.triggerScaredGhostWindow();
     }
-    this.triggerPacmanEatAnimation();
+    this.triggerPacketEatAnimation();
 
     const baseSize = point.kind === 'power' ? POWER_POINT_SIZE : BASE_POINT_SIZE;
     this.eatEffects.push({
@@ -107,8 +107,8 @@ export class CollectibleSystem {
     });
   }
 
-  private triggerPacmanEatAnimation(): void {
-    const playback = this.world.pacmanAnimation;
+  private triggerPacketEatAnimation(): void {
+    const playback = this.world.packetAnimation;
     playback.active = true;
     playback.frame = 0;
     playback.elapsedMs = 0;
@@ -120,17 +120,17 @@ export class CollectibleSystem {
     this.world.ghostEatChainCount = 0;
   }
 
-  private isPacmanCenteredOnPoint(point: CollectiblePoint): boolean {
+  private isPacketCenteredOnPoint(point: CollectiblePoint): boolean {
     if (
-      Math.abs(this.world.pacman.moved.x) > POINT_CONSUME_MOVEMENT_EPSILON ||
-      Math.abs(this.world.pacman.moved.y) > POINT_CONSUME_MOVEMENT_EPSILON
+      Math.abs(this.world.packet.moved.x) > POINT_CONSUME_MOVEMENT_EPSILON ||
+      Math.abs(this.world.packet.moved.y) > POINT_CONSUME_MOVEMENT_EPSILON
     ) {
       return false;
     }
 
     return (
-      Math.abs(this.world.pacman.x - point.x) <= POINT_CONSUME_POSITION_EPSILON &&
-      Math.abs(this.world.pacman.y - point.y) <= POINT_CONSUME_POSITION_EPSILON
+      Math.abs(this.world.packet.x - point.x) <= POINT_CONSUME_POSITION_EPSILON &&
+      Math.abs(this.world.packet.y - point.y) <= POINT_CONSUME_POSITION_EPSILON
     );
   }
 
@@ -189,7 +189,7 @@ export class CollectibleSystem {
     const pointLayout = buildPointLayout({
       map: this.world.map,
       collisionGrid: this.world.collisionGrid,
-      startTile: this.world.pacman.tile,
+      startTile: this.world.packet.tile,
       tileSize: this.world.tileSize,
     });
 

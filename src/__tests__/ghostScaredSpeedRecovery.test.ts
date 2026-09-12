@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SPEED, SPRITE_SIZE, TILE_SIZE } from '../config/constants';
 import { GhostEntity } from '../game/domain/entities/GhostEntity';
-import { PacmanEntity } from '../game/domain/entities/PacmanEntity';
+import { PacketEntity } from '../game/domain/entities/PacketEntity';
 import { GhostDecisionService } from '../game/domain/services/GhostDecisionService';
 import { MovementRules } from '../game/domain/services/MovementRules';
 import { PortalService } from '../game/domain/services/PortalService';
@@ -62,8 +62,8 @@ describe('ghost scared speed recovery', () => {
     const { map, collisionGrid } = createMapFixture(collisionRows);
     const movementRules = new MovementRules(TILE_SIZE);
 
-    const pacman = new PacmanEntity({ x: 1, y: 1 }, SPRITE_SIZE.pacman, SPRITE_SIZE.pacman);
-    movementRules.setEntityTile(pacman, { x: 1, y: 1 });
+    const packet = new PacketEntity({ x: 1, y: 1 }, SPRITE_SIZE.packet, SPRITE_SIZE.packet);
+    movementRules.setEntityTile(packet, { x: 1, y: 1 });
 
     const ghost = new GhostEntity({
       key: 'inky',
@@ -81,8 +81,8 @@ describe('ghost scared speed recovery', () => {
       map,
       tileSize: TILE_SIZE,
       collisionGrid,
-      pacmanSpawnTile: { x: 1, y: 1 },
-      pacman,
+      packetSpawnTile: { x: 1, y: 1 },
+      packet,
       ghosts: [ghost],
       ghostJailBounds: { minX: 1, maxX: 3, y: 1 },
     });

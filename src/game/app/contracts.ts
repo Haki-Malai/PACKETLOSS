@@ -3,7 +3,7 @@ import { BrowserInputAdapter } from '../infrastructure/adapters/BrowserInputAdap
 import { RendererViewport } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { TimerSchedulerAdapter } from '../infrastructure/adapters/TimerSchedulerAdapter';
 
-export interface PacmanGame {
+export interface PacketGame {
   start(): Promise<void>;
   pause(): void;
   resume(): void;

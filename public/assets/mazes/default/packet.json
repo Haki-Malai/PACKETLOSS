@@ -3,7 +3,7 @@
     "editorsettings": {
         "export": {
             "format": "json",
-            "target": "pacman.json"
+            "target": "packet.json"
         }
     },
     "height": 51,
@@ -68941,7 +68941,7 @@
                 {
                     "height": 0,
                     "id": 2197,
-                    "name": "pacman",
+                    "name": "packet",
                     "point": true,
                     "properties": [
                         {
@@ -68956,7 +68956,7 @@
                         }
                     ],
                     "rotation": 0,
-                    "type": "pacman",
+                    "type": "packet",
                     "visible": true,
                     "width": 0,
                     "x": 410,

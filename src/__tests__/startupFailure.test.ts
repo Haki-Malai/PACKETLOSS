@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeDocument } from './helpers/fakeDom';
 
 const start = vi.hoisted(() => vi.fn());
-vi.mock('../game/app/createPacmanGame', () => ({ createPacmanGame: () => ({ start }) }));
+vi.mock('../game/app/createPacketGame', () => ({ createPacketGame: () => ({ start }) }));
 
 describe('game startup', () => {
   afterEach(() => vi.unstubAllGlobals());

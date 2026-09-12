@@ -31,7 +31,7 @@ describe('CameraSystem', () => {
   function createSystem() {
     const world = {
       map: { widthInPixels: 448, heightInPixels: 496 },
-      pacman: { x: 96, y: 128 },
+      packet: { x: 96, y: 128 },
     };
     const camera = {
       setBounds: vi.fn(),
@@ -57,7 +57,7 @@ describe('CameraSystem', () => {
 
     expect(camera.setBounds).toHaveBeenCalledWith(world.map.widthInPixels, world.map.heightInPixels);
     expect(camera.setZoom).toHaveBeenCalledWith(CAMERA.zoom);
-    expect(camera.startFollow).toHaveBeenCalledWith(world.pacman, CAMERA.followLerp.x, CAMERA.followLerp.y);
+    expect(camera.startFollow).toHaveBeenCalledWith(world.packet, CAMERA.followLerp.x, CAMERA.followLerp.y);
     expect(renderer.resize).toHaveBeenCalledWith(1280, 720);
     expect(camera.setViewport).toHaveBeenCalledWith(canvas.width, canvas.height);
     expect(camera.snapToFollowTarget).toHaveBeenCalledOnce();

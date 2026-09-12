@@ -7,7 +7,7 @@ interface Glyph {
   holes?: readonly (readonly Point[])[];
 }
 
-const GLYPHS: Record<'P' | 'A' | 'C' | 'M' | 'N', Glyph> = {
+const GLYPHS: Record<'P' | 'A' | 'C' | 'K' | 'E' | 'T' | 'L' | 'O' | 'S', Glyph> = {
   P: {
     outline: [[0, 0], [0, 10], [6.5, 10], [8, 8.5], [8, 5.5], [6.5, 4], [2, 4], [2, 0]],
     holes: [[[2, 6], [6, 6], [6, 8], [2, 8]]],
@@ -19,20 +19,35 @@ const GLYPHS: Record<'P' | 'A' | 'C' | 'M' | 'N', Glyph> = {
   C: {
     outline: [[8, 1.5], [6.5, 0], [1.5, 0], [0, 1.5], [0, 8.5], [1.5, 10], [6.5, 10], [8, 8.5], [8, 7], [6, 7], [6, 8], [2, 8], [2, 2], [6, 2], [6, 3], [8, 3]],
   },
-  M: {
-    outline: [[0, 0], [0, 10], [2, 10], [4, 6.5], [6, 10], [8, 10], [8, 0], [6, 0], [6, 6.5], [4, 3], [2, 6.5], [2, 0]],
+  K: {
+    outline: [[0, 0], [0, 10], [2, 10], [2, 6], [6, 10], [8, 10], [4.5, 5.5], [8, 0], [5.5, 0], [3, 4], [2, 3], [2, 0]],
   },
-  N: {
-    outline: [[0, 0], [0, 10], [2, 10], [6, 3.5], [6, 10], [8, 10], [8, 0], [6, 0], [2, 6.5], [2, 0]],
+  E: {
+    outline: [[0, 0], [0, 10], [8, 10], [8, 8], [2, 8], [2, 6], [7, 6], [7, 4], [2, 4], [2, 2], [8, 2], [8, 0]],
+  },
+  T: {
+    outline: [[3, 0], [3, 8], [0, 8], [0, 10], [8, 10], [8, 8], [5, 8], [5, 0]],
+  },
+  L: {
+    outline: [[0, 0], [0, 10], [2, 10], [2, 2], [8, 2], [8, 0]],
+  },
+  O: {
+    outline: [[1.5, 0], [0, 1.5], [0, 8.5], [1.5, 10], [6.5, 10], [8, 8.5], [8, 1.5], [6.5, 0]],
+    holes: [[[2, 2], [6, 2], [6, 8], [2, 8]]],
+  },
+  S: {
+    outline: [[0, 1.5], [1.5, 0], [6.5, 0], [8, 1.5], [8, 4], [6.5, 5.5], [2, 5.5], [2, 8], [6, 8], [6, 7], [8, 7], [8, 8.5], [6.5, 10], [1.5, 10], [0, 8.5], [0, 6], [1.5, 4.5], [6, 4.5], [6, 2], [2, 2], [2, 3], [0, 3]],
   },
 };
 
+const WORDMARK = ['P', 'A', 'C', 'K', 'E', 'T', 'L', 'O', 'S', 'S'] as const;
+const WORDMARK_WIDTH = WORDMARK.length * 10 - 2;
+
 /** Horizontal lettering centered in its authored tile run, with the maze wall profile. */
-export function buildPacmanSignGeometry(width: number, height: number): ExtrudeGeometry {
-  const letters = ['P', 'A', 'C', 'M', 'A', 'N'] as const;
-  const scaleX = width / 58;
+export function buildPacketSignGeometry(width: number, height: number): ExtrudeGeometry {
+  const scaleX = width / WORDMARK_WIDTH;
   const scaleY = height / 10;
-  const shapes = letters.map((letter, index) => {
+  const shapes = WORDMARK.map((letter, index) => {
     const glyph = GLYPHS[letter];
     const addOutline = (path: Path, points: readonly Point[]): void => {
       points.forEach(([x, y], pointIndex) => {

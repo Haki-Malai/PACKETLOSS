@@ -89,17 +89,17 @@ describe('maze.json contract', () => {
     expect(spawnLayer?.type).toBe('objectgroup');
   });
 
-  it('contains pacman and ghost-home spawn objects with required numeric properties', () => {
+  it('contains packet and ghost-home spawn objects with required numeric properties', () => {
     const map = readMap();
     const spawnLayer = map.layers.find((layer) => layer.name === 'Spawns');
 
     expect(spawnLayer?.type).toBe('objectgroup');
     const objects = spawnLayer?.objects ?? [];
-    const pacmanSpawn = objects.find((object) => object.type === 'pacman');
+    const packetSpawn = objects.find((object) => object.type === 'packet');
     const ghostHome = objects.find((object) => object.type === 'ghost-home');
 
-    expect(typeof getPropertyValue(pacmanSpawn?.properties, 'gridX')).toBe('number');
-    expect(typeof getPropertyValue(pacmanSpawn?.properties, 'gridY')).toBe('number');
+    expect(typeof getPropertyValue(packetSpawn?.properties, 'gridX')).toBe('number');
+    expect(typeof getPropertyValue(packetSpawn?.properties, 'gridY')).toBe('number');
     expect(typeof getPropertyValue(ghostHome?.properties, 'startX')).toBe('number');
     expect(typeof getPropertyValue(ghostHome?.properties, 'endX')).toBe('number');
     expect(typeof getPropertyValue(ghostHome?.properties, 'gridY')).toBe('number');

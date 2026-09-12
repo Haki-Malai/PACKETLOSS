@@ -5,22 +5,25 @@ import { describe, expect, it } from 'vitest';
 import { CollisionGrid } from '../game/domain/world/CollisionGrid';
 import { parseTiledMap, type TiledMap } from '../game/infrastructure/map/TiledParser';
 import { MazeScene } from '../game/infrastructure/three/MazeScene';
-import { buildPacmanSignGeometry } from '../game/infrastructure/three/PacmanSignGeometry';
+import { buildPacketSignGeometry } from '../game/infrastructure/three/PacketSignGeometry';
 import { createCollisionTile, createMapFixture, createWorld } from './fixtures/renderFixtures';
 
-describe('extruded PACMAN sign', () => {
-  it('leaves counters and the C opening empty while all six glyph stems have solid faces', () => {
-    const geometry = buildPacmanSignGeometry(78, 14);
+describe('extruded PACKETLOSS sign', () => {
+  it('leaves counters and the C opening empty while all ten glyphs have solid faces', () => {
+    const geometry = buildPacketSignGeometry(78, 14);
     const material = new MeshBasicMaterial();
     const mesh = new Mesh(geometry, material);
     const ray = new Raycaster(new Vector3(), new Vector3(0, -1, 0));
     const hits = (letter: number, x: number, y: number): number => {
-      ray.ray.origin.set((letter * 10 + x) * 78 / 58 - 39, 20, 7 - y * 14 / 10);
+      ray.ray.origin.set((letter * 10 + x) * 78 / 98 - 39, 20, 7 - y * 14 / 10);
       return ray.intersectObject(mesh).length;
     };
-    for (const letter of [0, 1, 4]) expect(hits(letter, 4, 7)).toBe(0);
+    for (const letter of [0, 1, 7]) expect(hits(letter, 4, 7)).toBe(0);
     expect(hits(2, 7, 5)).toBe(0);
-    for (let letter = 0; letter < 6; letter += 1) expect(hits(letter, 1, 5)).toBeGreaterThan(0);
+    for (const [letter, x, y] of [
+      [0, 1, 5], [1, 1, 5], [2, 1, 5], [3, 1, 5], [4, 1, 5],
+      [5, 4, 5], [6, 1, 5], [7, 1, 5], [8, 1, 8], [9, 1, 8],
+    ]) expect(hits(letter, x, y)).toBeGreaterThan(0);
     geometry.dispose();
     material.dispose();
   });

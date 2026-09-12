@@ -51,7 +51,7 @@ export class InputSystem {
   update(): void {
     const keyboardDirection = this.getDirectionalKeyboardIntent();
     if (keyboardDirection) {
-      this.world.pacman.direction.next = keyboardDirection;
+      this.world.packet.direction.next = keyboardDirection;
     }
   }
 
@@ -126,7 +126,7 @@ export class InputSystem {
       return;
     }
 
-    this.world.pacman.direction.next = swipeDirection;
+    this.world.packet.direction.next = swipeDirection;
     gesture.hasCommittedSwipe = true;
   }
 

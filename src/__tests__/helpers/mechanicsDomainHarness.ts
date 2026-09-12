@@ -1,6 +1,6 @@
 import { SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { GhostEntity, GhostKey } from '../../game/domain/entities/GhostEntity';
-import { PacmanEntity } from '../../game/domain/entities/PacmanEntity';
+import { PacketEntity } from '../../game/domain/entities/PacketEntity';
 import { GhostDecisionService } from '../../game/domain/services/GhostDecisionService';
 import { GhostJailService, getObjectNumberProperty } from '../../game/domain/services/GhostJailService';
 import { MovementRules } from '../../game/domain/services/MovementRules';
@@ -12,9 +12,9 @@ import { TimerSchedulerAdapter } from '../../game/infrastructure/adapters/TimerS
 import { SeededRandom } from '../../game/shared/random/SeededRandom';
 import { AnimationSystem } from '../../game/systems/AnimationSystem';
 import { GhostMovementSystem } from '../../game/systems/GhostMovementSystem';
-import { GhostPacmanCollisionSystem } from '../../game/systems/GhostPacmanCollisionSystem';
+import { GhostPacketCollisionSystem } from '../../game/systems/GhostPacketCollisionSystem';
 import { GhostReleaseSystem } from '../../game/systems/GhostReleaseSystem';
-import { PacmanMovementSystem } from '../../game/systems/PacmanMovementSystem';
+import { PacketMovementSystem } from '../../game/systems/PacketMovementSystem';
 import { createHarnessMap, HarnessFixture } from './mechanicsDomainMapFactory';
 
 const DEFAULT_TICK_MS = 1000 / 60;
@@ -44,10 +44,10 @@ export class MechanicsDomainHarness {
   readonly jailService: GhostJailService;
   readonly portalService: PortalService;
   readonly decisions: GhostDecisionService;
-  readonly pacmanSystem: PacmanMovementSystem;
+  readonly packetSystem: PacketMovementSystem;
   readonly ghostReleaseSystem: GhostReleaseSystem;
   readonly ghostMovementSystem: GhostMovementSystem;
-  readonly ghostPacmanCollisionSystem: GhostPacmanCollisionSystem;
+  readonly ghostPacketCollisionSystem: GhostPacketCollisionSystem;
   readonly animationSystem: AnimationSystem;
 
   constructor(options: MechanicsDomainHarnessOptions = {}) {
@@ -67,14 +67,14 @@ export class MechanicsDomainHarness {
       y: Math.floor(safeMap.height / 2),
     };
 
-    const pacmanTile = this.jailService.resolveSpawnTile(safeMap.pacmanSpawn, centerTile, safeMap);
-    const ghostJailBounds = this.jailService.resolveGhostJailBounds(safeMap, pacmanTile);
+    const packetTile = this.jailService.resolveSpawnTile(safeMap.packetSpawn, centerTile, safeMap);
+    const ghostJailBounds = this.jailService.resolveGhostJailBounds(safeMap, packetTile);
 
     const ghostCountRaw = options.ghostCount ?? getObjectNumberProperty(safeMap.ghostHome, 'ghostCount') ?? 4;
     const ghostCount = Math.max(0, Math.round(ghostCountRaw));
 
-    const pacman = new PacmanEntity(pacmanTile, SPRITE_SIZE.pacman, SPRITE_SIZE.pacman);
-    this.movementRules.setEntityTile(pacman, pacmanTile);
+    const packet = new PacketEntity(packetTile, SPRITE_SIZE.packet, SPRITE_SIZE.packet);
+    this.movementRules.setEntityTile(packet, packetTile);
 
     const ghosts: GhostEntity[] = [];
     for (let index = 0; index < ghostCount; index += 1) {
@@ -102,8 +102,8 @@ export class MechanicsDomainHarness {
       map: safeMap,
       tileSize,
       collisionGrid,
-      pacmanSpawnTile: pacmanTile,
-      pacman,
+      packetSpawnTile: packetTile,
+      packet,
       ghosts,
       ghostJailBounds,
     });
@@ -112,7 +112,7 @@ export class MechanicsDomainHarness {
     this.portalService = new PortalService(collisionGrid, safeMap.portalPairs ?? []);
     this.decisions = new GhostDecisionService();
 
-    this.pacmanSystem = new PacmanMovementSystem(this.world, this.movementRules, this.portalService);
+    this.packetSystem = new PacketMovementSystem(this.world, this.movementRules, this.portalService);
     this.ghostReleaseSystem = new GhostReleaseSystem(this.world, this.movementRules, this.jailService, this.scheduler, rng);
     this.ghostMovementSystem = new GhostMovementSystem(
       this.world,
@@ -121,7 +121,7 @@ export class MechanicsDomainHarness {
       this.portalService,
       rng,
     );
-    this.ghostPacmanCollisionSystem = new GhostPacmanCollisionSystem(
+    this.ghostPacketCollisionSystem = new GhostPacketCollisionSystem(
       this.world,
       this.movementRules,
       SPEED.ghost,
@@ -143,10 +143,10 @@ export class MechanicsDomainHarness {
     if (this.world.isMoving) {
       this.world.nextTick();
       this.scheduler.update(deltaMs);
-      this.pacmanSystem.update();
+      this.packetSystem.update();
       this.ghostReleaseSystem.update();
       this.ghostMovementSystem.update();
-      this.ghostPacmanCollisionSystem.update();
+      this.ghostPacketCollisionSystem.update();
       this.animationSystem.update(deltaMs);
     }
   }

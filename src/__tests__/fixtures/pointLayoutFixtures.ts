@@ -86,8 +86,8 @@ export function loadProductionMazeFixture(): {
   const map = parseTiledMap(tiledMap);
   const collisionGrid = new CollisionGrid(map.tiles.map((row) => row.map((tile) => ({ ...tile.collision }))));
 
-  const spawnX = getObjectNumberProperty(map.pacmanSpawn, 'gridX');
-  const spawnY = getObjectNumberProperty(map.pacmanSpawn, 'gridY');
+  const spawnX = getObjectNumberProperty(map.packetSpawn, 'gridX');
+  const spawnY = getObjectNumberProperty(map.packetSpawn, 'gridY');
   expect(typeof spawnX).toBe('number');
   expect(typeof spawnY).toBe('number');
 

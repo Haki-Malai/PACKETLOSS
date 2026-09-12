@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <map version="1.4" tiledversion="1.4.3" orientation="orthogonal" renderorder="right-down" width="51" height="51" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="2206">
  <editorsettings>
-  <export target="pacman.json" format="json"/>
+  <export target="packet.json" format="json"/>
  </editorsettings>
  <tileset firstgid="1" name="tileset" tilewidth="16" tileheight="16" tilecount="28" columns="7">
   <image source="tileset.png" width="112" height="64"/>
@@ -17687,7 +17687,7 @@
   </object>
  </objectgroup>
  <objectgroup id="4" name="Spawns" draworder="topdown" >
-  <object id="2197" name="pacman" type="pacman" x="410" y="426" width="0" height="0" rotation="0" visible="1">
+  <object id="2197" name="packet" type="packet" x="410" y="426" width="0" height="0" rotation="0" visible="1">
   <properties>
     <property name="gridX" type="int" value="25"/>
     <property name="gridY" type="int" value="26"/>

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  PACMAN_DEATH_RECOVERY,
-  PACMAN_PORTAL_BLINK,
+  PACKET_DEATH_RECOVERY,
+  PACKET_PORTAL_BLINK,
 } from '../config/constants';
 import { getGameState, resetGameState } from '../state/gameState';
 import { GhostEntity } from '../game/domain/entities/GhostEntity';
@@ -11,12 +11,12 @@ function expectGhostTileUnchanged(ghost: GhostEntity, tile: { x: number; y: numb
   expect(ghost.tile).toEqual(tile);
 }
 
-describe('GhostPacmanCollisionSystem', () => {
+describe('GhostPacketCollisionSystem', () => {
   beforeEach(() => {
     resetGameState(0, 3);
   });
 
-  it('decrements one life and respawns pacman without moving the colliding ghost', () => {
+  it('decrements one life and respawns packet without moving the colliding ghost', () => {
     const harness = new MechanicsDomainHarness({ seed: 4101, fixture: 'default-map', ghostCount: 1, autoStartSystems: false });
 
     try {
@@ -25,9 +25,9 @@ describe('GhostPacmanCollisionSystem', () => {
         throw new Error('expected one ghost');
       }
 
-      harness.movementRules.setEntityTile(harness.world.pacman, { x: 20, y: 20 });
-      harness.world.pacman.direction.current = 'up';
-      harness.world.pacman.direction.next = 'left';
+      harness.movementRules.setEntityTile(harness.world.packet, { x: 20, y: 20 });
+      harness.world.packet.direction.current = 'up';
+      harness.world.packet.direction.next = 'left';
 
       harness.movementRules.setEntityTile(ghost, { x: 20, y: 20 });
       ghost.state.free = true;
@@ -35,14 +35,14 @@ describe('GhostPacmanCollisionSystem', () => {
 
       const ghostTileBefore = { ...ghost.tile };
 
-      harness.ghostPacmanCollisionSystem.update();
+      harness.ghostPacketCollisionSystem.update();
 
       expect(getGameState().lives).toBe(2);
-      expect(harness.world.pacman.tile).toEqual(harness.world.pacmanSpawnTile);
-      expect(harness.world.pacman.direction.current).toBe('right');
-      expect(harness.world.pacman.direction.next).toBe('right');
-      expect(harness.world.pacman.deathRecoveryRemainingMs).toBe(PACMAN_DEATH_RECOVERY.durationMs);
-      expect(harness.world.pacman.deathRecoveryVisible).toBe(true);
+      expect(harness.world.packet.tile).toEqual(harness.world.packetSpawnTile);
+      expect(harness.world.packet.direction.current).toBe('right');
+      expect(harness.world.packet.direction.next).toBe('right');
+      expect(harness.world.packet.deathRecoveryRemainingMs).toBe(PACKET_DEATH_RECOVERY.durationMs);
+      expect(harness.world.packet.deathRecoveryVisible).toBe(true);
       expectGhostTileUnchanged(ghost, ghostTileBefore);
     } finally {
       harness.destroy();
@@ -58,23 +58,23 @@ describe('GhostPacmanCollisionSystem', () => {
         throw new Error('expected one ghost');
       }
 
-      harness.movementRules.setEntityTile(harness.world.pacman, { x: 20, y: 20 });
+      harness.movementRules.setEntityTile(harness.world.packet, { x: 20, y: 20 });
       harness.movementRules.setEntityTile(ghost, { x: 21, y: 20 });
       ghost.state.free = true;
       ghost.state.scared = false;
 
-      harness.world.pacman.moved.x = 3;
-      harness.world.pacman.moved.y = 0;
-      harness.movementRules.syncEntityPosition(harness.world.pacman);
+      harness.world.packet.moved.x = 3;
+      harness.world.packet.moved.y = 0;
+      harness.movementRules.syncEntityPosition(harness.world.packet);
 
       ghost.moved.x = -3;
       ghost.moved.y = 0;
       harness.movementRules.syncEntityPosition(ghost);
 
-      harness.ghostPacmanCollisionSystem.update();
+      harness.ghostPacketCollisionSystem.update();
 
       expect(getGameState().lives).toBe(2);
-      expect(harness.world.pacman.tile).toEqual(harness.world.pacmanSpawnTile);
+      expect(harness.world.packet.tile).toEqual(harness.world.packetSpawnTile);
     } finally {
       harness.destroy();
     }
@@ -89,12 +89,12 @@ describe('GhostPacmanCollisionSystem', () => {
         throw new Error('expected one ghost');
       }
 
-      harness.movementRules.setEntityTile(harness.world.pacman, { x: 18, y: 18 });
+      harness.movementRules.setEntityTile(harness.world.packet, { x: 18, y: 18 });
       harness.movementRules.setEntityTile(ghost, { x: 18, y: 18 });
       ghost.state.free = true;
       ghost.state.scared = true;
 
-      harness.ghostPacmanCollisionSystem.update();
+      harness.ghostPacketCollisionSystem.update();
 
       expect(getGameState().lives).toBe(3);
       expect(getGameState().score).toBe(200);
@@ -104,7 +104,7 @@ describe('GhostPacmanCollisionSystem', () => {
       expect(ghost.state.soonFree).toBe(true);
 
       harness.ghostReleaseSystem.update();
-      harness.movementRules.setEntityTile(harness.world.pacman, { x: 1, y: 1 });
+      harness.movementRules.setEntityTile(harness.world.packet, { x: 1, y: 1 });
       let sawExitingPhase = false;
       for (let tick = 0; tick < 900 && !ghost.state.free; tick += 1) {
         harness.stepTick();
@@ -129,22 +129,22 @@ describe('GhostPacmanCollisionSystem', () => {
         throw new Error('expected one ghost');
       }
 
-      harness.movementRules.setEntityTile(harness.world.pacman, harness.world.pacmanSpawnTile);
-      harness.movementRules.setEntityTile(ghost, harness.world.pacmanSpawnTile);
+      harness.movementRules.setEntityTile(harness.world.packet, harness.world.packetSpawnTile);
+      harness.movementRules.setEntityTile(ghost, harness.world.packetSpawnTile);
       ghost.state.free = true;
 
-      harness.ghostPacmanCollisionSystem.update();
+      harness.ghostPacketCollisionSystem.update();
       expect(getGameState().lives).toBe(0);
 
-      harness.world.pacman.deathRecoveryRemainingMs = 0;
-      harness.ghostPacmanCollisionSystem.update();
+      harness.world.packet.deathRecoveryRemainingMs = 0;
+      harness.ghostPacketCollisionSystem.update();
       expect(getGameState().lives).toBe(0);
     } finally {
       harness.destroy();
     }
   });
 
-  it('ignores collisions while Pac-Man death recovery invulnerability is active', () => {
+  it('ignores collisions while Packet death recovery invulnerability is active', () => {
     const harness = new MechanicsDomainHarness({ seed: 4105, fixture: 'default-map', ghostCount: 1, autoStartSystems: false });
 
     try {
@@ -153,22 +153,22 @@ describe('GhostPacmanCollisionSystem', () => {
         throw new Error('expected one ghost');
       }
 
-      harness.movementRules.setEntityTile(harness.world.pacman, { x: 13, y: 13 });
+      harness.movementRules.setEntityTile(harness.world.packet, { x: 13, y: 13 });
       harness.movementRules.setEntityTile(ghost, { x: 13, y: 13 });
       ghost.state.free = true;
 
-      harness.ghostPacmanCollisionSystem.update();
+      harness.ghostPacketCollisionSystem.update();
       expect(getGameState().lives).toBe(2);
 
-      harness.movementRules.setEntityTile(harness.world.pacman, { x: 13, y: 13 });
-      harness.ghostPacmanCollisionSystem.update();
+      harness.movementRules.setEntityTile(harness.world.packet, { x: 13, y: 13 });
+      harness.ghostPacketCollisionSystem.update();
       expect(getGameState().lives).toBe(2);
     } finally {
       harness.destroy();
     }
   });
 
-  it('suppresses non-scared pacman-hit collisions while post-portal shield is active', () => {
+  it('suppresses non-scared packet-hit collisions while post-portal shield is active', () => {
     const harness = new MechanicsDomainHarness({ seed: 4106, fixture: 'default-map', ghostCount: 1, autoStartSystems: false });
 
     try {
@@ -178,17 +178,17 @@ describe('GhostPacmanCollisionSystem', () => {
       }
 
       const collisionTile = { x: 16, y: 16 };
-      harness.movementRules.setEntityTile(harness.world.pacman, collisionTile);
+      harness.movementRules.setEntityTile(harness.world.packet, collisionTile);
       harness.movementRules.setEntityTile(ghost, collisionTile);
-      harness.world.pacman.portalBlinkRemainingMs = PACMAN_PORTAL_BLINK.durationMs;
+      harness.world.packet.portalBlinkRemainingMs = PACKET_PORTAL_BLINK.durationMs;
       ghost.state.free = true;
       ghost.state.scared = false;
 
-      harness.ghostPacmanCollisionSystem.update();
+      harness.ghostPacketCollisionSystem.update();
 
       expect(getGameState().lives).toBe(3);
-      expect(harness.world.pacman.tile).toEqual(collisionTile);
-      expect(harness.world.pacman.deathRecoveryRemainingMs).toBe(0);
+      expect(harness.world.packet.tile).toEqual(collisionTile);
+      expect(harness.world.packet.deathRecoveryRemainingMs).toBe(0);
     } finally {
       harness.destroy();
     }
@@ -204,13 +204,13 @@ describe('GhostPacmanCollisionSystem', () => {
       }
 
       const collisionTile = { x: 17, y: 17 };
-      harness.movementRules.setEntityTile(harness.world.pacman, collisionTile);
+      harness.movementRules.setEntityTile(harness.world.packet, collisionTile);
       harness.movementRules.setEntityTile(ghost, collisionTile);
-      harness.world.pacman.portalBlinkRemainingMs = PACMAN_PORTAL_BLINK.durationMs;
+      harness.world.packet.portalBlinkRemainingMs = PACKET_PORTAL_BLINK.durationMs;
       ghost.state.free = true;
       ghost.state.scared = true;
 
-      harness.ghostPacmanCollisionSystem.update();
+      harness.ghostPacketCollisionSystem.update();
 
       expect(getGameState().lives).toBe(3);
       expect(getGameState().score).toBe(200);
@@ -231,13 +231,13 @@ describe('GhostPacmanCollisionSystem', () => {
         throw new Error('expected two ghosts');
       }
 
-      harness.movementRules.setEntityTile(harness.world.pacman, { x: 24, y: 24 });
+      harness.movementRules.setEntityTile(harness.world.packet, { x: 24, y: 24 });
       harness.movementRules.setEntityTile(first, { x: 24, y: 24 });
       harness.movementRules.setEntityTile(second, { x: 24, y: 24 });
       first.state.free = true;
       second.state.free = true;
 
-      harness.ghostPacmanCollisionSystem.update();
+      harness.ghostPacketCollisionSystem.update();
 
       expect(getGameState().lives).toBe(2);
     } finally {
