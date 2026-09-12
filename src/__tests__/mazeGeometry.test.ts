@@ -4,12 +4,13 @@ import { inflateSync } from 'node:zlib';
 import { Mesh, MeshBasicMaterial, Raycaster, Vector3 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { SPRITE_SIZE } from '../config/constants';
-import { GhostJailService } from '../game/domain/services/GhostJailService';
+import { CollisionGrid } from '../game/domain/world/CollisionGrid';
 import { parseGid, parseTiledMap } from '../game/infrastructure/map/TiledParser';
 import type { TiledMap } from '../game/infrastructure/map/TiledParser';
 import { buildMazeWallEdgeGeometry, buildMazeWallGeometry, buildMazeWallGeometryFromMask, buildMazeWallMask, traceWallContours } from '../game/infrastructure/three/MazeGeometry';
 import type { TileAlphaMask, WallContourPoint } from '../game/infrastructure/three/MazeGeometry';
-import { createCollisionTile, createMapFixture } from './fixtures/renderFixtures';
+import { MazeScene } from '../game/infrastructure/three/MazeScene';
+import { createCollisionTile, createMapFixture, createWorld } from './fixtures/renderFixtures';
 
 function maskFromRows(rows: string[]): TileAlphaMask {
   return { width: rows[0].length, height: rows.length, opaque: Uint8Array.from(rows.join(''), (pixel) => pixel === '#' ? 1 : 0) };
@@ -130,15 +131,6 @@ describe('maze wall footprints', () => {
     expect(map).toEqual(originalMap);
     expect(source).toEqual(originalSource);
   });
-
-  it('scales the pen entrance rail depth with tile height while retaining its side edges', () => {
-    const map = fixture(1, 2, 32);
-    const result = buildMazeWallMask(map, () => maskFromRows(['#']), { minX: 0, maxX: 0, y: 1 });
-    expect([...result.opaque.slice(27 * 32, 28 * 32)]).toEqual(Array<number>(32).fill(1));
-    expect([...result.opaque.slice(28 * 32, 29 * 32)]).toEqual([1, ...Array<number>(30).fill(0), 1]);
-    expect([...result.opaque.slice(31 * 32, 32 * 32)]).toEqual([1, ...Array<number>(30).fill(0), 1]);
-    expect([...result.opaque.slice(32 * 32, 33 * 32)]).toEqual(Array<number>(32).fill(1));
-  });
 });
 
 describe('continuous wall geometry', () => {
@@ -250,44 +242,30 @@ describe('continuous wall geometry', () => {
     geometry.dispose();
   });
 
-  it.each(['maze', 'demo'])('opens the native %s pen release crossing without changing other walls or gameplay data', (name) => {
+  it.each(['maze', 'demo'])('renders the full original prison bars and openings in the %s map', (name) => {
     const tiled = JSON.parse(fs.readFileSync(path.resolve(`public/assets/mazes/default/${name}.json`), 'utf8')) as TiledMap;
     const map = parseTiledMap(tiled);
     const originalMap = structuredClone(map);
-    const pen = new GhostJailService().resolveGhostJailBounds(map, { x: 0, y: 0 });
-    const originalMask = buildMazeWallMask(map, readTileMask);
-    const openedMask = buildMazeWallMask(map, readTileMask, pen);
-    const left = pen.minX * map.tileWidth + 1;
-    const right = (pen.maxX + 1) * map.tileWidth - 1;
-    const north = pen.y * map.tileHeight;
-    let changesOutsideEntrance = 0;
-    let removedPixels = 0;
-    for (let i = 0; i < originalMask.opaque.length; i += 1) {
-      if (originalMask.opaque[i] === openedMask.opaque[i]) continue;
-      removedPixels += 1;
-      const x = i % openedMask.width;
-      const y = Math.floor(i / openedMask.width);
-      if (x < left || x >= right || y < north - 2 || y >= north) changesOutsideEntrance += 1;
-    }
-    expect(removedPixels).toBeGreaterThan(0);
-    expect(changesOutsideEntrance).toBe(0);
-    const geometry = buildMazeWallGeometry(map, readTileMask, pen);
-    const material = new MeshBasicMaterial();
-    const mesh = new Mesh(geometry, material);
-    const centerX = (left + right) / 2;
-    const radius = SPRITE_SIZE.ghost / 2;
+    const world = createWorld(map, new CollisionGrid(map.tiles.map((row) => row.map((tile) => tile.collision))), { x: 0, y: 0 });
+    const scene = new MazeScene(world, { getTileMask: readTileMask });
+    scene.group.updateMatrixWorld(true);
+    const bars = scene.group.getObjectByName('pen-bars')!;
     const ray = new Raycaster(new Vector3(), new Vector3(0, -1, 0));
-    let intersections = 0;
-    for (let x = centerX - radius; x <= centerX + radius; x += 1) {
-      for (let y = north - 2; y <= north; y += 0.5) {
-        ray.ray.origin.set(x, 20, y);
-        intersections += ray.intersectObject(mesh).length;
+    const penTiles = map.tiles.flat().filter((tile) => tile.localId === 16);
+    expect(penTiles.length).toBeGreaterThan(0);
+    // Authored PNG: complete top/middle/bottom rails and side bars around two holes.
+    const samples = [
+      [8, 1, true], [8, 7, true], [8, 8, true], [8, 15, true],
+      [1, 4, true], [15, 12, true], [8, 4, false], [8, 12, false],
+    ] as const;
+    for (const tile of penTiles) {
+      for (const [x, y, solid] of samples) {
+        ray.ray.origin.set(tile.x * map.tileWidth + x + 0.5, 20, tile.y * map.tileHeight + y + 0.5);
+        expect(ray.intersectObject(bars).length > 0).toBe(solid);
       }
     }
-    expect(intersections).toBe(0);
     expect(map).toEqual(originalMap);
-    geometry.dispose();
-    material.dispose();
+    scene.dispose();
   });
 
   it.each(['maze', 'demo'])('preserves native %s map footprints and leaves portal centers open', (name) => {

@@ -25,7 +25,7 @@ describe('extruded PACMAN sign', () => {
     material.dispose();
   });
 
-  it.each(['maze', 'demo'])('fits raised lettering inside the authored %s plaque', (name) => {
+  it.each(['maze', 'demo'])('keeps lettering and its outlines inside the authored %s sign area', (name) => {
     const tiled = JSON.parse(fs.readFileSync(path.resolve(`public/assets/mazes/default/${name}.json`), 'utf8')) as TiledMap;
     const map = parseTiledMap(tiled);
     const originalMap = structuredClone(map);
@@ -33,22 +33,31 @@ describe('extruded PACMAN sign', () => {
     const world = createWorld(map, grid, { x: 0, y: 0 });
     const scene = new MazeScene(world, { getTileMask: () => undefined });
     scene.group.updateMatrixWorld(true);
-    const plaques = scene.group.children.filter((object) => object.name === 'sign-plaque');
-    expect(plaques).toHaveLength(1);
+    const signs = scene.group.children.filter((object) => object.name === 'sign-artwork');
+    expect(signs).toHaveLength(1);
+    const tiles = map.tiles.flat().filter((tile) => tile.localId !== null && tile.localId >= 17 && tile.localId <= 21);
+    const left = Math.min(...tiles.map((tile) => tile.x)) * map.tileWidth;
+    const right = (Math.max(...tiles.map((tile) => tile.x)) + 1) * map.tileWidth;
+    const north = tiles[0].y * map.tileHeight;
+    const south = north + map.tileHeight;
     const letters = scene.group.getObjectByName('sign-lettering')!;
-    const plaqueBounds = new Box3().setFromObject(plaques[0]);
     const letterBounds = new Box3().setFromObject(letters);
-    expect(letterBounds.min.x).toBeCloseTo(plaqueBounds.min.x + 1);
-    expect(letterBounds.max.x).toBeCloseTo(plaqueBounds.max.x - 1);
-    expect(letterBounds.min.z).toBeCloseTo(plaqueBounds.min.z + 1);
-    expect(letterBounds.max.z).toBeCloseTo(plaqueBounds.max.z - 1);
-    expect(letterBounds.min.y).toBeGreaterThan(plaqueBounds.max.y);
+    expect(letterBounds.min.x).toBeCloseTo(left + 1);
+    expect(letterBounds.max.x).toBeCloseTo(right - 1);
+    expect(letterBounds.min.z).toBeCloseTo(north + 1);
+    expect(letterBounds.max.z).toBeCloseTo(south - 1);
+    expect(letterBounds.min.y).toBeCloseTo(0);
     expect(letterBounds.max.y).toBeGreaterThan(letterBounds.min.y);
+    const outlinedBounds = new Box3().setFromObject(signs[0]);
+    expect(outlinedBounds.min.x).toBeGreaterThanOrEqual(left);
+    expect(outlinedBounds.max.x).toBeLessThanOrEqual(right);
+    expect(outlinedBounds.min.z).toBeGreaterThanOrEqual(north);
+    expect(outlinedBounds.max.z).toBeLessThanOrEqual(south);
     expect(map).toEqual(originalMap);
     scene.dispose();
   });
 
-  it('creates a separate plaque for each contiguous run without bridging the gap', () => {
+  it('creates separate lettering for each contiguous run without bridging the gap', () => {
     const { map, collisionGrid } = createMapFixture([[createCollisionTile(), createCollisionTile(), createCollisionTile(), createCollisionTile()]]);
     map.tiles[0][0].localId = 17;
     map.tiles[0][1].localId = 18;
@@ -57,11 +66,13 @@ describe('extruded PACMAN sign', () => {
     const scene = new MazeScene(world, {
       getTileMask: () => ({ width: 1, height: 1, opaque: new Uint8Array([1]) }),
     });
-    const plaques = scene.group.children.filter((object) => object.name === 'sign-plaque');
-    expect(plaques.map((plaque) => {
-      const bounds = new Box3().setFromObject(plaque);
-      return [bounds.min.x, bounds.max.x];
-    })).toEqual([[0, 32], [48, 64]]);
+    const signs = scene.group.children.filter((object) => object.name === 'sign-artwork');
+    expect(signs).toHaveLength(2);
+    for (const [index, [left, right]] of [[0, 32], [48, 64]].entries()) {
+      const bounds = new Box3().setFromObject(signs[index]);
+      expect(bounds.min.x).toBeGreaterThanOrEqual(left);
+      expect(bounds.max.x).toBeLessThanOrEqual(right);
+    }
     scene.dispose();
   });
 });
