@@ -10,23 +10,52 @@ export class GameRuntime implements PacmanGame {
   private pausedByFocusLoss = false;
   private focusListenersBound = false;
   private presentationReady = false;
+  private starting: Promise<void> | null = null;
+  private readonly startupAbort = new AbortController();
 
   constructor(private readonly compositionRoot: GameCompositionRoot) {}
 
-  async start(): Promise<void> {
+  start(): Promise<void> {
     if (this.started || this.destroyed) {
+      return Promise.resolve();
+    }
+    this.starting ??= this.initialize().finally(() => {
+      this.starting = null;
+    });
+    return this.starting;
+  }
+
+  private async initialize(): Promise<void> {
+    let composed: ComposedGame;
+    try {
+      composed = await this.compositionRoot.compose(this.runtimeControl, this.startupAbort.signal);
+    } catch (error) {
+      if (this.destroyed) return;
+      throw error;
+    }
+    if (this.destroyed) {
+      this.destroyComposedGame(composed);
       return;
     }
-
-    this.composed = await this.compositionRoot.compose(this.runtimeControl);
+    this.composed = composed;
 
     this.loop = new FixedStepLoop(this.update, this.render);
     this.started = true;
-    this.bindFocusListeners();
-    this.composed.updateSystems.forEach((system) => {
-      system.start?.();
-    });
-    this.loop.start();
+    try {
+      this.bindFocusListeners();
+      composed.updateSystems.forEach((system) => {
+        system.start?.();
+      });
+      this.loop.start();
+    } catch (error) {
+      this.loop.stop();
+      this.loop = null;
+      this.started = false;
+      this.unbindFocusListeners();
+      this.composed = null;
+      this.destroyComposedGame(composed);
+      throw error;
+    }
   }
 
   pause(): void {
@@ -56,6 +85,7 @@ export class GameRuntime implements PacmanGame {
     }
 
     this.destroyed = true;
+    this.startupAbort.abort();
     this.presentationReady = false;
     this.started = false;
     this.unbindFocusListeners();
@@ -64,12 +94,9 @@ export class GameRuntime implements PacmanGame {
     this.loop?.stop();
     this.loop = null;
 
-    const uniqueSystems = new Set([...(this.composed?.renderSystems ?? []), ...(this.composed?.updateSystems ?? [])]);
-    this.destroySystems(Array.from(uniqueSystems));
-
-    this.composed?.scheduler.clear();
-    this.composed?.input.destroy();
-    this.composed?.destroy();
+    if (this.composed) {
+      this.destroyComposedGame(this.composed);
+    }
     this.composed = null;
   }
 
@@ -208,6 +235,14 @@ export class GameRuntime implements PacmanGame {
       system.render(renderAlpha);
     });
   };
+
+  private destroyComposedGame(composed: ComposedGame): void {
+    const uniqueSystems = new Set([...composed.renderSystems, ...composed.updateSystems]);
+    this.destroySystems(Array.from(uniqueSystems));
+    composed.scheduler.clear();
+    composed.input.destroy();
+    composed.destroy();
+  }
 
   private destroySystems(systems: Array<UpdateCapableSystem | RenderCapableSystem>): void {
     systems.forEach((system) => {

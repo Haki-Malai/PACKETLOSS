@@ -1,6 +1,6 @@
 import { CAMERA } from '../../config/constants';
 import { WorldState } from '../domain/world/WorldState';
-import { CanvasRendererAdapter } from '../infrastructure/adapters/CanvasRendererAdapter';
+import { RendererViewport } from '../infrastructure/adapters/ThreeRendererAdapter';
 
 interface CameraLike {
   setBounds(width: number, height: number): void;
@@ -17,7 +17,7 @@ export class CameraSystem {
   constructor(
     private readonly world: WorldState,
     private readonly camera: CameraLike,
-    private readonly renderer: CanvasRendererAdapter,
+    private readonly renderer: RendererViewport,
     private readonly canvas: HTMLCanvasElement,
   ) {}
 

@@ -1,50 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Camera2D } from '../engine/camera';
-import { WorldState } from '../game/domain/world/WorldState';
-import { CanvasRendererAdapter } from '../game/infrastructure/adapters/CanvasRendererAdapter';
-import { AssetCatalog } from '../game/infrastructure/assets/AssetCatalog';
-import { CollectibleSystem } from '../game/systems/CollectibleSystem';
-import { RenderSystem } from '../game/systems/RenderSystem';
+import { createCollisionTile, createMapFixture, createRenderHarness, createWorld } from './fixtures/renderFixtures';
 
 describe('camera presentation', () => {
-  it('uses render alpha for both device-snapped layers and world transforms', () => {
-    const world = {
-      map: { tiles: [] },
-      tileSize: 16,
-      pacman: { portalBlinkRemainingMs: 0, deathRecoveryRemainingMs: 0 },
-      ghosts: [],
-    } as unknown as WorldState;
-    const getRenderPosition = vi.fn(() => ({ x: 0, y: 0 }));
-    const camera = {
-      getZoom: () => 5,
-      getRenderPosition,
-    } as unknown as Camera2D;
-    const beginWorld = vi.fn();
-    const renderer = {
-      clear: vi.fn(),
-      beginWorld,
-      endWorld: vi.fn(),
-      drawImageDevice: vi.fn(),
-      pixelRatio: 1,
-      deviceWidth: 640,
-      deviceHeight: 480,
-    } as unknown as CanvasRendererAdapter;
-    const assets = {
-      getCollectibleImage: () => undefined,
-      getSpriteSheet: () => undefined,
-    } as unknown as AssetCatalog;
-    const collectibles = {
-      getPoints: () => [],
-      getEatEffects: () => [],
-    } as unknown as CollectibleSystem;
+  it('presents camera and entities with the same alpha before drawing the complete scene once', () => {
+    const { map, collisionGrid } = createMapFixture(
+      Array.from({ length: 20 }, () => Array.from({ length: 20 }, () => createCollisionTile())),
+    );
+    const world = createWorld(map, collisionGrid, { x: 10, y: 10 });
+    const { renderSystem, camera, renderer, scene } = createRenderHarness({ world });
+    const present = vi.spyOn(camera, 'present');
+    renderSystem.capturePreviousState();
+    world.pacman.x += 16;
+    camera.update();
+    const simulationCameraPosition = camera.getRenderPosition();
+    let renderedPacmanX = 0;
+    let renderedCameraX = 0;
+    renderer.render.mockImplementationOnce(() => {
+      renderedPacmanX = scene.getObjectByName('pacman')!.position.x;
+      renderedCameraX = camera.screenToWorld(400, 300).x;
+    });
 
-    new RenderSystem(world, renderer, camera, assets, collectibles).render(0.35);
+    renderSystem.render(0.35);
 
-    expect(getRenderPosition).toHaveBeenCalledTimes(1);
-    expect(getRenderPosition).toHaveBeenNthCalledWith(1, 0.35);
-    expect(beginWorld).toHaveBeenCalledTimes(2);
-    const metrics = { tileDeviceSize: 80, deviceScale: 5, originX: -0, originY: -0 };
-    expect(beginWorld).toHaveBeenNthCalledWith(1, camera, 0.35, metrics);
-    expect(beginWorld).toHaveBeenNthCalledWith(2, camera, 0.35, metrics);
+    expect(present).toHaveBeenCalledExactlyOnceWith(0.35, renderer.pixelRatio);
+    expect(renderer.render).toHaveBeenCalledExactlyOnceWith(scene, camera.camera);
+    expect(renderedPacmanX).toBeCloseTo(168 + 16 * 0.35);
+    expect(Math.abs(renderedCameraX - (168 + 16 * 0.09 * 0.35))).toBeLessThanOrEqual(0.1);
+    expect(camera.getRenderPosition()).toEqual(simulationCameraPosition);
+    expect(world.pacman.x).toBe(184);
+    renderSystem.destroy();
   });
 });

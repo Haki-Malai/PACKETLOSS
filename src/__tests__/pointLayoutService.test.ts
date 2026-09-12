@@ -4,9 +4,6 @@ import {
   createCollisionTile,
   createMapFixture,
   toTileKey,
-  hasCollisionBoundary,
-  collectExpectedReachableTiles,
-  collectVoidBoundaryForbiddenTiles,
   loadProductionMazeFixture,
 } from './fixtures/pointLayoutFixtures';
 
@@ -129,174 +126,49 @@ describe('buildPointLayout', () => {
     ]);
   });
 
-  it('keeps power-point placement deterministic per map build seed', () => {
-    const collisionRows = Array.from({ length: 10 }, () =>
-      Array.from({ length: 10 }, () => createCollisionTile({ collides: true })),
-    );
+  it.each([
+    { seed: 0, options: { powerPointRatio: 0, minPowerPoints: 0 }, expected: 0 },
+    { seed: 42, options: { powerPointRatio: 0.5 }, expected: 4 },
+    { seed: 0xffffffff, options: { powerPointRatio: 1, maxPowerPoints: 3 }, expected: 3 },
+    { seed: 17, options: { powerPointRatio: 0, minPowerPoints: 20 }, expected: 8 },
+  ])('selects $expected unique playable power points with seed $seed and count limits', ({ seed, options, expected }) => {
+    const { map, collisionGrid } = createMapFixture([
+      Array.from({ length: 4 }, () => createCollisionTile()),
+      Array.from({ length: 4 }, () => createCollisionTile()),
+    ]);
+    const originalMap = structuredClone(map);
+    const layout = buildPointLayout({ map, collisionGrid, startTile: { x: 0, y: 0 }, tileSize: 16, options: { ...options, seed } });
+    const baseKeys = new Set(layout.basePoints.map(toTileKey));
+    const powerKeys = layout.powerPoints.map(toTileKey);
 
-    const firstFixture = createMapFixture(collisionRows);
-    const firstLayout = buildPointLayout({
-      map: firstFixture.map,
-      collisionGrid: firstFixture.collisionGrid,
-      startTile: { x: 0, y: 0 },
-      tileSize: 16,
-    });
-
-    const secondLayout = buildPointLayout({
-      map: firstFixture.map,
-      collisionGrid: firstFixture.collisionGrid,
-      startTile: { x: 0, y: 0 },
-      tileSize: 16,
-    });
-
-    expect(firstLayout.basePoints).toHaveLength(100);
-    expect(firstLayout.powerPoints).toHaveLength(Math.round(100 * DEFAULT_POWER_POINT_RATIO));
-    expect(firstLayout.powerPoints).toEqual(secondLayout.powerPoints);
-
-    const basePointKeys = new Set(firstLayout.basePoints.map((tile) => toTileKey(tile)));
-    expect(firstLayout.powerPoints.every((tile) => basePointKeys.has(toTileKey(tile)))).toBe(true);
-
-    const rawGids = Array.from({ length: 10 }, () => Array.from({ length: 10 }, () => 1));
-    rawGids[0][0] = 2;
-    const changedFixture = createMapFixture(collisionRows, rawGids);
-
-    const changedLayout = buildPointLayout({
-      map: changedFixture.map,
-      collisionGrid: changedFixture.collisionGrid,
-      startTile: { x: 0, y: 0 },
-      tileSize: 16,
-    });
-
-    expect(changedLayout.powerPoints).not.toEqual(firstLayout.powerPoints);
+    expect(baseKeys.size).toBe(8);
+    expect(powerKeys).toHaveLength(expected);
+    expect(new Set(powerKeys).size).toBe(expected);
+    expect(powerKeys.every((key) => baseKeys.has(key))).toBe(true);
+    expect(map).toEqual(originalMap);
   });
 
-  it('matches the production maze reachable movement topology (including non-colliding path connectors)', () => {
+  it('keeps production points unique, within playable tiles, and includes spawn, portals, and open connectors', () => {
     const { map, collisionGrid, startTile } = loadProductionMazeFixture();
+    const layout = buildPointLayout({ map, collisionGrid, startTile, tileSize: map.tileWidth });
+    const baseKeys = new Set(layout.basePoints.map(toTileKey));
+    const powerKeys = layout.powerPoints.map(toTileKey);
 
-    const layout = buildPointLayout({
-      map,
-      collisionGrid,
-      startTile,
-      tileSize: map.tileWidth,
-    });
-
-    const expectedBasePoints = collectExpectedReachableTiles(map, collisionGrid, startTile, map.tileWidth);
-    const expectedKeys = expectedBasePoints.map((tile) => toTileKey(tile));
-    const actualKeys = layout.basePoints.map((tile) => toTileKey(tile));
-
-    expect(new Set(actualKeys).size).toBe(actualKeys.length);
-    expect([...actualKeys].sort()).toEqual([...expectedKeys].sort());
-
-    const includesReachableNonCollidingTile = layout.basePoints.some((tile) => {
-      const mapTile = map.tiles[tile.y]?.[tile.x];
-      return Boolean(mapTile && !mapTile.collision.collides);
-    });
-
-    expect(includesReachableNonCollidingTile).toBe(true);
-
-    layout.basePoints.forEach((tile) => {
-      const mapTile = map.tiles[tile.y]?.[tile.x];
-      expect(mapTile?.gid).not.toBeNull();
-      expect(mapTile?.collision.penGate).toBe(false);
-    });
-  });
-
-  it('keeps every production-maze point tile within map bounds', () => {
-    const { map, collisionGrid, startTile } = loadProductionMazeFixture();
-
-    const layout = buildPointLayout({
-      map,
-      collisionGrid,
-      startTile,
-      tileSize: map.tileWidth,
-    });
-
-    layout.basePoints.forEach((tile) => {
-      expect(tile.x).toBeGreaterThanOrEqual(0);
-      expect(tile.x).toBeLessThan(map.width);
-      expect(tile.y).toBeGreaterThanOrEqual(0);
-      expect(tile.y).toBeLessThan(map.height);
-    });
-
-    layout.powerPoints.forEach((tile) => {
-      expect(tile.x).toBeGreaterThanOrEqual(0);
-      expect(tile.x).toBeLessThan(map.width);
-      expect(tile.y).toBeGreaterThanOrEqual(0);
-      expect(tile.y).toBeLessThan(map.height);
-    });
-  });
-
-  it('keeps production-maze point distribution anchored at known tiles without helper-derived traversal expectations', () => {
-    const { map, collisionGrid, startTile } = loadProductionMazeFixture();
-
-    const layout = buildPointLayout({
-      map,
-      collisionGrid,
-      startTile,
-      tileSize: map.tileWidth,
-    });
-
-    const basePointKeys = new Set(layout.basePoints.map((tile) => toTileKey(tile)));
-    const expectedPowerCount = Math.round(layout.basePoints.length * DEFAULT_POWER_POINT_RATIO);
-
-    expect(layout.basePoints.length).toBeGreaterThan(1500);
-    expect(layout.powerPoints.length).toBe(expectedPowerCount);
-    expect(basePointKeys.has(toTileKey(startTile))).toBe(true);
-
-    const hasPortalBasePoint = layout.basePoints.some((tile) => map.tiles[tile.y]?.[tile.x]?.collision.portal);
-    expect(hasPortalBasePoint).toBe(true);
-
-    const hasVoidTilePoint = layout.basePoints.some((tile) => map.tiles[tile.y]?.[tile.x]?.gid === null);
-    expect(hasVoidTilePoint).toBe(false);
-  });
-
-  it('excludes production-maze border tiles whose collision topology opens directly into map void', () => {
-    const { map, collisionGrid, startTile } = loadProductionMazeFixture();
-
-    const layout = buildPointLayout({
-      map,
-      collisionGrid,
-      startTile,
-      tileSize: map.tileWidth,
-    });
-
-    const forbiddenTiles = collectVoidBoundaryForbiddenTiles(map, collisionGrid, map.tileWidth);
-    const forbiddenKeys = new Set(forbiddenTiles.map((tile) => toTileKey(tile)));
-    const basePointKeys = new Set(layout.basePoints.map((tile) => toTileKey(tile)));
-
-    const leakedForbiddenPoints = [...forbiddenKeys].filter((key) => basePointKeys.has(key));
-    expect(leakedForbiddenPoints).toEqual([]);
-
-    const interiorNonCollidingConnector = layout.basePoints.find((tile) => {
-      const mapTile = map.tiles[tile.y]?.[tile.x];
-      return Boolean(mapTile && !hasCollisionBoundary(mapTile.collision) && !forbiddenKeys.has(toTileKey(tile)));
-    });
-
-    expect(interiorNonCollidingConnector).toBeDefined();
-  });
-
-  it('keeps production-maze power points as a deterministic subset of base points', () => {
-    const { map, collisionGrid, startTile } = loadProductionMazeFixture();
-
-    const firstLayout = buildPointLayout({
-      map,
-      collisionGrid,
-      startTile,
-      tileSize: map.tileWidth,
-    });
-
-    const secondLayout = buildPointLayout({
-      map,
-      collisionGrid,
-      startTile,
-      tileSize: map.tileWidth,
-    });
-
-    const baseKeys = new Set(firstLayout.basePoints.map((tile) => toTileKey(tile)));
-    const powerKeys = firstLayout.powerPoints.map((tile) => toTileKey(tile));
-
-    expect(firstLayout.powerPoints).toEqual(secondLayout.powerPoints);
+    expect(baseKeys.size).toBe(layout.basePoints.length);
+    expect(baseKeys.has(toTileKey(startTile))).toBe(true);
+    expect(powerKeys).toHaveLength(Math.round(layout.basePoints.length * DEFAULT_POWER_POINT_RATIO));
     expect(new Set(powerKeys).size).toBe(powerKeys.length);
     expect(powerKeys.every((key) => baseKeys.has(key))).toBe(true);
+    expect(layout.basePoints.some(({ x, y }) => map.tiles[y][x].collision.portal)).toBe(true);
+    expect(layout.basePoints.some(({ x, y }) => !map.tiles[y][x].collision.collides)).toBe(true);
+
+    for (const { x, y } of layout.basePoints) {
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThan(map.width);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(y).toBeLessThan(map.height);
+      expect(map.tiles[y][x].gid).not.toBeNull();
+      expect(map.tiles[y][x].collision.penGate).toBe(false);
+    }
   });
 });

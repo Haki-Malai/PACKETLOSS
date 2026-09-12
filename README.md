@@ -1,6 +1,6 @@
 # Pacman
 
-A Pac-Man game for the browser, built for fun with TypeScript, Vite, and a custom Canvas2D engine.
+A Pac-Man game for the browser, built for fun with TypeScript, Vite, and Three.js. Requires WebGL 2.
 
 Collect pellets, avoid ghosts, and use power pellets to turn the chase around. The game includes ghost pen/release behavior, lives and respawn recovery, linked portals, a following camera, and desktop/mobile controls. Maps are made in Tiled.
 
@@ -35,6 +35,6 @@ After editing its Tiled map, run `pnpm map:demo:convert` to regenerate the demo 
 ## Project layout
 
 - `src/main.ts` starts the game.
-- `src/engine/` contains the loop, camera, renderer, input, timers, and tweens.
-- `src/game/` contains gameplay logic, runtime wiring, map loading, and UI integration.
+- `src/engine/` contains the loop, camera, input, timers, and tweens.
+- `src/game/` contains gameplay logic, runtime wiring, map loading, Three.js presentation, and UI integration.
 - `public/assets/` contains sprites, fonts, and maze data.

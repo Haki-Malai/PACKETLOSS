@@ -72,6 +72,10 @@ export class CollectibleSystem {
     return this.pointsByTile.values();
   }
 
+  getPointCount(): number {
+    return this.pointsByTile.size;
+  }
+
   getEatEffects(): readonly EatEffect[] {
     return this.eatEffects;
   }

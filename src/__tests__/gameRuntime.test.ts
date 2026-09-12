@@ -160,7 +160,7 @@ describe('GameRuntime', () => {
     expect(spies.render).toHaveBeenCalled();
   });
 
-  it('pauses and resumes movement while keeping the loop alive', async () => {
+  it('freezes simulation while paused and resumes interpolation only after a fresh update', async () => {
     const { composed, spies } = createComposedGame();
     const compositionRoot = {
       compose: vi.fn().mockResolvedValue(composed),
@@ -168,14 +168,34 @@ describe('GameRuntime', () => {
 
     const runtime = new GameRuntime(compositionRoot);
     await runtime.start();
+    nextFrame?.(1);
+    nextFrame?.(20);
+    spies.update.mockClear();
+    spies.scheduler.update.mockClear();
+    spies.world.nextTick.mockClear();
 
     runtime.pause();
     expect(spies.world.isMoving).toBe(false);
     expect(spies.scheduler.setPaused).toHaveBeenCalledWith(true);
+    nextFrame?.(40);
+    nextFrame?.(60);
+    expect(spies.update).not.toHaveBeenCalled();
+    expect(spies.scheduler.update).not.toHaveBeenCalled();
+    expect(spies.world.nextTick).not.toHaveBeenCalled();
+    expect(spies.render).toHaveBeenLastCalledWith(1);
 
     runtime.resume();
     expect(spies.world.isMoving).toBe(true);
     expect(spies.scheduler.setPaused).toHaveBeenCalledWith(false);
+    nextFrame?.(61);
+    expect(spies.update).not.toHaveBeenCalled();
+    expect(spies.render).toHaveBeenLastCalledWith(1);
+    nextFrame?.(80);
+    expect(spies.update).toHaveBeenCalledOnce();
+    expect(spies.scheduler.update).toHaveBeenCalledOnce();
+    expect(spies.world.nextTick).toHaveBeenCalledOnce();
+    expect(spies.render.mock.lastCall?.[0]).toBeLessThan(1);
+    runtime.destroy();
   });
 
   it('auto-pauses on window blur and auto-resumes on focus when pause was focus-caused', async () => {
@@ -266,20 +286,105 @@ describe('GameRuntime', () => {
     expect(documentRemoveEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
   });
 
-  it('registers focus listeners only once when start is called repeatedly', async () => {
-    const { composed } = createComposedGame();
-    const compositionRoot = {
-      compose: vi.fn().mockResolvedValue(composed),
-    } as unknown as GameCompositionRoot;
+  it('shares pending startup so simultaneous starts create one composition and loop', async () => {
+    const { composed, spies } = createComposedGame();
+    let resolveComposition!: (_composed: ComposedGame) => void;
+    const pending = new Promise<ComposedGame>((resolve) => { resolveComposition = resolve; });
+    const compose = vi.fn().mockReturnValue(pending);
+    const compositionRoot = { compose } as unknown as GameCompositionRoot;
 
     const runtime = new GameRuntime(compositionRoot);
-    await runtime.start();
+    const first = runtime.start();
+    const second = runtime.start();
+    expect(second).toBe(first);
+    expect(compose).toHaveBeenCalledOnce();
+    resolveComposition(composed);
+    await Promise.all([first, second]);
     await runtime.start();
 
-    expect(windowAddEventListener).toHaveBeenCalledWith('blur', expect.any(Function));
-    expect(windowAddEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
-    expect(documentAddEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    expect(spies.start).toHaveBeenCalledOnce();
+    expect(window.requestAnimationFrame).toHaveBeenCalledOnce();
     expect(windowAddEventListener).toHaveBeenCalledTimes(2);
     expect(documentAddEventListener).toHaveBeenCalledTimes(1);
+    runtime.destroy();
+  });
+
+  it('allows retrying startup after a loading failure', async () => {
+    const { composed, spies } = createComposedGame();
+    const failure = new Error('Map could not load');
+    const compose = vi.fn().mockRejectedValueOnce(failure).mockResolvedValueOnce(composed);
+    const compositionRoot = { compose } as unknown as GameCompositionRoot;
+    const runtime = new GameRuntime(compositionRoot);
+    await expect(runtime.start()).rejects.toBe(failure);
+    expect(nextFrame).toBeNull();
+    await runtime.start();
+    expect(compose).toHaveBeenCalledTimes(2);
+    expect(spies.start).toHaveBeenCalledOnce();
+    expect(window.requestAnimationFrame).toHaveBeenCalledOnce();
+    runtime.destroy();
+  });
+
+  it('releases a partially started game and allows a clean retry', async () => {
+    const failed = createComposedGame();
+    const retry = createComposedGame();
+    const failure = new Error('System could not start');
+    failed.spies.start.mockImplementationOnce(() => { throw failure; });
+    const compositionRoot = {
+      compose: vi.fn().mockResolvedValueOnce(failed.composed).mockResolvedValueOnce(retry.composed),
+    } as unknown as GameCompositionRoot;
+    const runtime = new GameRuntime(compositionRoot);
+
+    await expect(runtime.start()).rejects.toBe(failure);
+
+    expect(failed.spies.updateDestroy).toHaveBeenCalledOnce();
+    expect(failed.spies.renderDestroy).toHaveBeenCalledOnce();
+    expect(failed.spies.scheduler.clear).toHaveBeenCalledOnce();
+    expect(failed.spies.input.destroy).toHaveBeenCalledOnce();
+    expect(failed.composed.destroy).toHaveBeenCalledOnce();
+    expect(windowRemoveEventListener).toHaveBeenCalledWith('blur', expect.any(Function));
+    expect(documentRemoveEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    expect(nextFrame).toBeNull();
+
+    await runtime.start();
+    expect(retry.spies.start).toHaveBeenCalledOnce();
+    expect(nextFrame).not.toBeNull();
+    runtime.destroy();
+    expect(failed.spies.renderDestroy).toHaveBeenCalledOnce();
+    expect(retry.spies.renderDestroy).toHaveBeenCalledOnce();
+  });
+
+  it('releases a composition that finishes loading after destroy without starting its systems or loop', async () => {
+    const { composed, spies } = createComposedGame();
+    const sharedSystem = { update: vi.fn(), render: vi.fn(), destroy: vi.fn() };
+    composed.updateSystems.push(sharedSystem);
+    composed.renderSystems.push(sharedSystem);
+    let resolveComposition!: (_composed: ComposedGame) => void;
+    const pendingComposition = new Promise<ComposedGame>((resolve) => {
+      resolveComposition = resolve;
+    });
+    const compose = vi.fn<GameCompositionRoot['compose']>().mockReturnValue(pendingComposition);
+    const compositionRoot = { compose } as unknown as GameCompositionRoot;
+    const runtime = new GameRuntime(compositionRoot);
+
+    const starting = runtime.start();
+    runtime.destroy();
+    expect(compose.mock.calls[0][1]?.aborted).toBe(true);
+    expect(spies.renderDestroy).not.toHaveBeenCalled();
+    resolveComposition(composed);
+    await starting;
+    runtime.destroy();
+
+    expect(spies.start).not.toHaveBeenCalled();
+    expect(spies.update).not.toHaveBeenCalled();
+    expect(spies.render).not.toHaveBeenCalled();
+    expect(nextFrame).toBeNull();
+    expect(windowAddEventListener).not.toHaveBeenCalled();
+    expect(documentAddEventListener).not.toHaveBeenCalled();
+    expect(spies.updateDestroy).toHaveBeenCalledOnce();
+    expect(spies.renderDestroy).toHaveBeenCalledOnce();
+    expect(sharedSystem.destroy).toHaveBeenCalledOnce();
+    expect(spies.scheduler.clear).toHaveBeenCalledOnce();
+    expect(spies.input.destroy).toHaveBeenCalledOnce();
+    expect(composed.destroy).toHaveBeenCalledOnce();
   });
 });

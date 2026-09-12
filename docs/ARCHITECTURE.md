@@ -36,6 +36,7 @@ src/game/
     map/
     assets/
     adapters/
+    three/
   shared/
     random/
     events/
@@ -46,7 +47,7 @@ src/game/
 ### `app`
 Composition and lifecycle orchestration.
 - `createPacmanGame.ts`: public API factory (`start`, `pause`, `resume`, `destroy`).
-- `GameRuntime.ts`: fixed-step runtime loop and system execution.
+- `GameRuntime.ts`: fixed-step runtime loop and system execution. Concurrent `start()` calls share initialization; destruction cancels pending startup before it can mount a scene or reset shared game state. Composition checks cancellation after map and asset loading, mounts only after scene construction, and removes only its owned canvas. A failed system startup releases the partial composition and listeners before allowing a retry.
 - `GameCompositionRoot.ts`: composition root; builds world + systems + adapters.
 - `contracts.ts`: runtime and system interfaces.
 
@@ -57,7 +58,7 @@ Gameplay model and pure logic.
 - `world`: `WorldState`, `CollisionGrid`, map/world data types.
 - `services`: movement rules, ghost decisions, ghost jail behavior, portal behavior.
 - `GhostJailLayout` holds map-based jail and spawn inference; `GhostJailService` keeps its existing public operations.
-- Pixel-mask collision checks prepare transforms once per sample and reuse Pac-Man's preparation within one collision search.
+- Pixel-mask collision checks retain the original sprite masks, prepare transforms once per sample, and reuse Pac-Man's preparation within one collision search. The 3D meshes do not change gameplay collision coordinates or rules.
 
 ### `systems`
 Frame-by-frame behavior execution.
@@ -78,10 +79,13 @@ Frame-by-frame behavior execution.
 Browser/engine integration and data loading.
 - map parser/repository (`TiledParser`, `TiledMapRepository`)
 - `TiledMapTopology` handles portal inference and void-boundary guards after tile trimming.
-- assets (`AssetCatalog`)
+- `AssetCatalog` loads tile images and caches native alpha masks for wall geometry; sprite sheets remain the source of gameplay collision masks.
 - adapters for renderer/input/timer/hud
-- `DeviceTileCache` owns device tile images and pixel normalization, with one cache per `RenderSystem`.
-- `MapLayerRenderer` visits only viewport-intersecting tiles and batches canvas state per layer. Its tile cache reuses the last image for unchanged tile attributes and scale.
+- `ThreeRendererAdapter` owns the WebGL renderer and viewport sizing. It renders directly to the antialiased canvas with sRGB output and tone mapping, without bloom or intermediate postprocessing targets, and disposes the renderer on destruction.
+- `RenderSystem` owns a Three.js scene with `MazeScene`, procedural `ArcadeAssets`, and `CollisionDebugScene`, and disposes their GPU resources when destroyed. It reads the injected `CollectibleSystem`; only the update pipeline advances collection and effect timers. `MazeScene` consumes tile masks.
+- `MazeGeometry` unions transformed native tile alpha masks before tracing and extruding wall contours. This preserves thin rails, corridor clearance, holes, and portal openings without treating `collides` as solid tile occupancy. The 12-unit-high walls have a square profile with dark faces and colored top, bottom, and main vertical contour edges. Top and bottom outlines share the authored contour, and straight side outlines meet the top directly at right angles; diagonal contacts share one vertical connection. Authored corner shapes retain side connections at long-edge ends while intermediate single-pixel stair-steps omit vertical stripes. `MazeScene` batches the outline strips into static instanced meshes with normal depth testing and unboosted colors, and supplies the floor, open pen, and sign plaques with extruded vector lettering separately.
+- The pen entrance replaces the adjoining corridor rail with a floor-level marker so releasing ghosts cross an open doorway; gameplay collision data remains unchanged.
+- Character meshes and instanced pellets share reusable geometry and materials. Pellet transforms refresh only when the collectible count changes, avoiding per-frame array copies. Collision markings render in the 3D scene; `DebugOverlaySystem` owns the HTML debug panels.
 
 ### `shared`
 Cross-cutting utilities.
@@ -92,7 +96,7 @@ Cross-cutting utilities.
 ## Dependency Direction
 Allowed direction:
 1. `app` -> `systems`, `domain`, `infrastructure`, `shared`, `engine`
-2. `systems` -> `domain`, `shared`, and infrastructure adapters/assets
+2. `systems` -> `domain`, `shared`, and infrastructure adapters/assets/3D presentation
 3. `domain` -> `shared`
 4. `infrastructure` -> `domain`, `shared`, `engine`
 5. no circular imports
@@ -116,22 +120,21 @@ Update order (fixed):
 11. `DebugOverlaySystem`
 
 Render order:
-1. `RenderSystem` map
-2. `RenderSystem` entities
-3. `DebugOverlaySystem` overlay
-4. HUD is DOM-based (managed by `HudSystem`/adapter)
+1. `RenderSystem` presents the camera and interpolated entity positions, then synchronizes collectibles, effects, and collision markings.
+2. `ThreeRendererAdapter` renders the complete scene with depth testing.
+3. `DebugOverlaySystem` refreshes HTML debug panels.
+4. HUD and pause UI remain DOM-based.
 
 ## Camera Behavior Contract
 - `CameraSystem.start()` configures bounds, zoom, follow target, and viewport, then calls a one-time snap so the first gameplay frame is centered on Pac-Man instead of animating in from `(0, 0)`.
 - After startup, camera movement remains lerp-based via `CAMERA.followLerp` and updates each frame in `CameraSystem.update()`.
-- Rendering uses the fixed-step loop's alpha to present map and entity layers at the same interpolated camera position without mutating camera simulation state.
-- Moving sprites interpolate their previous/current positions using the same alpha. Portal, respawn, and jail position resets present the destination immediately without changing collision coordinates.
-- `RenderSystem` computes device metrics once per render and shares them across map, collectible, and effect layers.
-- Entity batches use the same snapped scale and origin as map layers, including fractional device pixel ratios.
+- `Camera3D` wraps the existing `Camera2D` follow tracker and presents an orthographic camera with a fixed 20-degree forward tilt and 5-degree lean from the right, with north as its up reference. Projection correction cancels the side lean's ground-plane shear and horizontal compression, keeping maze rows and columns aligned with the screen at the original scale while height reveals wall sides. Bounds, zoom, and viewport changes rebuild this correction and the inverse projection used for ground-plane ray picking.
+- Rendering interpolates the camera using the fixed-step loop's alpha, then rounds its displayed translation to physical pixels using the renderer's capped DPR, integer drawing-buffer dimensions, and tilt-adjusted ground scale. Follow simulation state remains continuous; exact boundary stops and small-world centering are preserved. Pointer picking uses this displayed camera transform.
+- Moving meshes interpolate their previous/current positions using the same alpha. Portal, respawn, and jail position resets present the destination immediately without changing collision coordinates.
 - Paused rendering uses current positions. After startup or resume, interpolation starts only after a fresh active fixed update so old movement is not replayed.
-- `Camera2D` applies per-axis bounds policy on both startup snap and regular updates: clamp on axes where the world is larger than the viewport, and center on axes where the viewport is larger than the world.
+- The `Camera2D` tracker retains its per-axis bounds policy on both startup snap and regular updates: clamp on axes where the world is larger than the viewport, and center on axes where the viewport is larger than the world.
 - Resize handling updates renderer size and camera viewport dimensions before subsequent follow updates.
-- Regression coverage lives in `src/__tests__/camera2d.test.ts`, `src/__tests__/cameraPresentation.test.ts`, and `src/__tests__/cameraSystem.test.ts`.
+- Regression coverage includes `src/__tests__/camera2d.test.ts`, `src/__tests__/camera3d.test.ts`, and `src/__tests__/cameraSystem.test.ts`.
 
 ## Core Runtime Contracts
 Public runtime contract:
@@ -147,6 +150,7 @@ The previous `startGameApp`/`stopGameApp` API was intentionally removed.
 - `CollisionGrid` exposes safe tile/collision reads.
 - `WorldState` stores runtime mutable state (entities, debug flags, tick, jail state, animation state).
 - Systems mutate `WorldState` in order; render systems consume the latest state.
+- Presentation maps gameplay `(x, y)` to Three.js `(x, height, z)` with gameplay `y` becoming `z`; map parsing and movement remain two-dimensional.
 
 ## Determinism and Randomness
 All game randomness is routed through `RandomSource`.
@@ -169,7 +173,7 @@ Required checks:
 - `pnpm run lint`
 - `pnpm run test`
 
-`pnpm run test:all` runs these checks followed by a production build. See [Testing](TESTING.md) for focused test commands.
+`pnpm run test:all` runs these checks followed by a production build. Follow explicit task limits when checks are deferred and report the missing evidence. See [Testing](TESTING.md) for focused commands and the policy on independent behavioral assertions and integration coverage.
 
 Nested checkouts under `.codex/worktrees/` are excluded from lint and test discovery.
 
