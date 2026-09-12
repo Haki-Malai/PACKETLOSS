@@ -91,7 +91,7 @@ describe('canMove', () => {
     expect(canMove('left', 0, -4, collisionTiles, tileSize)).toBe(true);
   });
 
-  it('allows only release ghosts through pen-gate edges but blocks pacman and free ghosts', () => {
+  it('allows only release ghosts through pen-gate edges but blocks packet and free ghosts', () => {
     const collisionTiles: CollisionTiles = {
       current: tile({ down: true, penGate: true }),
       down: tile(),
@@ -100,7 +100,7 @@ describe('canMove', () => {
       up: tile(),
     };
 
-    expect(canMove('down', 0, 0, collisionTiles, tileSize, 'pacman')).toBe(false);
+    expect(canMove('down', 0, 0, collisionTiles, tileSize, 'packet')).toBe(false);
     expect(canMove('down', 0, 0, collisionTiles, tileSize, 'ghost')).toBe(false);
     expect(canMove('down', 0, 0, collisionTiles, tileSize, 'ghostRelease')).toBe(true);
   });
@@ -126,35 +126,35 @@ describe('applyBufferedDirection', () => {
   };
 
   it('switches to the buffered direction when centered and the path is open', () => {
-    const pacman: BufferedEntity = { moved: { x: 0, y: 0 }, direction: { current: 'right', next: 'up' } };
+    const packet: BufferedEntity = { moved: { x: 0, y: 0 }, direction: { current: 'right', next: 'up' } };
     const canMoveSpy = vi.fn(() => true);
 
-    const result = applyBufferedDirection(pacman, collisionTiles, tileSize, canMoveSpy);
+    const result = applyBufferedDirection(packet, collisionTiles, tileSize, canMoveSpy);
 
     expect(result).toBe('up');
-    expect(pacman.direction.current).toBe('up');
-    expect(canMoveSpy).toHaveBeenCalledWith('up', 0, 0, collisionTiles, tileSize, 'pacman');
+    expect(packet.direction.current).toBe('up');
+    expect(canMoveSpy).toHaveBeenCalledWith('up', 0, 0, collisionTiles, tileSize, 'packet');
   });
 
-  it('ignores buffered input until pacman is centered on a tile', () => {
-    const pacman: BufferedEntity = { moved: { x: 4, y: 0 }, direction: { current: 'right', next: 'up' } };
+  it('ignores buffered input until packet is centered on a tile', () => {
+    const packet: BufferedEntity = { moved: { x: 4, y: 0 }, direction: { current: 'right', next: 'up' } };
     const canMoveSpy = vi.fn(() => true);
 
-    const result = applyBufferedDirection(pacman, collisionTiles, tileSize, canMoveSpy);
+    const result = applyBufferedDirection(packet, collisionTiles, tileSize, canMoveSpy);
 
     expect(result).toBe('right');
-    expect(pacman.direction.current).toBe('right');
+    expect(packet.direction.current).toBe('right');
     expect(canMoveSpy).not.toHaveBeenCalled();
   });
 
   it('keeps the current direction if the buffered turn is blocked', () => {
-    const pacman: BufferedEntity = { moved: { x: 0, y: 0 }, direction: { current: 'right', next: 'up' } };
+    const packet: BufferedEntity = { moved: { x: 0, y: 0 }, direction: { current: 'right', next: 'up' } };
     const canMoveSpy = vi.fn(() => false);
 
-    const result = applyBufferedDirection(pacman, collisionTiles, tileSize, canMoveSpy);
+    const result = applyBufferedDirection(packet, collisionTiles, tileSize, canMoveSpy);
 
     expect(result).toBe('right');
-    expect(pacman.direction.current).toBe('right');
+    expect(packet.direction.current).toBe('right');
     expect(canMoveSpy).toHaveBeenCalledOnce();
   });
 });

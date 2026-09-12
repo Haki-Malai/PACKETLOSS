@@ -8,13 +8,13 @@ describe('InputSystem', () => {
     input.emitPointerDown(pointer({ x: 10, y: 10 }));
 
     input.emitPointerMove(pointer({ x: 24, y: 14 }));
-    expect(world.pacman.direction.next).toBe('left');
+    expect(world.packet.direction.next).toBe('left');
 
     input.emitPointerMove(pointer({ x: 29, y: 26 }));
-    expect(world.pacman.direction.next).toBe('left');
+    expect(world.packet.direction.next).toBe('left');
 
     input.emitPointerMove(pointer({ x: 40, y: 15 }));
-    expect(world.pacman.direction.next).toBe('right');
+    expect(world.packet.direction.next).toBe('right');
 
     input.emitPointerUp(pointer({ x: 40, y: 15 }));
     expect(togglePause).toHaveBeenCalledTimes(0);
@@ -25,12 +25,12 @@ describe('InputSystem', () => {
 
     input.emitPointerDown(pointer({ x: 20, y: 40 }));
     input.emitPointerMove(pointer({ x: 24, y: 70 }));
-    expect(world.pacman.direction.next).toBe('down');
+    expect(world.packet.direction.next).toBe('down');
 
     input.emitPointerUp(pointer({ x: 24, y: 70 }));
     input.emitPointerDown(pointer({ pointerId: 2, x: 24, y: 70 }));
     input.emitPointerMove(pointer({ pointerId: 2, x: 20, y: 42 }));
-    expect(world.pacman.direction.next).toBe('up');
+    expect(world.packet.direction.next).toBe('up');
   });
 
   it('toggles pause on touch tap to pause', () => {
@@ -70,7 +70,7 @@ describe('InputSystem', () => {
     input.emitPointerMove(pointer({ x: 48, y: 22 }));
     input.emitPointerUp(pointer({ x: 48, y: 22 }));
 
-    expect(world.pacman.direction.next).toBe('right');
+    expect(world.packet.direction.next).toBe('right');
     expect(togglePause).toHaveBeenCalledTimes(0);
   });
 
@@ -95,11 +95,11 @@ describe('InputSystem', () => {
     input.setKeyDown('ArrowUp', true);
     input.emitPointerDown(pointer({ x: 10, y: 10 }));
     input.emitPointerMove(pointer({ x: 10, y: 60 }));
-    expect(world.pacman.direction.next).toBe('left');
+    expect(world.packet.direction.next).toBe('left');
 
     input.setKeyDown('ArrowUp', false);
     input.emitPointerMove(pointer({ x: 10, y: 60 }));
-    expect(world.pacman.direction.next).toBe('down');
+    expect(world.packet.direction.next).toBe('down');
   });
 
   it('keeps desktop pointerdown pause toggle behavior unchanged', () => {

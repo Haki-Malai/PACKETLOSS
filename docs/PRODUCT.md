@@ -1,12 +1,12 @@
 # Product overview
 
-Pacman is a personal, work-in-progress remake of Pac-Man for desktop and mobile browsers. The core experience is navigating a maze, collecting pellets, avoiding ghosts, and turning the chase around with power pellets. It uses animated 3D meshes, a following camera, and maps authored in Tiled.
+PACKETLOSS is a work-in-progress maze arcade game for desktop and mobile browsers. The core experience is navigating a maze, collecting pellets, avoiding ghosts, and turning the chase around with power pellets. It uses animated 3D meshes, a following camera, and maps authored in Tiled.
 
 ## Gameplay
 
 ### Movement and mazes
 
-Pac-Man moves along the maze corridors. Direction inputs queue the next turn, which takes effect when the path allows it. Walls and maze boundaries constrain movement. Linked portals let Pac-Man and ghosts travel between parts of the maze; Pac-Man briefly blinks and is protected from harmful ghost collisions after teleporting.
+The Packet moves along the maze corridors. Direction inputs queue the next turn, which takes effect when the path allows it. Walls and maze boundaries constrain movement. Linked portals let the Packet and ghosts travel between parts of the maze; the Packet briefly blinks and is protected from harmful ghost collisions after teleporting.
 
 ### Pellets and scoring
 
@@ -19,7 +19,7 @@ Pac-Man moves along the maze corridors. Direction inputs queue the next turn, wh
 
 Ghosts start in a pen and are released into the maze. While scared, they can be eaten and return to the pen before rejoining play. A flashing warning signals when the scared period is ending.
 
-The player starts with three lives. Contact with a dangerous ghost costs one life and returns Pac-Man to his spawn, with a brief blinking recovery period that prevents another immediate hit. Score and lives appear in the HUD.
+The player starts with three lives. Contact with a dangerous ghost costs one life and returns the Packet to its spawn, with a brief blinking recovery period that prevents another immediate hit. Score and lives appear in the HUD.
 
 ## Controls and pause
 
@@ -32,9 +32,9 @@ Pausing freezes movement and gameplay timers and dims/desaturates the scene. Swi
 
 ## Presentation
 
-The camera follows Pac-Man smoothly and adapts to the viewport. Its orthographic view combines a 20-degree forward tilt with a fixed 5-degree lean from the right to reveal more wall faces. Maze rows and columns stay aligned with the screen, and the viewing angle stays constant as Pac-Man moves. Rendering interpolates movement between simulation updates, while portals and respawns show the destination immediately. The displayed camera aligns to physical pixels to stabilize the maze outlines; slow panning can advance in tiny pixel steps.
+The camera follows the Packet smoothly and adapts to the viewport. Its orthographic view combines a 20-degree forward tilt with a fixed 5-degree lean from the right to reveal more wall faces. Maze rows and columns stay aligned with the screen, and the viewing angle stays constant as the Packet moves. Rendering interpolates movement between simulation updates, while portals and respawns show the destination immediately. The displayed camera aligns to physical pixels to stabilize the maze outlines; slow panning can advance in tiny pixel steps.
 
-The maze walls, ghost prison, and PACMAN logo share a 12-unit height, dark shaded faces, and crisp square outlines. Their outline colors distinguish them: muted cyan for the maze, magenta for the prison, and gold for the logo. The lettering rises directly from the maze floor. The prison repeats the original PNG bar pattern at its authored tile positions, with continuous rails and two rectangular openings per tile, extruded using the same geometry pipeline as the walls. Bars remain complete across ghost release paths; ghosts retain their existing pass-through rules. All three use the same material finish and approximately 1.75-CSS-pixel outlines at the default zoom, with normal depth testing and antialiasing and no emission, brightness boosts, or bloom. Maze wall footprints preserve corridor clearance. Pellets are matte cream, and rounded characters retain their recognizable colors. The HUD, pause UI, and debug panels remain HTML overlays. A WebGL 2-capable browser is required.
+The maze walls, ghost prison, and PACKETLOSS logo share a 12-unit height, dark shaded faces, and crisp square outlines. Their outline colors distinguish them: muted pink for the maze, cyan for the prison, and gold for the logo. The lettering rises directly from the maze floor. The prison repeats the original PNG bar pattern at its authored tile positions, with continuous rails and two rectangular openings per tile, extruded using the same geometry pipeline as the walls. The surrounding maze walls retain their faces and outer pink outlines; only pink edges touching the cyan prison bars are hidden. The prison retains its internal cyan bar outlines, without the outer cyan bounding box. Bars remain complete across ghost release paths; ghosts retain their existing pass-through rules. All three use the same material finish and approximately 1.75-CSS-pixel outlines at the default zoom, with normal depth testing and antialiasing and no emission, brightness boosts, or bloom. Gameplay wall masks and corridor clearance remain unchanged. Pellets are matte cream, and rounded characters retain their recognizable colors. The HUD, pause UI, and debug panels remain HTML overlays. A WebGL 2-capable browser is required.
 
 ## Maps
 

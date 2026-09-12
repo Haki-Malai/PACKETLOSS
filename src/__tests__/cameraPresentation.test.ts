@@ -10,13 +10,13 @@ describe('camera presentation', () => {
     const { renderSystem, camera, renderer, scene } = createRenderHarness({ world });
     const present = vi.spyOn(camera, 'present');
     renderSystem.capturePreviousState();
-    world.pacman.x += 16;
+    world.packet.x += 16;
     camera.update();
     const simulationCameraPosition = camera.getRenderPosition();
-    let renderedPacmanX = 0;
+    let renderedPacketX = 0;
     let renderedCameraX = 0;
     renderer.render.mockImplementationOnce(() => {
-      renderedPacmanX = scene.getObjectByName('pacman')!.position.x;
+      renderedPacketX = scene.getObjectByName('packet')!.position.x;
       renderedCameraX = camera.screenToWorld(400, 300).x;
     });
 
@@ -24,10 +24,10 @@ describe('camera presentation', () => {
 
     expect(present).toHaveBeenCalledExactlyOnceWith(0.35, renderer.pixelRatio);
     expect(renderer.render).toHaveBeenCalledExactlyOnceWith(scene, camera.camera);
-    expect(renderedPacmanX).toBeCloseTo(168 + 16 * 0.35);
+    expect(renderedPacketX).toBeCloseTo(168 + 16 * 0.35);
     expect(Math.abs(renderedCameraX - (168 + 16 * 0.09 * 0.35))).toBeLessThanOrEqual(0.1);
     expect(camera.getRenderPosition()).toEqual(simulationCameraPosition);
-    expect(world.pacman.x).toBe(184);
+    expect(world.packet.x).toBe(184);
     renderSystem.destroy();
   });
 });

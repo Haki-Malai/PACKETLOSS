@@ -24,7 +24,7 @@ export class CameraSystem {
   start(): void {
     this.camera.setBounds(this.world.map.widthInPixels, this.world.map.heightInPixels);
     this.camera.setZoom(CAMERA.zoom);
-    this.camera.startFollow(this.world.pacman, CAMERA.followLerp.x, CAMERA.followLerp.y);
+    this.camera.startFollow(this.world.packet, CAMERA.followLerp.x, CAMERA.followLerp.y);
 
     this.handleResize();
     this.camera.snapToFollowTarget();

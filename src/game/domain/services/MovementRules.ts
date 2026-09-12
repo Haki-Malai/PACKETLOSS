@@ -38,7 +38,7 @@ export function canMove(
   movedX: number,
   collisionTiles: CollisionTiles,
   tileSize: number = DEFAULT_TILE_SIZE,
-  actor: MovementActor = 'pacman',
+  actor: MovementActor = 'packet',
 ): boolean {
   const current = collisionTiles.current;
   const up = collisionTiles.up;
@@ -92,7 +92,7 @@ export function getAvailableDirections(
   collisionTiles: CollisionTiles,
   currentDirection: Direction,
   tileSize: number = DEFAULT_TILE_SIZE,
-  actor: MovementActor = 'pacman',
+  actor: MovementActor = 'packet',
 ): Direction[] {
   const directions = DIRECTIONS.filter((direction) => {
     if (direction === OPPOSITE_DIRECTION[currentDirection]) {
@@ -126,7 +126,7 @@ export function applyBufferedDirection(
     return current;
   }
 
-  if (canMoveFn(next, entity.moved.y, entity.moved.x, collisionTiles, tileSize, 'pacman')) {
+  if (canMoveFn(next, entity.moved.y, entity.moved.x, collisionTiles, tileSize, 'packet')) {
     entity.direction.current = next;
     if (next === 'left' || next === 'right') {
       entity.moved.x = 0;
@@ -192,7 +192,7 @@ export class MovementRules {
     movedY: number,
     movedX: number,
     collisionTiles: CollisionTiles,
-    actor: MovementActor = 'pacman',
+    actor: MovementActor = 'packet',
   ): boolean {
     return canMove(direction, movedY, movedX, collisionTiles, this.tileSize, actor);
   }

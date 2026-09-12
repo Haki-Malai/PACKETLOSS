@@ -15,9 +15,9 @@ function createEntityHarness() {
   new MovementRules(world.tileSize).setEntityTile(ghost, ghost.tile);
   world.ghosts.push(ghost);
   const harness = createRenderHarness({ world });
-  const pacmanModel = harness.scene.getObjectByName('pacman') as Group;
+  const packetModel = harness.scene.getObjectByName('packet') as Group;
   const ghostModel = harness.scene.getObjectByName('ghost-inky') as Group;
-  return { ...harness, ghost, pacmanModel, ghostModel };
+  return { ...harness, ghost, packetModel, ghostModel };
 }
 
 function body(model: Group): Mesh<BufferGeometry, MeshStandardMaterial> {
@@ -45,75 +45,75 @@ describe('RenderSystem entity presentation', () => {
   });
 
   it('gives death-recovery visibility priority over portal blinking', () => {
-    const { world, pacmanModel, renderSystem } = createEntityHarness();
-    world.pacman.portalBlinkRemainingMs = 300;
-    world.pacman.portalBlinkElapsedMs = 120;
-    world.pacman.deathRecoveryRemainingMs = 500;
-    world.pacman.deathRecoveryVisible = true;
+    const { world, packetModel, renderSystem } = createEntityHarness();
+    world.packet.portalBlinkRemainingMs = 300;
+    world.packet.portalBlinkElapsedMs = 120;
+    world.packet.deathRecoveryRemainingMs = 500;
+    world.packet.deathRecoveryVisible = true;
     renderSystem.render();
-    expect(pacmanModel.visible).toBe(true);
+    expect(packetModel.visible).toBe(true);
 
-    world.pacman.deathRecoveryVisible = false;
-    world.pacman.portalBlinkElapsedMs = 240;
+    world.packet.deathRecoveryVisible = false;
+    world.packet.portalBlinkElapsedMs = 240;
     renderSystem.render();
-    expect(pacmanModel.visible).toBe(false);
+    expect(packetModel.visible).toBe(false);
 
-    world.pacman.deathRecoveryRemainingMs = 0;
+    world.packet.deathRecoveryRemainingMs = 0;
     renderSystem.render();
-    expect(pacmanModel.visible).toBe(true);
-    world.pacman.portalBlinkElapsedMs = 360;
+    expect(packetModel.visible).toBe(true);
+    world.packet.portalBlinkElapsedMs = 360;
     renderSystem.render();
-    expect(pacmanModel.visible).toBe(false);
+    expect(packetModel.visible).toBe(false);
     renderSystem.destroy();
   });
 
   it('interpolates both entity models while preserving gameplay coordinates', () => {
-    const { world, ghost, pacmanModel, ghostModel, renderSystem } = createEntityHarness();
+    const { world, ghost, packetModel, ghostModel, renderSystem } = createEntityHarness();
     renderSystem.capturePreviousState();
-    world.pacman.x += 8;
+    world.packet.x += 8;
     ghost.y += 8;
     renderSystem.render(0.5);
 
-    expect(pacmanModel.position.x).toBe(12);
-    expect(pacmanModel.position.z).toBe(8);
+    expect(packetModel.position.x).toBe(12);
+    expect(packetModel.position.z).toBe(8);
     expect(ghostModel.position.x).toBe(24);
     expect(ghostModel.position.z).toBe(12);
-    expect(world.pacman.x).toBe(16);
+    expect(world.packet.x).toBe(16);
     expect(ghost.y).toBe(16);
     renderSystem.destroy();
   });
 
   it('shows portal and respawn destinations immediately when tile positions reset', () => {
-    const { world, ghost, pacmanModel, ghostModel, renderSystem } = createEntityHarness();
+    const { world, ghost, packetModel, ghostModel, renderSystem } = createEntityHarness();
     renderSystem.capturePreviousState();
     const movement = new MovementRules(world.tileSize);
-    movement.setEntityTile(world.pacman, { x: 3, y: 1 });
+    movement.setEntityTile(world.packet, { x: 3, y: 1 });
     movement.setEntityTile(ghost, { x: 2, y: 1 });
     renderSystem.render(0.1);
 
-    expect(pacmanModel.position.x).toBe(56);
-    expect(pacmanModel.position.z).toBe(24);
+    expect(packetModel.position.x).toBe(56);
+    expect(packetModel.position.z).toBe(24);
     expect(ghostModel.position.x).toBe(40);
     expect(ghostModel.position.z).toBe(24);
     renderSystem.destroy();
   });
 
   it('uses gameplay mouth frames and direction without advancing animation during rendering', () => {
-    const { world, pacmanModel, renderSystem } = createEntityHarness();
+    const { world, packetModel, renderSystem } = createEntityHarness();
     renderSystem.render();
-    const closedMouth = body(pacmanModel).geometry;
-    world.pacmanAnimation.frame = 3;
-    world.pacman.angle = -90;
+    const closedMouth = body(packetModel).geometry;
+    world.packetAnimation.frame = 3;
+    world.packet.angle = -90;
     renderSystem.render();
 
-    expect(body(pacmanModel).geometry).not.toBe(closedMouth);
-    expect(pacmanModel.rotation.y).toBeCloseTo(Math.PI / 2);
-    const openMouth = body(pacmanModel).geometry;
+    expect(body(packetModel).geometry).not.toBe(closedMouth);
+    expect(packetModel.rotation.y).toBeCloseTo(Math.PI / 2);
+    const openMouth = body(packetModel).geometry;
     world.isMoving = false;
     renderSystem.render();
     renderSystem.render();
-    expect(body(pacmanModel).geometry).toBe(openMouth);
-    expect(world.pacmanAnimation.frame).toBe(3);
+    expect(body(packetModel).geometry).toBe(openMouth);
+    expect(world.packetAnimation.frame).toBe(3);
     renderSystem.destroy();
   });
 });

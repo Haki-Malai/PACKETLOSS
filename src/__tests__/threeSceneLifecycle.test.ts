@@ -12,7 +12,7 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { Camera3D } from '../engine/camera3d';
 import { GhostEntity } from '../game/domain/entities/GhostEntity';
-import { PacmanEntity } from '../game/domain/entities/PacmanEntity';
+import { PacketEntity } from '../game/domain/entities/PacketEntity';
 import { CollisionGrid, createEmptyCollisionTile } from '../game/domain/world/CollisionGrid';
 import { WorldState, type WorldMapData } from '../game/domain/world/WorldState';
 import type { MazeAssets } from '../game/infrastructure/three/MazeScene';
@@ -50,9 +50,9 @@ function createSceneHarness() {
       { type: 'power-pellet', x: 56, y: 24 },
     ],
   };
-  const pacman = new PacmanEntity({ x: 0, y: 1 }, 10, 10);
-  pacman.x = 8;
-  pacman.y = 24;
+  const packet = new PacketEntity({ x: 0, y: 1 }, 10, 10);
+  packet.x = 8;
+  packet.y = 24;
   const ghost = new GhostEntity({
     key: 'blinky', tile: { x: 2, y: 1 }, direction: 'left', speed: 1, displayWidth: 11, displayHeight: 11,
   });
@@ -62,8 +62,8 @@ function createSceneHarness() {
     map,
     tileSize: 16,
     collisionGrid: new CollisionGrid(tiles.map((row) => row.map((tile) => tile.collision))),
-    pacmanSpawnTile: pacman.tile,
-    pacman,
+    packetSpawnTile: packet.tile,
+    packet,
     ghosts: [ghost],
     ghostJailBounds: { minX: 1, maxX: 2, y: 1 },
   });
@@ -74,7 +74,7 @@ function createSceneHarness() {
   camera.setBounds(64, 48);
   camera.setZoom(5);
   camera.setViewport(160, 120);
-  camera.startFollow(world.pacman, 0.09, 0.09);
+  camera.startFollow(world.packet, 0.09, 0.09);
   camera.snapToFollowTarget();
   const renderer = { pixelRatio: 1, render: vi.fn(), dispose: vi.fn() };
   const collectibles = new CollectibleSystem(world);
@@ -116,7 +116,7 @@ describe('Three.js scene lifecycle', () => {
     };
     collectibles.update(16);
     for (let frame = 0; frame < 4; frame += 1) {
-      world.pacmanAnimation.frame = frame;
+      world.packetAnimation.frame = frame;
       world.ghostAnimations.set(ghost, { key: 'blinkyIdle', frame, elapsedMs: 0, forward: 1 });
       system.render();
       captureResources();
@@ -153,23 +153,23 @@ describe('Three.js scene lifecycle', () => {
     const { system, world, ghost, camera, collectibles } = createSceneHarness();
     collectibles.update(16);
     world.isMoving = false;
-    world.pacmanAnimation.frame = 2;
-    world.pacman.portalBlinkRemainingMs = 1000;
-    world.pacman.portalBlinkElapsedMs = 120;
+    world.packetAnimation.frame = 2;
+    world.packet.portalBlinkRemainingMs = 1000;
+    world.packet.portalBlinkElapsedMs = 120;
     ghost.state.scared = true;
     world.ghostScaredTimers.set(ghost, 700);
     world.ghostScaredWarnings.set(ghost, { elapsedMs: 500, nextToggleAtMs: 600, showBaseColor: true });
     world.ghostAnimations.set(ghost, { key: 'scaredIdle', frame: 3, elapsedMs: 40, forward: 1 });
     system.render();
-    const pacman = system.scene.getObjectByName('pacman')!;
+    const packet = system.scene.getObjectByName('packet')!;
     const ghostModel = system.scene.getObjectByName('ghost-blinky')!;
-    const pacmanBody = pacman.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
+    const packetBody = packet.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
     const ghostBody = ghostModel.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
     const effect = system.scene.getObjectByName('pellet-effect') as Mesh<BufferGeometry, MeshBasicMaterial>;
     const snapshot = () => ({
-      pacmanPosition: pacman.position.toArray(),
-      pacmanVisible: pacman.visible,
-      mouth: pacmanBody.geometry.id,
+      packetPosition: packet.position.toArray(),
+      packetVisible: packet.visible,
+      mouth: packetBody.geometry.id,
       ghostPosition: ghostModel.position.toArray(),
       hem: ghostBody.geometry.id,
       ghostColor: ghostBody.material.color.getHex(),
@@ -182,7 +182,7 @@ describe('Three.js scene lifecycle', () => {
       warning: { ...world.ghostScaredWarnings.get(ghost) },
     });
     const paused = snapshot();
-    expect(paused.pacmanVisible).toBe(false);
+    expect(paused.packetVisible).toBe(false);
     for (let frame = 0; frame < 20; frame += 1) system.render();
     expect(snapshot()).toEqual(paused);
     system.destroy();

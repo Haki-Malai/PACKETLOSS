@@ -1,7 +1,7 @@
 import { Direction } from '../valueObjects/Direction';
 import { MovementProgress } from '../valueObjects/MovementProgress';
 import { TilePosition } from '../valueObjects/TilePosition';
-import { RenderableEntity } from './PacmanEntity';
+import { RenderableEntity } from './PacketEntity';
 
 export type GhostAnimationState = 'default' | 'scared';
 

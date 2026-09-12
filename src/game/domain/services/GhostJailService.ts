@@ -5,7 +5,7 @@ import { WorldMapData, WorldObject } from '../world/WorldState';
 import { CollisionGrid } from '../world/CollisionGrid';
 import { MovementRules } from './MovementRules';
 import { RandomSource } from '../../shared/random/RandomSource';
-import { inferJailAnchor, inferPacmanMarkerRow } from './GhostJailLayout';
+import { inferJailAnchor, inferPacketMarkerRow } from './GhostJailLayout';
 
 function clamp(value: number, min: number, max: number): number {
   if (value < min) {
@@ -44,7 +44,7 @@ export class GhostJailService {
     const inferredAnchor = inferJailAnchor(map);
     if (inferredAnchor) {
       let spawnY = inferredAnchor.homeY - 1;
-      const markerY = inferPacmanMarkerRow(map, inferredAnchor.homeY);
+      const markerY = inferPacketMarkerRow(map, inferredAnchor.homeY);
       if (typeof markerY === 'number' && spawnY <= markerY) {
         spawnY = Math.min(inferredAnchor.homeY - 1, markerY + 1);
       }

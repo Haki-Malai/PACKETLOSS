@@ -19,7 +19,7 @@ export interface RenderableEntity {
   active: boolean;
 }
 
-export class PacmanEntity implements RenderableEntity {
+export class PacketEntity implements RenderableEntity {
   x = 0;
   y = 0;
   displayWidth: number;

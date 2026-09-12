@@ -3,7 +3,7 @@ import {
   Mesh, MeshBasicMaterial, RingGeometry, Scene,
 } from 'three';
 import { Camera3D } from '../../engine/camera3d';
-import { COLLECTIBLE_CONFIG, PACMAN_PORTAL_BLINK } from '../../config/constants';
+import { COLLECTIBLE_CONFIG, PACKET_PORTAL_BLINK } from '../../config/constants';
 import { GhostEntity } from '../domain/entities/GhostEntity';
 import { WorldState } from '../domain/world/WorldState';
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
@@ -20,7 +20,7 @@ export class RenderSystem {
   private readonly assets = new ArcadeAssets();
   private readonly maze: MazeScene;
   private readonly debug: CollisionDebugScene;
-  private readonly pacman: Group;
+  private readonly packet: Group;
   private readonly ghosts = new Map<GhostEntity, Group>();
   private readonly points = new Map<CollectibleKind, InstancedMesh>();
   private readonly effects = new Map<EatEffect, Mesh<RingGeometry, MeshBasicMaterial>>();
@@ -46,10 +46,10 @@ export class RenderSystem {
     this.debug = new CollisionDebugScene(world);
     this.scene.add(this.maze.group, this.debug.group);
 
-    this.pacman = this.assets.createPacman();
-    this.pacman.name = 'pacman';
-    this.pacman.add(this.assets.createContactShadow(world.pacman.displayWidth));
-    this.scene.add(this.pacman);
+    this.packet = this.assets.createPacket();
+    this.packet.name = 'packet';
+    this.packet.add(this.assets.createContactShadow(world.packet.displayWidth));
+    this.scene.add(this.packet);
     for (const ghost of world.ghosts) {
       const model = this.assets.createGhost(ghost.key);
       model.name = 'ghost-' + ghost.key;
@@ -77,11 +77,11 @@ export class RenderSystem {
   render(alpha = 1): void {
     if (this.destroyed) return;
     this.camera.present(alpha, this.renderer.pixelRatio);
-    const position = this.presentation.getPosition(this.world.pacman, alpha);
-    this.pacman.position.set(position.x, 0, position.y);
-    this.pacman.rotation.y = -(this.world.pacman.angle * Math.PI) / 180;
-    this.pacman.visible = this.isPacmanVisible();
-    this.assets.setPacmanFrame(this.pacman, this.world.pacmanAnimation.frame);
+    const position = this.presentation.getPosition(this.world.packet, alpha);
+    this.packet.position.set(position.x, 0, position.y);
+    this.packet.rotation.y = -(this.world.packet.angle * Math.PI) / 180;
+    this.packet.visible = this.isPacketVisible();
+    this.assets.setPacketFrame(this.packet, this.world.packetAnimation.frame);
 
     this.ghosts.forEach((model, ghost) => {
       const position = this.presentation.getPosition(ghost, alpha);
@@ -158,19 +158,19 @@ export class RenderSystem {
     }
   }
 
-  private isPacmanVisible(): boolean {
-    const deathRecoveryRemaining = this.world.pacman.deathRecoveryRemainingMs ?? 0;
+  private isPacketVisible(): boolean {
+    const deathRecoveryRemaining = this.world.packet.deathRecoveryRemainingMs ?? 0;
     if (deathRecoveryRemaining > 0) {
-      return this.world.pacman.deathRecoveryVisible ?? true;
+      return this.world.packet.deathRecoveryVisible ?? true;
     }
 
-    const remaining = this.world.pacman.portalBlinkRemainingMs ?? 0;
+    const remaining = this.world.packet.portalBlinkRemainingMs ?? 0;
     if (remaining <= 0) {
       return true;
     }
 
-    const elapsed = this.world.pacman.portalBlinkElapsedMs ?? 0;
-    const blinkPhase = Math.floor(elapsed / PACMAN_PORTAL_BLINK.intervalMs);
+    const elapsed = this.world.packet.portalBlinkElapsedMs ?? 0;
+    const blinkPhase = Math.floor(elapsed / PACKET_PORTAL_BLINK.intervalMs);
     return blinkPhase % 2 === 0;
   }
 }

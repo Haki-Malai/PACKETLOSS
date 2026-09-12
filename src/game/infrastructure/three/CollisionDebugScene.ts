@@ -85,7 +85,7 @@ export class CollisionDebugScene {
         index += 1;
       }
     };
-    mark(this.world.pacman.tile, '#ffdd00');
+    mark(this.world.packet.tile, '#ffdd00');
     this.world.ghosts.forEach((ghost) => mark(ghost.tile, '#00ff66'));
     if (this.world.hoveredDebugTile) mark(this.world.hoveredDebugTile, '#33ccff');
     position.needsUpdate = true;

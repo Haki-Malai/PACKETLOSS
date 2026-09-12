@@ -1,21 +1,21 @@
 export const TILE_SIZE = 16;
 
 export const SPRITE_SIZE = {
-  pacman: 10,
+  packet: 10,
   ghost: 11,
 } as const;
 
 export const SPEED = {
-  pacman: 1,
+  packet: 1,
   ghost: 1,
 } as const;
 
-export const PACMAN_PORTAL_BLINK = {
+export const PACKET_PORTAL_BLINK = {
   durationMs: 1500,
   intervalMs: 120,
 } as const;
 
-export const PACMAN_DEATH_RECOVERY = {
+export const PACKET_DEATH_RECOVERY = {
   durationMs: 1200,
   blinkStartIntervalMs: 60,
   blinkEndIntervalMs: 220,

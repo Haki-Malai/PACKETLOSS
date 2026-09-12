@@ -3,7 +3,7 @@ import { GhostEntity } from '../game/domain/entities/GhostEntity';
 import {
   findFirstCollision,
   isPixelMaskOverlap,
-} from '../game/domain/services/GhostPacmanCollisionService';
+} from '../game/domain/services/GhostPacketCollisionService';
 import { CollisionMaskFrame, CollisionMaskSample } from '../game/domain/valueObjects/CollisionMask';
 
 function makeGhost(tile: { x: number; y: number }): GhostEntity {
@@ -54,13 +54,13 @@ function makeSample(params: {
   };
 }
 
-describe('GhostPacmanCollisionService', () => {
+describe('GhostPacketCollisionService', () => {
   it('detects collision when opaque mask pixels overlap', () => {
     const ghost = makeGhost({ x: 10, y: 4 });
     const fullMask = makeMask(3, 3, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
 
     const collision = findFirstCollision({
-      pacman: makeSample({ x: 10, y: 10, width: 3, height: 3, mask: fullMask }),
+      packet: makeSample({ x: 10, y: 10, width: 3, height: 3, mask: fullMask }),
       ghosts: [
         {
           ghost,
@@ -70,7 +70,7 @@ describe('GhostPacmanCollisionService', () => {
     });
 
     expect(collision?.contact).toBe('pixel-mask-overlap');
-    expect(collision?.outcome).toBe('pacman-hit');
+    expect(collision?.outcome).toBe('packet-hit');
   });
 
   it('returns null when only transparent pixels overlap', () => {
@@ -78,7 +78,7 @@ describe('GhostPacmanCollisionService', () => {
     const transparentMask = makeMask(4, 4, []);
 
     const collision = findFirstCollision({
-      pacman: makeSample({ x: 8, y: 8, width: 4, height: 4, mask: transparentMask }),
+      packet: makeSample({ x: 8, y: 8, width: 4, height: 4, mask: transparentMask }),
       ghosts: [
         {
           ghost,
@@ -91,9 +91,9 @@ describe('GhostPacmanCollisionService', () => {
   });
 
   it('applies rotation and flip transforms during overlap detection', () => {
-    const rotationPacmanMask = makeMask(4, 2, [7]);
+    const rotationPacketMask = makeMask(4, 2, [7]);
     const rotationGhostMask = makeMask(4, 2, [0]);
-    const rotationPacman = makeSample({ x: 20, y: 20, width: 4, height: 2, mask: rotationPacmanMask });
+    const rotationPacket = makeSample({ x: 20, y: 20, width: 4, height: 2, mask: rotationPacketMask });
     const rotationGhostNoTransform = makeSample({ x: 20, y: 20, width: 4, height: 2, mask: rotationGhostMask });
     const rotationGhostRotated = makeSample({
       x: 20,
@@ -104,16 +104,16 @@ describe('GhostPacmanCollisionService', () => {
       angle: 180,
     });
 
-    const flipPacmanMask = makeMask(4, 2, [3]);
+    const flipPacketMask = makeMask(4, 2, [3]);
     const flipGhostMask = makeMask(4, 2, [0]);
-    const flipPacman = makeSample({ x: 20, y: 20, width: 4, height: 2, mask: flipPacmanMask });
+    const flipPacket = makeSample({ x: 20, y: 20, width: 4, height: 2, mask: flipPacketMask });
     const flipGhostNoTransform = makeSample({ x: 20, y: 20, width: 4, height: 2, mask: flipGhostMask });
     const flipGhostFlipped = makeSample({ x: 20, y: 20, width: 4, height: 2, mask: flipGhostMask, flipX: true });
 
-    expect(isPixelMaskOverlap(rotationPacman, rotationGhostNoTransform)).toBe(false);
-    expect(isPixelMaskOverlap(rotationPacman, rotationGhostRotated)).toBe(true);
-    expect(isPixelMaskOverlap(flipPacman, flipGhostNoTransform)).toBe(false);
-    expect(isPixelMaskOverlap(flipPacman, flipGhostFlipped)).toBe(true);
+    expect(isPixelMaskOverlap(rotationPacket, rotationGhostNoTransform)).toBe(false);
+    expect(isPixelMaskOverlap(rotationPacket, rotationGhostRotated)).toBe(true);
+    expect(isPixelMaskOverlap(flipPacket, flipGhostNoTransform)).toBe(false);
+    expect(isPixelMaskOverlap(flipPacket, flipGhostFlipped)).toBe(true);
   });
 
   it('returns the first collision deterministically in ghost list order', () => {
@@ -122,7 +122,7 @@ describe('GhostPacmanCollisionService', () => {
     const fullMask = makeMask(2, 2, [0, 1, 2, 3]);
 
     const collision = findFirstCollision({
-      pacman: makeSample({ x: 7, y: 7, width: 2, height: 2, mask: fullMask }),
+      packet: makeSample({ x: 7, y: 7, width: 2, height: 2, mask: fullMask }),
       ghosts: [
         {
           ghost: first,
@@ -144,7 +144,7 @@ describe('GhostPacmanCollisionService', () => {
     const fullMask = makeMask(2, 2, [0, 1, 2, 3]);
 
     const collision = findFirstCollision({
-      pacman: makeSample({ x: 5, y: 5, width: 2, height: 2, mask: fullMask }),
+      packet: makeSample({ x: 5, y: 5, width: 2, height: 2, mask: fullMask }),
       ghosts: [
         {
           ghost,
@@ -161,7 +161,7 @@ describe('GhostPacmanCollisionService', () => {
     const fullMask = makeMask(2, 2, [0, 1, 2, 3]);
 
     const collision = findFirstCollision({
-      pacman: makeSample({ x: 3, y: 3, width: 2, height: 2, mask: fullMask }),
+      packet: makeSample({ x: 3, y: 3, width: 2, height: 2, mask: fullMask }),
       ghosts: [
         {
           ghost,
@@ -176,11 +176,11 @@ describe('GhostPacmanCollisionService', () => {
 
   it('does not report collision for tile swap without overlapping mask pixels', () => {
     const ghost = makeGhost({ x: 6, y: 6 });
-    const pacmanMask = makeMask(2, 2, [0]);
+    const packetMask = makeMask(2, 2, [0]);
     const ghostMask = makeMask(2, 2, [3]);
 
     const collision = findFirstCollision({
-      pacman: makeSample({ x: 16, y: 16, width: 2, height: 2, mask: pacmanMask }),
+      packet: makeSample({ x: 16, y: 16, width: 2, height: 2, mask: packetMask }),
       ghosts: [
         {
           ghost,

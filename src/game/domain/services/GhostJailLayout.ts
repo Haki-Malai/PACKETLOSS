@@ -194,7 +194,7 @@ function inferStructuralAnchor(map: WorldMapData): InferredJailAnchor | null {
   };
 }
 
-export function inferPacmanMarkerRow(map: WorldMapData, jailY: number): number | undefined {
+export function inferPacketMarkerRow(map: WorldMapData, jailY: number): number | undefined {
   const candidates: Array<{ y: number; length: number; centerX: number; minX: number }> = [];
   const maxSearchY = Math.min(Math.max(jailY - 1, 0), map.height - 2);
   const centerX = (map.width - 1) / 2;

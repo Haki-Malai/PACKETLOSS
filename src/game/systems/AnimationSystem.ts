@@ -1,11 +1,11 @@
-import { GHOST_SCARED_WARNING_DURATION_MS, PACMAN_DEATH_RECOVERY } from '../../config/constants';
+import { GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY } from '../../config/constants';
 import { GhostEntity } from '../domain/entities/GhostEntity';
 import { clearGhostScaredWindow } from '../domain/services/GhostScaredStateService';
 import { resolveNextBlinkToggleAt } from '../shared/blinkCadence';
 import {
   AnimationKey,
   AnimationPlayback,
-  PacmanAnimationPlayback,
+  PacketAnimationPlayback,
   WorldState,
 } from '../domain/world/WorldState';
 
@@ -24,9 +24,9 @@ const ANIMATIONS: Record<AnimationKey, AnimationDefinition> = {
   blinkyIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
 };
 
-const PACMAN_CHOMP_SEQUENCE = [0, 1, 2, 3, 2, 1] as const;
-const PACMAN_IDLE_FRAME = PACMAN_CHOMP_SEQUENCE[0];
-const PACMAN_CHOMP_FRAME_RATE = 20;
+const PACKET_CHOMP_SEQUENCE = [0, 1, 2, 3, 2, 1] as const;
+const PACKET_IDLE_FRAME = PACKET_CHOMP_SEQUENCE[0];
+const PACKET_CHOMP_FRAME_RATE = 20;
 const SCARED_GHOST_SPEED = 0.5;
 
 export class AnimationSystem {
@@ -37,7 +37,7 @@ export class AnimationSystem {
   ) {}
 
   start(): void {
-    this.world.pacmanAnimation = this.createPacmanAnimationPlayback();
+    this.world.packetAnimation = this.createPacketAnimationPlayback();
 
     this.world.ghosts.forEach((ghost) => {
       this.world.ghostAnimations.set(ghost, this.createAnimationPlayback(`${ghost.key}Idle` as AnimationKey));
@@ -45,39 +45,39 @@ export class AnimationSystem {
   }
 
   update(deltaMs: number): void {
-    this.updatePacmanAnimationState(deltaMs);
+    this.updatePacketAnimationState(deltaMs);
 
     this.world.ghosts.forEach((ghost) => {
       this.updateGhostAnimationState(ghost, deltaMs);
     });
   }
 
-  private updatePacmanAnimationState(deltaMs: number): void {
-    const playback = this.world.pacmanAnimation;
+  private updatePacketAnimationState(deltaMs: number): void {
+    const playback = this.world.packetAnimation;
 
     if (!playback.active) {
-      playback.frame = PACMAN_IDLE_FRAME;
+      playback.frame = PACKET_IDLE_FRAME;
       playback.elapsedMs = 0;
       playback.sequenceIndex = 0;
       return;
     }
 
-    const frameDurationMs = 1000 / PACMAN_CHOMP_FRAME_RATE;
+    const frameDurationMs = 1000 / PACKET_CHOMP_FRAME_RATE;
     playback.elapsedMs += deltaMs;
 
     while (playback.elapsedMs >= frameDurationMs) {
       playback.elapsedMs -= frameDurationMs;
       playback.sequenceIndex += 1;
 
-      if (playback.sequenceIndex >= PACMAN_CHOMP_SEQUENCE.length) {
+      if (playback.sequenceIndex >= PACKET_CHOMP_SEQUENCE.length) {
         playback.active = false;
-        playback.frame = PACMAN_IDLE_FRAME;
+        playback.frame = PACKET_IDLE_FRAME;
         playback.elapsedMs = 0;
         playback.sequenceIndex = 0;
         return;
       }
 
-      playback.frame = PACMAN_CHOMP_SEQUENCE[playback.sequenceIndex];
+      playback.frame = PACKET_CHOMP_SEQUENCE[playback.sequenceIndex];
     }
   }
 
@@ -171,7 +171,7 @@ export class AnimationSystem {
     if (!warning) {
       warning = {
         elapsedMs: warningElapsedBeforeTick,
-        nextToggleAtMs: resolveNextBlinkToggleAt(warningElapsedBeforeTick, GHOST_SCARED_WARNING_DURATION_MS, PACMAN_DEATH_RECOVERY),
+        nextToggleAtMs: resolveNextBlinkToggleAt(warningElapsedBeforeTick, GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY),
         showBaseColor: false,
       };
     }
@@ -181,12 +181,12 @@ export class AnimationSystem {
 
     let nextToggleAtMs = warning.nextToggleAtMs;
     if (!Number.isFinite(nextToggleAtMs) || nextToggleAtMs <= 0) {
-      nextToggleAtMs = resolveNextBlinkToggleAt(elapsedBefore, GHOST_SCARED_WARNING_DURATION_MS, PACMAN_DEATH_RECOVERY);
+      nextToggleAtMs = resolveNextBlinkToggleAt(elapsedBefore, GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY);
     }
 
     while (nextToggleAtMs > 0 && warning.elapsedMs >= nextToggleAtMs) {
       warning.showBaseColor = !warning.showBaseColor;
-      nextToggleAtMs = resolveNextBlinkToggleAt(nextToggleAtMs, GHOST_SCARED_WARNING_DURATION_MS, PACMAN_DEATH_RECOVERY);
+      nextToggleAtMs = resolveNextBlinkToggleAt(nextToggleAtMs, GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY);
     }
 
     warning.nextToggleAtMs = nextToggleAtMs;
@@ -203,9 +203,9 @@ export class AnimationSystem {
     };
   }
 
-  private createPacmanAnimationPlayback(): PacmanAnimationPlayback {
+  private createPacketAnimationPlayback(): PacketAnimationPlayback {
     return {
-      frame: PACMAN_IDLE_FRAME,
+      frame: PACKET_IDLE_FRAME,
       elapsedMs: 0,
       sequenceIndex: 0,
       active: false,

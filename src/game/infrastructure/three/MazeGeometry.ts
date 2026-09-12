@@ -151,15 +151,43 @@ export function buildMazeWallGeometry(map: WorldMapData, getMask: TileMaskReader
   return buildMazeWallGeometryFromMask(buildMazeWallMask(map, getMask));
 }
 
-export function buildMazeWallEdgeGeometry(mask: TileAlphaMask): BufferGeometry {
+export function buildMazeWallEdgeGeometry(
+  mask: TileAlphaMask, adjoiningMask?: TileAlphaMask, includeOuterContours = true,
+): BufferGeometry {
   const positions: number[] = [];
   const corners = new Set<string>();
+  const adjoins = (x: number, y: number): boolean => {
+    if (!adjoiningMask) return false;
+    const column = Math.floor(x);
+    const row = Math.floor(y);
+    return column >= 0 && column < adjoiningMask.width && row >= 0 && row < adjoiningMask.height
+      && Boolean(adjoiningMask.opaque[row * adjoiningMask.width + column]);
+  };
   for (const contour of traceWallContours(mask)) {
+    if (!includeOuterContours && signedArea(contour) > 0) continue;
     // The square wall profile keeps both rings aligned, including around holes.
     for (const height of [0.08, WALL_HEIGHT + 0.01]) {
       contour.forEach((point, index) => {
         const next = contour[(index + 1) % contour.length];
-        positions.push(point.x, height, point.y, next.x, height, next.y);
+        const length = Math.abs(next.x - point.x) + Math.abs(next.y - point.y);
+        const dx = (next.x - point.x) / length;
+        const dy = (next.y - point.y) / length;
+        let start = 0;
+        // Split only where another presentation layer touches the wall's outside.
+        // Keep visible runs continuous instead of emitting a strip for each pixel.
+        for (let step = 0; step <= length; step += 1) {
+          const hidden = step < length && adjoins(
+            point.x + dx * (step + 0.5) + dy * 0.5,
+            point.y + dy * (step + 0.5) - dx * 0.5,
+          );
+          if (hidden || step === length) {
+            if (step > start) positions.push(
+              point.x + dx * start, height, point.y + dy * start,
+              point.x + dx * step, height, point.y + dy * step,
+            );
+            start = step + 1;
+          }
+        }
       });
     }
     for (let index = 0; index < contour.length; index += 1) {
@@ -169,6 +197,7 @@ export function buildMazeWallEdgeGeometry(mask: TileAlphaMask): BufferGeometry {
       // Pixel stair-steps describe rounded artwork, not full-height wall corners.
       if (Math.hypot(point.x - previous.x, point.y - previous.y) <= 1
         && Math.hypot(next.x - point.x, next.y - point.y) <= 1) continue;
+      if ([-0.5, 0.5].some((dx) => [-0.5, 0.5].some((dy) => adjoins(point.x + dx, point.y + dy)))) continue;
       const key = `${point.x}:${point.y}`;
       if (!corners.has(key)) {
         corners.add(key);

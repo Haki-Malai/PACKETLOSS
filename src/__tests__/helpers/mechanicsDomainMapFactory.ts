@@ -65,7 +65,7 @@ function makeMapFromCollisionGrid(grid: CollisionGrid, tileSize = TILE_SIZE): Wo
     imageByGid: new Map(),
     spawnObjects: [
       {
-        type: 'pacman',
+        type: 'packet',
         properties: [
           { name: 'gridX', value: centerX },
           { name: 'gridY', value: centerY },
@@ -81,8 +81,8 @@ function makeMapFromCollisionGrid(grid: CollisionGrid, tileSize = TILE_SIZE): Wo
         ],
       },
     ],
-    pacmanSpawn: {
-      type: 'pacman',
+    packetSpawn: {
+      type: 'packet',
       properties: [
         { name: 'gridX', value: centerX },
         { name: 'gridY', value: centerY },

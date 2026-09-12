@@ -1,8 +1,8 @@
 import { GhostEntity } from '../entities/GhostEntity';
 import { CollisionMaskSample } from '../valueObjects/CollisionMask';
 
-export type GhostPacmanContactType = 'pixel-mask-overlap';
-export type GhostPacmanCollisionOutcome = 'pacman-hit' | 'ghost-hit';
+export type GhostPacketContactType = 'pixel-mask-overlap';
+export type GhostPacketCollisionOutcome = 'packet-hit' | 'ghost-hit';
 
 interface Aabb {
   minX: number;
@@ -20,10 +20,10 @@ interface PreparedMaskSample {
   valid: boolean;
 }
 
-export interface GhostPacmanCollision {
+export interface GhostPacketCollision {
   ghost: GhostEntity;
-  contact: GhostPacmanContactType;
-  outcome: GhostPacmanCollisionOutcome;
+  contact: GhostPacketContactType;
+  outcome: GhostPacketCollisionOutcome;
 }
 
 export interface GhostCollisionCandidate {
@@ -31,7 +31,7 @@ export interface GhostCollisionCandidate {
   sample: CollisionMaskSample;
 }
 
-export type CollisionOutcomeResolver = (_ghost: GhostEntity) => GhostPacmanCollisionOutcome;
+export type CollisionOutcomeResolver = (_ghost: GhostEntity) => GhostPacketCollisionOutcome;
 
 function toRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
@@ -143,21 +143,21 @@ function isOpaqueAt(
   return (sample.mask.opaque[index] ?? 0) > 0;
 }
 
-export function isPixelMaskOverlap(pacman: CollisionMaskSample, ghost: CollisionMaskSample): boolean {
-  return isPreparedMaskOverlap(prepareMaskSample(pacman), prepareMaskSample(ghost));
+export function isPixelMaskOverlap(packet: CollisionMaskSample, ghost: CollisionMaskSample): boolean {
+  return isPreparedMaskOverlap(prepareMaskSample(packet), prepareMaskSample(ghost));
 }
 
-function isPreparedMaskOverlap(pacman: PreparedMaskSample, ghost: PreparedMaskSample): boolean {
-  if (!pacman.valid || !ghost.valid) {
+function isPreparedMaskOverlap(packet: PreparedMaskSample, ghost: PreparedMaskSample): boolean {
+  if (!packet.valid || !ghost.valid) {
     return false;
   }
 
-  const overlap = intersectAabb(pacman.bounds, ghost.bounds);
+  const overlap = intersectAabb(packet.bounds, ghost.bounds);
   if (!overlap) {
     return false;
   }
 
-  const pacmanRotation = getInverseRotation(pacman);
+  const packetRotation = getInverseRotation(packet);
   const ghostRotation = getInverseRotation(ghost);
   const startX = Math.floor(overlap.minX);
   const endX = Math.ceil(overlap.maxX);
@@ -169,7 +169,7 @@ function isPreparedMaskOverlap(pacman: PreparedMaskSample, ghost: PreparedMaskSa
       const worldX = x + 0.5;
       const worldY = y + 0.5;
 
-      if (isOpaqueAt(pacman, pacmanRotation, worldX, worldY) && isOpaqueAt(ghost, ghostRotation, worldX, worldY)) {
+      if (isOpaqueAt(packet, packetRotation, worldX, worldY) && isOpaqueAt(ghost, ghostRotation, worldX, worldY)) {
         return true;
       }
     }
@@ -178,23 +178,23 @@ function isPreparedMaskOverlap(pacman: PreparedMaskSample, ghost: PreparedMaskSa
   return false;
 }
 
-function defaultOutcomeResolver(ghost: GhostEntity): GhostPacmanCollisionOutcome {
-  return ghost.state.scared ? 'ghost-hit' : 'pacman-hit';
+function defaultOutcomeResolver(ghost: GhostEntity): GhostPacketCollisionOutcome {
+  return ghost.state.scared ? 'ghost-hit' : 'packet-hit';
 }
 
 export function findFirstCollision(params: {
-  pacman: CollisionMaskSample;
+  packet: CollisionMaskSample;
   ghosts: GhostCollisionCandidate[];
   resolveOutcome?: CollisionOutcomeResolver;
-}): GhostPacmanCollision | null {
+}): GhostPacketCollision | null {
   const resolveOutcome = params.resolveOutcome ?? defaultOutcomeResolver;
   if (params.ghosts.length === 0) {
     return null;
   }
 
-  const pacman = prepareMaskSample(params.pacman);
+  const packet = prepareMaskSample(params.packet);
   for (const candidate of params.ghosts) {
-    if (isPreparedMaskOverlap(pacman, prepareMaskSample(candidate.sample))) {
+    if (isPreparedMaskOverlap(packet, prepareMaskSample(candidate.sample))) {
       return {
         ghost: candidate.ghost,
         contact: 'pixel-mask-overlap',

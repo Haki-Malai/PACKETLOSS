@@ -8,17 +8,17 @@ function body(group: Group): Mesh<BufferGeometry, MeshStandardMaterial> {
 }
 
 describe('ArcadeAssets', () => {
-  it('keeps Pac-Man within its 10-unit footprint and shares four closed-to-open mouth poses', () => {
+  it('keeps Packet within its 10-unit footprint and shares four closed-to-open mouth poses', () => {
     const assets = new ArcadeAssets();
-    const pacman = assets.createPacman();
-    const other = assets.createPacman();
+    const packet = assets.createPacket();
+    const other = assets.createPacket();
     const frames = new Set<BufferGeometry>();
     for (let frame = 0; frame < 4; frame += 1) {
-      assets.setPacmanFrame(pacman, frame);
-      assets.setPacmanFrame(other, frame);
-      expect(body(pacman).geometry).toBe(body(other).geometry);
-      frames.add(body(pacman).geometry);
-      const bounds = new Box3().setFromObject(pacman);
+      assets.setPacketFrame(packet, frame);
+      assets.setPacketFrame(other, frame);
+      expect(body(packet).geometry).toBe(body(other).geometry);
+      frames.add(body(packet).geometry);
+      const bounds = new Box3().setFromObject(packet);
       expect(bounds.min.x).toBeGreaterThanOrEqual(-5.00001);
       expect(bounds.max.x).toBeLessThanOrEqual(5.00001);
       expect(bounds.min.z).toBeGreaterThanOrEqual(-5.00001);
@@ -27,10 +27,10 @@ describe('ArcadeAssets', () => {
       expect(bounds.max.y).toBeCloseTo(10);
     }
     expect(frames.size).toBe(4);
-    assets.setPacmanFrame(pacman, 3);
-    expect(new Box3().setFromObject(body(pacman)).max.x).toBeLessThan(4);
-    assets.setPacmanFrame(pacman, 0);
-    expect(new Box3().setFromObject(body(pacman)).getSize(new Vector3()).x).toBeCloseTo(10);
+    assets.setPacketFrame(packet, 3);
+    expect(new Box3().setFromObject(body(packet)).max.x).toBeLessThan(4);
+    assets.setPacketFrame(packet, 0);
+    expect(new Box3().setFromObject(body(packet)).getSize(new Vector3()).x).toBeCloseTo(10);
     assets.dispose();
   });
 

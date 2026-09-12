@@ -1,9 +1,9 @@
 import './tailwind.css';
 import './style.css';
-import { createPacmanGame } from './game/app/createPacmanGame';
+import { createPacketGame } from './game/app/createPacketGame';
 import { resolveMapVariantFromEnv } from './game/app/mapRuntimeConfig';
 
-const game = createPacmanGame({
+const game = createPacketGame({
   mountId: 'game-root',
   mapVariant: resolveMapVariantFromEnv(import.meta.env.VITE_GAME_ENV),
 });

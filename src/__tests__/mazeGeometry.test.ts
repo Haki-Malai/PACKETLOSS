@@ -94,7 +94,7 @@ describe('maze wall footprints', () => {
     expect(result).toEqual(maskFromRows(['####....', '####....', '........', '........']));
   });
 
-  it('keeps native two-pixel rails and one unit of Pac-Man clearance', () => {
+  it('keeps native two-pixel rails and one unit of Packet clearance', () => {
     const map = fixture();
     map.tiles[0][0].collision = createCollisionTile({ collides: true, left: true, right: true });
     const source = readTileMask('source/tiles/tile-01.png');
@@ -103,7 +103,7 @@ describe('maze wall footprints', () => {
     const row = result.opaque.slice(center * result.width, (center + 1) * result.width);
     const leftWallEdge = row.slice(0, center).lastIndexOf(1) + 1;
     const rightWallEdge = row.findIndex((pixel, x) => x >= center && pixel === 1);
-    const radius = SPRITE_SIZE.pacman / 2;
+    const radius = SPRITE_SIZE.packet / 2;
     expect(center - radius - leftWallEdge).toBe(1);
     expect(rightWallEdge - (center + radius)).toBe(1);
   });
@@ -242,7 +242,7 @@ describe('continuous wall geometry', () => {
     geometry.dispose();
   });
 
-  it.each(['maze', 'demo'])('renders the full original prison bars and openings in the %s map', (name) => {
+  it.each(['maze', 'demo'])('renders complete prison bars with surrounding walls but no prison-facing maze outlines in the %s map', (name) => {
     const tiled = JSON.parse(fs.readFileSync(path.resolve(`public/assets/mazes/default/${name}.json`), 'utf8')) as TiledMap;
     const map = parseTiledMap(tiled);
     const originalMap = structuredClone(map);
@@ -264,6 +264,33 @@ describe('continuous wall geometry', () => {
         expect(ray.intersectObject(bars).length > 0).toBe(solid);
       }
     }
+    const walls = scene.group.getObjectByName('walls')!;
+    const left = Math.min(...penTiles.map((tile) => tile.x)) * map.tileWidth;
+    const right = (Math.max(...penTiles.map((tile) => tile.x)) + 1) * map.tileWidth;
+    const top = penTiles[0].y * map.tileHeight;
+    // The surrounding wall faces remain on all four sides.
+    for (const [x, y] of [
+      [left - 1, top + 8], [right, top + 8],
+      [left + 8, top - 1], [left + 8, top + map.tileHeight],
+    ]) {
+      ray.ray.origin.set(x + 0.5, 20, y + 0.5);
+      expect(ray.intersectObject(walls).length).toBeGreaterThan(0);
+    }
+    const penOutlines = scene.group.getObjectByName('pen-edges')!;
+    ray.ray.origin.set(left + 8.5, 20, top);
+    expect(ray.intersectObject(penOutlines)).toHaveLength(0);
+    // The first opening still has its cyan upper bar outline.
+    ray.ray.origin.set(left + 8.5, 20, top + 2);
+    expect(ray.intersectObject(penOutlines).length).toBeGreaterThan(0);
+    const outlines = scene.group.getObjectByName('wall-edges')!;
+    // Inner top edge touches the prison; the outer top edge still has its outline.
+    ray.ray.origin.set(left + 8.5, 20, top);
+    expect(ray.intersectObject(outlines)).toHaveLength(0);
+    ray.ray.origin.set(left + 8.5, 20, top - 2);
+    expect(ray.intersectObject(outlines).length).toBeGreaterThan(0);
+    // The adjoining top wall continues beyond the prison.
+    ray.ray.origin.set(left - 2.5, 20, top - 0.5);
+    expect(ray.intersectObject(walls).length).toBeGreaterThan(0);
     expect(map).toEqual(originalMap);
     scene.dispose();
   });

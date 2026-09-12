@@ -45,8 +45,8 @@ export function makeMap(grid: CollisionTile[][], ghostHome?: WorldMapData['ghost
     collisionByGid: new Map(),
     imageByGid: new Map(),
     spawnObjects: [],
-    pacmanSpawn: {
-      type: 'pacman',
+    packetSpawn: {
+      type: 'packet',
       properties: [
         { name: 'gridX', value: 2 },
         { name: 'gridY', value: 2 },

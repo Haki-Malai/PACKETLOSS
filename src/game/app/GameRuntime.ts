@@ -1,8 +1,8 @@
 import { FixedStepLoop } from '../../engine/loop';
-import { ComposedGame, PacmanGame, RenderCapableSystem, RuntimeControl, UpdateCapableSystem } from './contracts';
+import { ComposedGame, PacketGame, RenderCapableSystem, RuntimeControl, UpdateCapableSystem } from './contracts';
 import { GameCompositionRoot } from './GameCompositionRoot';
 
-export class GameRuntime implements PacmanGame {
+export class GameRuntime implements PacketGame {
   private loop: FixedStepLoop | null = null;
   private composed: ComposedGame | null = null;
   private started = false;

@@ -37,10 +37,10 @@ export class ArcadeAssets {
     roughness: 0.9,
   });
 
-  private readonly pacmanGeometries = [0, Math.PI / 12, Math.PI / 6, Math.PI / 4].map(
-    createPacmanGeometry,
+  private readonly packetGeometries = [0, Math.PI / 12, Math.PI / 6, Math.PI / 4].map(
+    createPacketGeometry,
   );
-  private readonly pacmanMaterial = new MeshStandardMaterial({
+  private readonly packetMaterial = new MeshStandardMaterial({
     color: 0xffd729,
     emissive: 0xffd729,
     emissiveIntensity: 0.25,
@@ -67,18 +67,18 @@ export class ArcadeAssets {
     depthWrite: false,
     toneMapped: false,
   });
-  private readonly pacmanBodies = new WeakMap<Group, BodyMesh>();
+  private readonly packetBodies = new WeakMap<Group, BodyMesh>();
   private readonly ghostParts = new WeakMap<Group, { body: BodyMesh; pupils: BodyMesh[] }>();
   private disposed = false;
 
-  createPacman(): Group {
+  createPacket(): Group {
     const group = new Group();
-    group.name = 'pacman';
-    const body = new Mesh(this.pacmanGeometries[0], this.pacmanMaterial);
+    group.name = 'packet';
+    const body = new Mesh(this.packetGeometries[0], this.packetMaterial);
     body.name = 'body';
-    body.position.y = SPRITE_SIZE.pacman / 2;
+    body.position.y = SPRITE_SIZE.packet / 2;
     group.add(body);
-    this.pacmanBodies.set(group, body);
+    this.packetBodies.set(group, body);
 
     for (const side of [-1, 1]) {
       const eye = new Mesh(this.eyeGeometry, this.pupilMaterial);
@@ -90,9 +90,9 @@ export class ArcadeAssets {
     return group;
   }
 
-  setPacmanFrame(group: Group, frame: number): void {
-    const body = this.pacmanBodies.get(group);
-    if (body) body.geometry = this.pacmanGeometries[Math.max(0, Math.min(3, Math.trunc(frame)))];
+  setPacketFrame(group: Group, frame: number): void {
+    const body = this.packetBodies.get(group);
+    if (body) body.geometry = this.packetGeometries[Math.max(0, Math.min(3, Math.trunc(frame)))];
   }
 
   createGhost(key: GhostKey): Group {
@@ -149,7 +149,7 @@ export class ArcadeAssets {
     this.disposed = true;
     for (const geometry of [
       this.pelletGeometry,
-      ...this.pacmanGeometries,
+      ...this.packetGeometries,
       ...this.ghostGeometries,
       this.eyeGeometry,
       this.shadowGeometry,
@@ -157,7 +157,7 @@ export class ArcadeAssets {
     for (const material of [
       this.pelletMaterial,
       this.powerPelletMaterial,
-      this.pacmanMaterial,
+      this.packetMaterial,
       ...Object.values(this.ghostMaterials),
       this.eyeMaterial,
       this.pupilMaterial,
@@ -168,8 +168,8 @@ export class ArcadeAssets {
   }
 }
 
-function createPacmanGeometry(halfAngle: number): BufferGeometry {
-  const radius = SPRITE_SIZE.pacman / 2;
+function createPacketGeometry(halfAngle: number): BufferGeometry {
+  const radius = SPRITE_SIZE.packet / 2;
   const sphere = new SphereGeometry(radius, 40, 24, Math.PI + halfAngle, 2 * Math.PI - 2 * halfAngle);
   if (halfAngle === 0) return sphere;
   const geometry = sphere.toNonIndexed();

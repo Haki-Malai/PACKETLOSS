@@ -3,7 +3,7 @@ import { clamp } from '../../engine/math';
 import { INITIAL_LIVES, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { resetGameState } from '../../state/gameState';
 import { GhostEntity, GhostKey } from '../domain/entities/GhostEntity';
-import { PacmanEntity } from '../domain/entities/PacmanEntity';
+import { PacketEntity } from '../domain/entities/PacketEntity';
 import { GhostDecisionService } from '../domain/services/GhostDecisionService';
 import { GhostJailService, getObjectNumberProperty } from '../domain/services/GhostJailService';
 import { MovementRules } from '../domain/services/MovementRules';
@@ -22,11 +22,11 @@ import { CameraSystem } from '../systems/CameraSystem';
 import { CollectibleSystem } from '../systems/CollectibleSystem';
 import { DebugOverlaySystem } from '../systems/DebugOverlaySystem';
 import { GhostMovementSystem } from '../systems/GhostMovementSystem';
-import { GhostPacmanCollisionSystem, SpriteMaskProvider } from '../systems/GhostPacmanCollisionSystem';
+import { GhostPacketCollisionSystem, SpriteMaskProvider } from '../systems/GhostPacketCollisionSystem';
 import { GhostReleaseSystem } from '../systems/GhostReleaseSystem';
 import { HudSystem } from '../systems/HudSystem';
 import { InputSystem } from '../systems/InputSystem';
-import { PacmanMovementSystem } from '../systems/PacmanMovementSystem';
+import { PacketMovementSystem } from '../systems/PacketMovementSystem';
 import { PauseOverlaySystem } from '../systems/PauseOverlaySystem';
 import { RenderSystem } from '../systems/RenderSystem';
 import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
@@ -75,14 +75,14 @@ export class GameCompositionRoot {
       y: Math.floor(map.height / 2),
     };
 
-    const pacmanTile = jailService.resolveSpawnTile(map.pacmanSpawn, centerTile, map);
-    const ghostJailBounds = jailService.resolveGhostJailBounds(map, pacmanTile);
+    const packetTile = jailService.resolveSpawnTile(map.packetSpawn, centerTile, map);
+    const ghostJailBounds = jailService.resolveGhostJailBounds(map, packetTile);
 
     const ghostCountRaw = getObjectNumberProperty(map.ghostHome, 'ghostCount') ?? 4;
     const ghostCount = Math.max(0, Math.round(ghostCountRaw));
 
-    const pacman = new PacmanEntity(pacmanTile, SPRITE_SIZE.pacman, SPRITE_SIZE.pacman);
-    movementRules.setEntityTile(pacman, pacmanTile);
+    const packet = new PacketEntity(packetTile, SPRITE_SIZE.packet, SPRITE_SIZE.packet);
+    movementRules.setEntityTile(packet, packetTile);
 
     const ghosts: GhostEntity[] = [];
     const spawnRange = Math.max(1, ghostJailBounds.maxX - ghostJailBounds.minX + 1);
@@ -113,8 +113,8 @@ export class GameCompositionRoot {
       map,
       tileSize,
       collisionGrid,
-      pacmanSpawnTile: pacmanTile,
-      pacman,
+      packetSpawnTile: packetTile,
+      packet,
       ghosts,
       ghostJailBounds,
     });
@@ -128,16 +128,16 @@ export class GameCompositionRoot {
     const ghostDecisions = new GhostDecisionService();
 
     const inputSystem = new InputSystem(input, world, runtimeControl);
-    const pacmanSystem = new PacmanMovementSystem(world, movementRules, portalService);
+    const packetSystem = new PacketMovementSystem(world, movementRules, portalService);
     const ghostReleaseSystem = new GhostReleaseSystem(world, movementRules, jailService, scheduler, rng);
     const ghostMovementSystem = new GhostMovementSystem(world, movementRules, ghostDecisions, portalService, rng);
     const spriteMaskProvider: SpriteMaskProvider = {
-      getPacmanMask: (frame, width, height, alphaThreshold) =>
-        assets.getSpriteMask('pacman', frame, width, height, alphaThreshold),
+      getPacketMask: (frame, width, height, alphaThreshold) =>
+        assets.getSpriteMask('packet', frame, width, height, alphaThreshold),
       getGhostMask: (key, frame, width, height, alphaThreshold) =>
         assets.getSpriteMask(key, frame, width, height, alphaThreshold),
     };
-    const ghostPacmanCollisionSystem = new GhostPacmanCollisionSystem(
+    const ghostPacketCollisionSystem = new GhostPacketCollisionSystem(
       world,
       movementRules,
       SPEED.ghost,
@@ -161,10 +161,10 @@ export class GameCompositionRoot {
 
     const updateSystems = [
       inputSystem,
-      pacmanSystem,
+      packetSystem,
       ghostReleaseSystem,
       ghostMovementSystem,
-      ghostPacmanCollisionSystem,
+      ghostPacketCollisionSystem,
       animationSystem,
       cameraSystem,
       collectibleSystem,

@@ -43,7 +43,7 @@ function createWorld(): WorldState {
     collisionGrid: {
       getTileAt: () => emptyCollision,
     },
-    pacman: {
+    packet: {
       tile: { x: 0, y: 0 },
     },
     ghosts: [],

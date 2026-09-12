@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PACMAN_DEATH_RECOVERY, PACMAN_PORTAL_BLINK } from '../config/constants';
+import { PACKET_DEATH_RECOVERY, PACKET_PORTAL_BLINK } from '../config/constants';
 import { openTile } from './fixtures/collisionFixtures';
 import { PortalService } from '../game/domain/services/PortalService';
 import { MovementRules } from '../game/domain/services/MovementRules';
 import { WorldState } from '../game/domain/world/WorldState';
-import { PacmanMovementSystem } from '../game/systems/PacmanMovementSystem';
+import { PacketMovementSystem } from '../game/systems/PacketMovementSystem';
 
-describe('PacmanMovementSystem portal blink', () => {
+describe('PacketMovementSystem portal blink', () => {
   it('starts and advances the post-portal blink timer without affecting movement flow', () => {
     const applyBufferedDirectionMock = vi.fn();
     const canMoveMock = vi.fn(() => false);
@@ -16,7 +16,7 @@ describe('PacmanMovementSystem portal blink', () => {
     const canAdvanceOutwardMock = vi.fn(() => false);
 
     const world = {
-      pacman: {
+      packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
         direction: { current: 'right', next: 'right' },
@@ -54,29 +54,29 @@ describe('PacmanMovementSystem portal blink', () => {
       tryTeleport: tryTeleportMock,
     } as unknown as PortalService;
 
-    const system = new PacmanMovementSystem(world, movementRules, portalService);
+    const system = new PacketMovementSystem(world, movementRules, portalService);
 
     system.update(16);
-    expect(world.pacman.portalBlinkRemainingMs).toBe(PACMAN_PORTAL_BLINK.durationMs);
-    expect(world.pacman.portalBlinkElapsedMs).toBe(0);
+    expect(world.packet.portalBlinkRemainingMs).toBe(PACKET_PORTAL_BLINK.durationMs);
+    expect(world.packet.portalBlinkElapsedMs).toBe(0);
     expect(applyBufferedDirectionMock).toHaveBeenCalledOnce();
     expect(advanceEntityMock).not.toHaveBeenCalled();
 
     tryTeleportMock.mockReturnValue(false);
 
     system.update(500);
-    expect(world.pacman.portalBlinkRemainingMs).toBe(PACMAN_PORTAL_BLINK.durationMs - 500);
-    expect(world.pacman.portalBlinkElapsedMs).toBe(500);
+    expect(world.packet.portalBlinkRemainingMs).toBe(PACKET_PORTAL_BLINK.durationMs - 500);
+    expect(world.packet.portalBlinkElapsedMs).toBe(500);
 
-    system.update(PACMAN_PORTAL_BLINK.durationMs);
-    expect(world.pacman.portalBlinkRemainingMs).toBe(0);
-    expect(world.pacman.portalBlinkElapsedMs).toBe(0);
+    system.update(PACKET_PORTAL_BLINK.durationMs);
+    expect(world.packet.portalBlinkRemainingMs).toBe(0);
+    expect(world.packet.portalBlinkElapsedMs).toBe(0);
     expect(syncEntityPositionMock).toHaveBeenCalledTimes(3);
   });
 
   it('advances death recovery blink state and clears it on expiry', () => {
     const world = {
-      pacman: {
+      packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
         direction: { current: 'right', next: 'right' },
@@ -84,9 +84,9 @@ describe('PacmanMovementSystem portal blink', () => {
         flipY: false,
         portalBlinkRemainingMs: 0,
         portalBlinkElapsedMs: 0,
-        deathRecoveryRemainingMs: PACMAN_DEATH_RECOVERY.durationMs,
+        deathRecoveryRemainingMs: PACKET_DEATH_RECOVERY.durationMs,
         deathRecoveryElapsedMs: 0,
-        deathRecoveryNextToggleAtMs: PACMAN_DEATH_RECOVERY.blinkStartIntervalMs,
+        deathRecoveryNextToggleAtMs: PACKET_DEATH_RECOVERY.blinkStartIntervalMs,
         deathRecoveryVisible: true,
       },
       collisionGrid: {
@@ -114,25 +114,25 @@ describe('PacmanMovementSystem portal blink', () => {
       tryTeleport: vi.fn(() => false),
     } as unknown as PortalService;
 
-    const system = new PacmanMovementSystem(world, movementRules, portalService);
-    const visibleBefore = world.pacman.deathRecoveryVisible;
+    const system = new PacketMovementSystem(world, movementRules, portalService);
+    const visibleBefore = world.packet.deathRecoveryVisible;
 
-    system.update(PACMAN_DEATH_RECOVERY.blinkStartIntervalMs);
-    expect(world.pacman.deathRecoveryVisible).toBe(!visibleBefore);
-    expect(world.pacman.deathRecoveryRemainingMs).toBe(PACMAN_DEATH_RECOVERY.durationMs - PACMAN_DEATH_RECOVERY.blinkStartIntervalMs);
+    system.update(PACKET_DEATH_RECOVERY.blinkStartIntervalMs);
+    expect(world.packet.deathRecoveryVisible).toBe(!visibleBefore);
+    expect(world.packet.deathRecoveryRemainingMs).toBe(PACKET_DEATH_RECOVERY.durationMs - PACKET_DEATH_RECOVERY.blinkStartIntervalMs);
 
-    system.update(PACMAN_DEATH_RECOVERY.durationMs);
-    expect(world.pacman.deathRecoveryRemainingMs).toBe(0);
-    expect(world.pacman.deathRecoveryElapsedMs).toBe(0);
-    expect(world.pacman.deathRecoveryNextToggleAtMs).toBe(0);
-    expect(world.pacman.deathRecoveryVisible).toBe(true);
+    system.update(PACKET_DEATH_RECOVERY.durationMs);
+    expect(world.packet.deathRecoveryRemainingMs).toBe(0);
+    expect(world.packet.deathRecoveryElapsedMs).toBe(0);
+    expect(world.packet.deathRecoveryNextToggleAtMs).toBe(0);
+    expect(world.packet.deathRecoveryVisible).toBe(true);
   });
 
   it('allows turning into outward portal direction at center before threshold movement', () => {
     const advanceEntityMock = vi.fn();
 
     const world = {
-      pacman: {
+      packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
         direction: { current: 'up', next: 'left' },
@@ -171,17 +171,17 @@ describe('PacmanMovementSystem portal blink', () => {
       tryTeleport: vi.fn(() => false),
     } as unknown as PortalService;
 
-    const system = new PacmanMovementSystem(world, movementRules, portalService);
+    const system = new PacketMovementSystem(world, movementRules, portalService);
     system.update(16);
 
-    expect(world.pacman.direction.current).toBe('left');
+    expect(world.packet.direction.current).toBe('left');
     expect(advanceEntityMock).toHaveBeenCalledOnce();
     expect(canAdvanceOutwardMock).toHaveBeenCalledWith(expect.objectContaining({ direction: 'left' }), world.collisionGrid);
   });
 
   it('keeps current direction when buffered portal turn is unavailable', () => {
     const world = {
-      pacman: {
+      packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
         direction: { current: 'up', next: 'left' },
@@ -215,23 +215,23 @@ describe('PacmanMovementSystem portal blink', () => {
       tryTeleport: vi.fn(() => false),
     } as unknown as PortalService;
 
-    new PacmanMovementSystem(world, movementRules, portalService).update(16);
+    new PacketMovementSystem(world, movementRules, portalService).update(16);
 
-    expect(world.pacman.direction.current).toBe('up');
+    expect(world.packet.direction.current).toBe('up');
   });
 
   it('treats legal buffered turns as normal movement, not portal overrides', () => {
     const world = {
-      pacman: {
+      packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
         direction: { current: 'up', next: 'right' },
         angle: 0,
         flipY: false,
         portalBlinkRemainingMs: 10,
-        deathRecoveryRemainingMs: PACMAN_DEATH_RECOVERY.durationMs,
-        deathRecoveryElapsedMs: PACMAN_DEATH_RECOVERY.durationMs - 1,
-        deathRecoveryNextToggleAtMs: PACMAN_DEATH_RECOVERY.durationMs,
+        deathRecoveryRemainingMs: PACKET_DEATH_RECOVERY.durationMs,
+        deathRecoveryElapsedMs: PACKET_DEATH_RECOVERY.durationMs - 1,
+        deathRecoveryNextToggleAtMs: PACKET_DEATH_RECOVERY.durationMs,
         deathRecoveryVisible: true,
       },
       collisionGrid: {
@@ -259,9 +259,9 @@ describe('PacmanMovementSystem portal blink', () => {
       tryTeleport: vi.fn(() => false),
     } as unknown as PortalService;
 
-    new PacmanMovementSystem(world, movementRules, portalService).update(1);
+    new PacketMovementSystem(world, movementRules, portalService).update(1);
 
-    expect(world.pacman.direction.current).toBe('up');
-    expect(world.pacman.deathRecoveryNextToggleAtMs).toBe(0);
+    expect(world.packet.direction.current).toBe('up');
+    expect(world.packet.deathRecoveryNextToggleAtMs).toBe(0);
   });
 });

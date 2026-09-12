@@ -1,6 +1,6 @@
-# Pacman
+# PACKETLOSS
 
-A Pac-Man game for the browser, built for fun with TypeScript, Vite, and Three.js. Requires WebGL 2.
+PACKETLOSS is a maze arcade game for the browser, built with TypeScript, Vite, and Three.js. Requires WebGL 2.
 
 Collect pellets, avoid ghosts, and use power pellets to turn the chase around. The game includes ghost pen/release behavior, lives and respawn recovery, linked portals, a following camera, and desktop/mobile controls. Maps are made in Tiled.
 

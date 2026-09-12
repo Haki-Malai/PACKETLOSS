@@ -1,7 +1,7 @@
 import { clamp, lerp } from '../../engine/math';
 import { WorldState } from '../domain/world/WorldState';
 
-type PresentedEntity = Pick<WorldState['pacman'], 'x' | 'y' | 'tile'>;
+type PresentedEntity = Pick<WorldState['packet'], 'x' | 'y' | 'tile'>;
 
 interface PreviousPosition {
   x: number;
@@ -16,7 +16,7 @@ export class EntityPresentation {
   constructor(private readonly world: WorldState) {}
 
   capturePreviousState(): void {
-    this.capture(this.world.pacman);
+    this.capture(this.world.packet);
     for (const ghost of this.world.ghosts) {
       this.capture(ghost);
     }

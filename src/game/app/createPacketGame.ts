@@ -1,17 +1,17 @@
 import { GameCompositionOptions, GameCompositionRoot } from './GameCompositionRoot';
 import { GameRuntime } from './GameRuntime';
-import { PacmanGame } from './contracts';
+import { PacketGame } from './contracts';
 
-let activeGame: PacmanGame | null = null;
+let activeGame: PacketGame | null = null;
 
-export type CreatePacmanGameOptions = GameCompositionOptions;
+export type CreatePacketGameOptions = GameCompositionOptions;
 
-export function createPacmanGame(options: CreatePacmanGameOptions = {}): PacmanGame {
+export function createPacketGame(options: CreatePacketGameOptions = {}): PacketGame {
   activeGame?.destroy();
 
   const runtime = new GameRuntime(new GameCompositionRoot(options));
 
-  const game: PacmanGame = {
+  const game: PacketGame = {
     start: () => runtime.start(),
     pause: () => runtime.pause(),
     resume: () => runtime.resume(),

@@ -7,7 +7,7 @@ const SPRITE_SHEET_FRAME_WIDTH = 85;
 const SPRITE_SHEET_FRAME_HEIGHT = 91;
 
 const SPRITESHEET_SOURCES = {
-  pacman: 'assets/sprites/PacMan.png',
+  packet: 'assets/sprites/Packet.png',
   blinky: 'assets/sprites/Blinky.png',
   clyde: 'assets/sprites/Clyde.png',
   pinky: 'assets/sprites/Pinky.png',

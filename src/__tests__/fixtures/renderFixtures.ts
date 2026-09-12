@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import { CAMERA, SPRITE_SIZE } from '../../config/constants';
 import { Camera3D } from '../../engine/camera3d';
-import { PacmanEntity } from '../../game/domain/entities/PacmanEntity';
+import { PacketEntity } from '../../game/domain/entities/PacketEntity';
 import { GhostJailService } from '../../game/domain/services/GhostJailService';
 import { RenderSystem } from '../../game/systems/RenderSystem';
 import type { ThreeRendererAdapter } from '../../game/infrastructure/adapters/ThreeRendererAdapter';
@@ -60,7 +60,7 @@ export function createMapFixture(collisionRows: CollisionTile[][]): {
 
 interface RenderHarnessOptions {
   collisionRows?: CollisionTile[][];
-  pacmanTile?: { x: number; y: number };
+  packetTile?: { x: number; y: number };
   world?: WorldState;
 }
 
@@ -71,30 +71,30 @@ export function toTileCenter(tile: { x: number; y: number }, tileSize = 16): { x
   };
 }
 
-export function createWorld(map: WorldMapData, collisionGrid: CollisionGrid, pacmanTile: { x: number; y: number }): WorldState {
-  const center = toTileCenter(pacmanTile, map.tileWidth);
-  const pacman = new PacmanEntity(pacmanTile, SPRITE_SIZE.pacman, SPRITE_SIZE.pacman);
-  pacman.x = center.x;
-  pacman.y = center.y;
+export function createWorld(map: WorldMapData, collisionGrid: CollisionGrid, packetTile: { x: number; y: number }): WorldState {
+  const center = toTileCenter(packetTile, map.tileWidth);
+  const packet = new PacketEntity(packetTile, SPRITE_SIZE.packet, SPRITE_SIZE.packet);
+  packet.x = center.x;
+  packet.y = center.y;
 
   return new WorldState({
     map,
     tileSize: map.tileWidth,
     collisionGrid,
-    pacmanSpawnTile: pacmanTile,
-    pacman,
+    packetSpawnTile: packetTile,
+    packet,
     ghosts: [],
-    ghostJailBounds: new GhostJailService().resolveGhostJailBounds(map, pacmanTile),
+    ghostJailBounds: new GhostJailService().resolveGhostJailBounds(map, packetTile),
   });
 }
 
 export function createRenderHarness(options: RenderHarnessOptions = {}) {
   const collisionRows =
     options.collisionRows ?? [[createCollisionTile({ collides: true, left: true }), createCollisionTile({ collides: true, right: true })]];
-  const pacmanTile = options.pacmanTile ?? { x: 0, y: 0 };
+  const packetTile = options.packetTile ?? { x: 0, y: 0 };
   const { map, collisionGrid } = createMapFixture(collisionRows);
-  const world = options.world ?? createWorld(map, collisionGrid, pacmanTile);
-  const center = toTileCenter(world.pacman.tile, world.tileSize);
+  const world = options.world ?? createWorld(map, collisionGrid, packetTile);
+  const center = toTileCenter(world.packet.tile, world.tileSize);
 
   const renderer = {
     pixelRatio: 1,
@@ -110,7 +110,7 @@ export function createRenderHarness(options: RenderHarnessOptions = {}) {
   camera.setBounds(world.map.widthInPixels, world.map.heightInPixels);
   camera.setZoom(CAMERA.zoom);
   camera.setViewport(800, 600);
-  camera.startFollow(world.pacman, CAMERA.followLerp.x, CAMERA.followLerp.y);
+  camera.startFollow(world.packet, CAMERA.followLerp.x, CAMERA.followLerp.y);
   camera.snapToFollowTarget();
   const collectibles = new CollectibleSystem(world);
   const renderSystem = new RenderSystem(world, renderer, camera, assets, collectibles);

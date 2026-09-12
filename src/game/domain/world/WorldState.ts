@@ -1,5 +1,5 @@
 import { GhostEntity } from '../entities/GhostEntity';
-import { PacmanEntity } from '../entities/PacmanEntity';
+import { PacketEntity } from '../entities/PacketEntity';
 import { MovementProgress } from '../valueObjects/MovementProgress';
 import { TilePosition } from '../valueObjects/TilePosition';
 import { CollisionGrid, CollisionTile } from './CollisionGrid';
@@ -53,7 +53,7 @@ export interface WorldMapData {
   portalPairs?: PortalPair[];
   spawnObjects: WorldObject[];
   collectibleObjects?: WorldObject[];
-  pacmanSpawn?: WorldObject;
+  packetSpawn?: WorldObject;
   ghostHome?: WorldObject;
 }
 
@@ -72,7 +72,7 @@ export interface GhostScaredWarningVisualState {
   showBaseColor: boolean;
 }
 
-export interface PacmanAnimationPlayback {
+export interface PacketAnimationPlayback {
   frame: number;
   elapsedMs: number;
   sequenceIndex: number;
@@ -101,8 +101,8 @@ export class WorldState {
   readonly map: WorldMapData;
   readonly tileSize: number;
   readonly collisionGrid: CollisionGrid;
-  readonly pacmanSpawnTile: TilePosition;
-  pacman: PacmanEntity;
+  readonly packetSpawnTile: TilePosition;
+  packet: PacketEntity;
   ghosts: GhostEntity[];
   ghostScaredTimers = new Map<GhostEntity, number>();
   ghostScaredWarnings = new Map<GhostEntity, GhostScaredWarningVisualState>();
@@ -111,7 +111,7 @@ export class WorldState {
   ghostEatChainCount = 0;
   ghostsExitingJail = new Set<GhostEntity>();
   ghostAnimations = new Map<GhostEntity, AnimationPlayback>();
-  pacmanAnimation: PacmanAnimationPlayback = {
+  packetAnimation: PacketAnimationPlayback = {
     frame: 0,
     elapsedMs: 0,
     sequenceIndex: 0,
@@ -128,16 +128,16 @@ export class WorldState {
     map: WorldMapData;
     tileSize: number;
     collisionGrid: CollisionGrid;
-    pacmanSpawnTile: TilePosition;
-    pacman: PacmanEntity;
+    packetSpawnTile: TilePosition;
+    packet: PacketEntity;
     ghosts: GhostEntity[];
     ghostJailBounds: GhostJailBounds;
   }) {
     this.map = params.map;
     this.tileSize = params.tileSize;
     this.collisionGrid = params.collisionGrid;
-    this.pacmanSpawnTile = { ...params.pacmanSpawnTile };
-    this.pacman = params.pacman;
+    this.packetSpawnTile = { ...params.packetSpawnTile };
+    this.packet = params.packet;
     this.ghosts = params.ghosts;
     this.ghostJailBounds = params.ghostJailBounds;
     this.ghostJailReturnTile = {
