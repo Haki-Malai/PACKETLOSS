@@ -31,7 +31,6 @@ function createWorld(): WorldState {
             rawGid: 1,
             gid: 1,
             localId: 1,
-            imagePath: 'tile.png',
             rotation: 0,
             flipX: false,
             flipY: false,

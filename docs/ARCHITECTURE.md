@@ -15,7 +15,7 @@ The runtime is now composed from small, explicit systems operating on a shared `
 Entrypoint flow:
 1. `src/main.ts` creates a game instance through `createPacketGame`.
 2. `createPacketGame` builds a `GameRuntime` with `GameCompositionRoot`.
-3. `GameCompositionRoot` wires map/assets/adapters/domain services/systems.
+3. `GameCompositionRoot` wires map/adapters/domain services/systems.
 4. `GameRuntime` drives ordered updates and rendering via fixed-step loop.
 
 ## Directory Layout
@@ -34,7 +34,6 @@ src/game/
   systems/
   infrastructure/
     map/
-    assets/
     adapters/
     three/
   shared/
@@ -47,7 +46,7 @@ src/game/
 ### `app`
 Composition and lifecycle orchestration.
 - `createPacketGame.ts`: public API factory (`start`, `pause`, `resume`, `destroy`).
-- `GameRuntime.ts`: fixed-step runtime loop and system execution. Concurrent `start()` calls share initialization; destruction cancels pending startup before it can mount a scene or reset shared game state. Composition checks cancellation after map and asset loading, mounts only after scene construction, and removes only its owned canvas. A failed system startup releases the partial composition and listeners before allowing a retry.
+- `GameRuntime.ts`: fixed-step runtime loop and system execution. Concurrent `start()` calls share initialization; destruction cancels pending startup before it can mount a scene or reset shared game state. Composition checks cancellation after map loading, mounts only after scene construction, and removes only its owned canvas. A failed system startup releases the partial composition and listeners before allowing a retry.
 - `GameCompositionRoot.ts`: composition root; builds world + systems + adapters.
 - `contracts.ts`: runtime and system interfaces.
 
@@ -58,7 +57,7 @@ Gameplay model and pure logic.
 - `world`: `WorldState`, `CollisionGrid`, map/world data types.
 - `services`: movement rules, ghost decisions, ghost jail behavior, portal behavior.
 - `GhostJailLayout` holds map-based jail and spawn inference; `GhostJailService` keeps its existing public operations.
-- Pixel-mask collision checks retain the original sprite masks, prepare transforms once per sample, and reuse Packet's preparation within one collision search. The 3D meshes do not change gameplay collision coordinates or rules.
+- Packet/ghost contact uses renderer-independent circular bodies derived from entity dimensions. The 3D meshes do not change gameplay collision coordinates or rules.
 
 ### `systems`
 Frame-by-frame behavior execution.
@@ -79,12 +78,11 @@ Frame-by-frame behavior execution.
 Browser/engine integration and data loading.
 - map parser/repository (`TiledParser`, `TiledMapRepository`)
 - `TiledMapTopology` handles portal inference and void-boundary guards after tile trimming.
-- `AssetCatalog` loads tile images and caches native alpha masks for wall and prison geometry; sprite sheets remain the source of gameplay collision masks.
 - adapters for renderer/input/timer/hud
 - `ThreeRendererAdapter` owns the WebGL renderer and viewport sizing. It renders directly to the antialiased canvas with sRGB output and tone mapping, without bloom or intermediate postprocessing targets, and disposes the renderer on destruction.
-- `RenderSystem` owns a Three.js scene with `MazeScene`, procedural `ArcadeAssets`, and `CollisionDebugScene`, and disposes their GPU resources when destroyed. It reads the injected `CollectibleSystem`; only the update pipeline advances collection and effect timers. `MazeScene` consumes tile masks.
-- `MazeGeometry` unions transformed native tile alpha masks before tracing and extruding wall contours. This preserves thin rails, corridor clearance, holes, and portal openings without treating `collides` as solid tile occupancy. The 12-unit-high walls have a square profile with dark faces and colored top, bottom, and main vertical contour edges. Top and bottom outlines share the authored contour, and straight side outlines meet the top directly at right angles; diagonal contacts share one vertical connection. Authored corner shapes retain side connections at long-edge ends while intermediate single-pixel stair-steps omit vertical stripes. `MazeScene` batches the outline strips into static instanced meshes with normal depth testing and unboosted colors, and supplies the floor, prison, and extruded vector lettering separately.
-- `buildMazePenMask` selects prison tiles (local ID 16) and uses the same alpha-mask transformation/union code as the walls. The complete original PNG pattern is extruded and outlined at the authored tile positions, preserving joins and rectangular holes. The wall mask and faces remain intact. Wall outline generation uses the prison mask to omit touching edge segments and vertical seams, preserving outside pink edges. Prison outline generation skips exterior contours, removing only the cyan bounding box while retaining internal opening contours and all bar faces. No entrance is carved into the prison bars; gameplay collision masks and pass-through rules remain unchanged. `PacketSignGeometry` uses the shared wall height and square profile, with no plaque or bevel; edges are extracted from the glyph geometry, including letter holes. Maze walls, the prison, and lettering share a material factory and outline-strip renderer, differing in their face and outline colors (pink, cyan, and gold respectively). None uses emissive materials.
+- `RenderSystem` owns a Three.js scene with `MazeScene`, procedural `ArcadeAssets`, and `CollisionDebugScene`, and disposes their GPU resources when destroyed. It reads the injected `CollectibleSystem`; only the update pipeline advances collection and effect timers.
+- `MazeGeometry` builds wall and jail footprints from code-native tile templates, applies the map's rotation and flip transforms, then traces and extrudes continuous contours. The templates preserve the former authored silhouettes without runtime image assets. `MazeScene` batches the outline strips into static instanced meshes and supplies the floor, jail, and extruded vector lettering separately.
+- `buildMazePenFootprint` selects jail tiles (local ID 16) and preserves the outer and center rails with two rectangular openings. Wall outline generation uses that footprint to omit touching edge segments, while jail outline generation skips exterior contours. `PacketSignGeometry` uses the shared wall height and square profile. Maze walls, the jail, and lettering use the same material and outline machinery with separate colors.
 - Character meshes and instanced pellets share reusable geometry and materials. Pellet transforms refresh only when the collectible count changes, avoiding per-frame array copies. Collision markings render in the 3D scene; `DebugOverlaySystem` owns the HTML debug panels.
 
 ### `shared`
@@ -96,7 +94,7 @@ Cross-cutting utilities.
 ## Dependency Direction
 Allowed direction:
 1. `app` -> `systems`, `domain`, `infrastructure`, `shared`, `engine`
-2. `systems` -> `domain`, `shared`, and infrastructure adapters/assets/3D presentation
+2. `systems` -> `domain`, `shared`, and infrastructure adapters/3D presentation
 3. `domain` -> `shared`
 4. `infrastructure` -> `domain`, `shared`, `engine`
 5. no circular imports

@@ -14,7 +14,6 @@ export interface TiledProperty {
 
 export interface TiledTile {
   id: number;
-  image?: string;
   properties?: TiledProperty[];
 }
 
@@ -242,7 +241,6 @@ function trimTiles(tiles: WorldTile[][], bounds: TrimBounds): WorldTile[][] {
           rawGid: 0,
           gid: null,
           localId: null,
-          imagePath: '(empty)',
           rotation: 0,
           flipX: false,
           flipY: false,
@@ -301,7 +299,6 @@ export function parseTiledMap(map: TiledMap): WorldMapData {
   }
 
   const collisionByGid = new Map<number, CollisionTile>();
-  const imageByGid = new Map<number, string>();
 
   map.tilesets.forEach((tileset) => {
     if (!Number.isFinite(tileset.firstgid) || !Array.isArray(tileset.tiles)) {
@@ -314,9 +311,6 @@ export function parseTiledMap(map: TiledMap): WorldMapData {
       const gid = tileset.firstgid + tile.id;
       const properties = toPropertyRecord(tile.properties);
       collisionByGid.set(gid, readCollisionTileFromProperties(properties));
-      if (typeof tile.image === 'string') {
-        imageByGid.set(gid, tile.image);
-      }
     });
   });
 
@@ -335,7 +329,6 @@ export function parseTiledMap(map: TiledMap): WorldMapData {
           rawGid,
           gid: null,
           localId: null,
-          imagePath: '(empty)',
           rotation: 0,
           flipX: false,
           flipY: false,
@@ -353,7 +346,6 @@ export function parseTiledMap(map: TiledMap): WorldMapData {
         rawGid,
         gid: parsed.gid,
         localId,
-        imagePath: imageByGid.get(parsed.gid) ?? '(unknown)',
         rotation: parsed.rotation,
         flipX: parsed.flipped,
         flipY: false,
@@ -392,7 +384,6 @@ export function parseTiledMap(map: TiledMap): WorldMapData {
     heightInPixels: trimBounds.height * map.tileheight,
     tiles,
     collisionByGid,
-    imageByGid,
     portalPairs,
     spawnObjects,
     collectibleObjects,

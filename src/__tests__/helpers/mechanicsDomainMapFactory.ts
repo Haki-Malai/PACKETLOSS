@@ -42,7 +42,6 @@ function makeMapFromCollisionGrid(grid: CollisionGrid, tileSize = TILE_SIZE): Wo
       rawGid: 0,
       gid: null,
       localId: null,
-      imagePath: '(empty)',
       rotation: 0,
       flipX: false,
       flipY: false,
@@ -62,7 +61,6 @@ function makeMapFromCollisionGrid(grid: CollisionGrid, tileSize = TILE_SIZE): Wo
     heightInPixels: height * tileSize,
     tiles,
     collisionByGid: new Map(),
-    imageByGid: new Map(),
     spawnObjects: [
       {
         type: 'packet',

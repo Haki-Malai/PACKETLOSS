@@ -9,10 +9,10 @@ import { WorldState } from '../domain/world/WorldState';
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { ArcadeAssets } from '../infrastructure/three/ArcadeAssets';
 import { CollisionDebugScene } from '../infrastructure/three/CollisionDebugScene';
-import { MazeAssets, MazeScene } from '../infrastructure/three/MazeScene';
+import { MazeScene } from '../infrastructure/three/MazeScene';
 import { CollectibleKind, CollectibleSystem, EatEffect } from './CollectibleSystem';
 import { EntityPresentation } from './EntityPresentation';
-import { resolveGhostSpriteSheetKey } from './resolveGhostSpriteSheetKey';
+import { resolveGhostAppearance } from './resolveGhostAppearance';
 
 export class RenderSystem {
   readonly scene = new Scene();
@@ -33,7 +33,6 @@ export class RenderSystem {
     private readonly world: WorldState,
     private readonly renderer: Pick<ThreeRendererAdapter, 'render' | 'dispose' | 'pixelRatio'>,
     private readonly camera: Camera3D,
-    mazeAssets: MazeAssets,
     private readonly collectibles: CollectibleSystem,
   ) {
     this.presentation = new EntityPresentation(world);
@@ -42,7 +41,7 @@ export class RenderSystem {
     const key = new DirectionalLight('#c7dfff', 1.4);
     key.position.set(-150, 300, 100);
     this.scene.add(key);
-    this.maze = new MazeScene(world, mazeAssets);
+    this.maze = new MazeScene(world);
     this.debug = new CollisionDebugScene(world);
     this.scene.add(this.maze.group, this.debug.group);
 
@@ -86,7 +85,7 @@ export class RenderSystem {
     this.ghosts.forEach((model, ghost) => {
       const position = this.presentation.getPosition(ghost, alpha);
       model.position.set(position.x, 0, position.y);
-      this.assets.setGhostAppearance(model, resolveGhostSpriteSheetKey(this.world, ghost),
+      this.assets.setGhostAppearance(model, resolveGhostAppearance(this.world, ghost),
         this.world.ghostAnimations.get(ghost)?.frame ?? 0, ghost.direction);
     });
     this.syncPoints();

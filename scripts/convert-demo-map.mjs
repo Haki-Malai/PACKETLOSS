@@ -191,15 +191,6 @@ function parseTsxTiles(source) {
     }
 
     const tileBody = tileMatch[2];
-    const imageMatch = tileBody.match(/<image\b([^>]*)\/?>/);
-    if (!imageMatch) {
-      throw new Error(`TSX tile ${id} is missing an <image> entry`);
-    }
-    const imageAttrs = parseAttributes(imageMatch[1]);
-    const image = imageAttrs.get('source');
-    if (!image || image.trim().length === 0) {
-      throw new Error(`TSX tile ${id} is missing image source`);
-    }
 
     const properties = new Map();
     const propertiesMatch = tileBody.match(/<properties>([\s\S]*?)<\/properties>/);
@@ -222,7 +213,6 @@ function parseTsxTiles(source) {
 
     tiles.set(id, {
       id,
-      image,
       properties,
     });
     tileMatch = tileRegex.exec(source);
@@ -278,21 +268,6 @@ function toCollisionProperties(signature) {
     { name: 'penGate', type: 'bool', value: signature.penGate },
     { name: 'portal', type: 'bool', value: signature.portal },
   ];
-}
-
-function normalizeTsxImagePathForOutput(imageSource) {
-  const normalized = imageSource.replace(/\\/g, '/').replace(/^\.\/+/, '');
-  const withoutParents = normalized.replace(/^(\.\.\/)+/, '');
-  if (withoutParents.startsWith('default/')) {
-    return withoutParents.slice('default/'.length);
-  }
-
-  const sourceTilesIndex = withoutParents.indexOf('source/tiles/');
-  if (sourceTilesIndex >= 0) {
-    return withoutParents.slice(sourceTilesIndex);
-  }
-
-  return withoutParents;
 }
 
 function validateTileMetadata(localId, tileMeta) {
@@ -383,11 +358,6 @@ function convert() {
 
   const convertedTiles = sortedUsedLocalIds.map((localId) => {
     const tileMeta = tsxTiles.get(localId);
-    const imagePath = normalizeTsxImagePathForOutput(tileMeta.image);
-    if (!imagePath || imagePath.trim().length === 0) {
-      throw new Error(`TSX tile ${localId} resolved to an empty image path`);
-    }
-
     const signature = {
       collides: tileMeta.properties.get('collides'),
       up: tileMeta.properties.get('up'),
@@ -400,9 +370,6 @@ function convert() {
 
     return {
       id: localId,
-      image: imagePath,
-      imagewidth: 16,
-      imageheight: 16,
       properties: toCollisionProperties(signature),
     };
   });

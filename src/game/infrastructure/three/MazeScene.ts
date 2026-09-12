@@ -3,18 +3,20 @@ import {
   Material, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Vector3,
 } from 'three';
 import { WorldState, WorldTile } from '../../domain/world/WorldState';
-import { AssetCatalog } from '../assets/AssetCatalog';
-import { buildMazePenMask, buildMazeWallEdgeGeometry, buildMazeWallGeometryFromMask, buildMazeWallMask } from './MazeGeometry';
-import type { TileAlphaMask } from './MazeGeometry';
+import {
+  buildMazePenFootprint,
+  buildMazeWallEdgeGeometry,
+  buildMazeWallFootprint,
+  buildMazeWallGeometryFromFootprint,
+} from './MazeGeometry';
+import type { MazeFootprint } from './MazeGeometry';
 import { buildPacketSignGeometry } from './PacketSignGeometry';
-
-export type MazeAssets = Pick<AssetCatalog, 'getTileMask'>;
 
 export class MazeScene {
   readonly group = new Group();
   private readonly resources = new Set<BufferGeometry | Material | InstancedMesh>();
 
-  constructor(world: WorldState, assets: MazeAssets) {
+  constructor(world: WorldState) {
     this.group.name = 'maze';
     const { map } = world;
     const floorGeometry = this.own(new PlaneGeometry(map.tileWidth, map.tileHeight));
@@ -32,20 +34,22 @@ export class MazeScene {
     floor.computeBoundingSphere();
     this.group.add(floor);
 
-    const penMask = tiles.some((tile) => tile.localId === 16)
-      ? buildMazePenMask(map, (path) => assets.getTileMask(path)) : undefined;
-    const wallMask = buildMazeWallMask(map, (path) => assets.getTileMask(path));
-    const wallGeometry = this.own(buildMazeWallGeometryFromMask(wallMask));
+    const penFootprint = tiles.some((tile) => tile.localId === 16) ? buildMazePenFootprint(map) : undefined;
+    const wallFootprint = buildMazeWallFootprint(map);
+    const wallGeometry = this.own(buildMazeWallGeometryFromFootprint(wallFootprint));
     const wallMaterial = this.createWallMaterial('#1e0d20');
     const walls = new Mesh(wallGeometry, wallMaterial);
     walls.name = 'walls';
     this.group.add(walls);
-    const edges = this.createOutlineStrips(buildMazeWallEdgeGeometry(wallMask, penMask), new Color('#b579a1'));
+    const edges = this.createOutlineStrips(
+      buildMazeWallEdgeGeometry(wallFootprint, penFootprint),
+      new Color('#b579a1'),
+    );
     edges.name = 'wall-edges';
     this.group.add(edges);
 
-    if (penMask) {
-      this.addPen(penMask);
+    if (penFootprint) {
+      this.addPen(penFootprint);
     }
 
     this.addSigns(world, tiles);
@@ -121,12 +125,15 @@ export class MazeScene {
     }
   }
 
-  private addPen(mask: TileAlphaMask): void {
+  private addPen(footprint: MazeFootprint): void {
     const pen = new Group();
     pen.name = 'ghost-pen';
-    const bars = new Mesh(this.own(buildMazeWallGeometryFromMask(mask)), this.createWallMaterial('#061428'));
+    const bars = new Mesh(this.own(buildMazeWallGeometryFromFootprint(footprint)), this.createWallMaterial('#061428'));
     bars.name = 'pen-bars';
-    const edges = this.createOutlineStrips(buildMazeWallEdgeGeometry(mask, undefined, false), new Color('#419da9'));
+    const edges = this.createOutlineStrips(
+      buildMazeWallEdgeGeometry(footprint, undefined, false),
+      new Color('#419da9'),
+    );
     edges.name = 'pen-edges';
     pen.add(bars, edges);
     this.group.add(pen);

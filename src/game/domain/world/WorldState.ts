@@ -28,7 +28,6 @@ export interface WorldTile {
   rawGid: number;
   gid: number | null;
   localId: number | null;
-  imagePath: string;
   rotation: number;
   flipX: boolean;
   flipY: boolean;
@@ -49,7 +48,6 @@ export interface WorldMapData {
   heightInPixels: number;
   tiles: WorldTile[][];
   collisionByGid: Map<number, CollisionTile>;
-  imageByGid: Map<number, string>;
   portalPairs?: PortalPair[];
   spawnObjects: WorldObject[];
   collectibleObjects?: WorldObject[];

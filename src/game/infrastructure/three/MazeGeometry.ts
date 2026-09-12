@@ -1,10 +1,10 @@
 import { BufferGeometry, ExtrudeGeometry, Float32BufferAttribute, Path, Shape } from 'three';
 import type { WorldMapData, WorldTile } from '../../domain/world/WorldState';
 
-export interface TileAlphaMask {
+export interface MazeFootprint {
   width: number;
   height: number;
-  opaque: Uint8Array;
+  solid: Uint8Array;
 }
 
 export interface WallContourPoint {
@@ -12,9 +12,27 @@ export interface WallContourPoint {
   y: number;
 }
 
-type TileMaskReader = (_imagePath: string) => TileAlphaMask | undefined;
-
 export const WALL_HEIGHT = 12;
+
+const EMPTY = '................';
+const FULL = '################';
+const LEFT = '##..............';
+const RIGHT = '..............##';
+const BOTH = '##............##';
+const repeat = (row: string, count: number): string[] => Array.from({ length: count }, () => row);
+const TILE_FOOTPRINTS: Readonly<Record<number, readonly string[]>> = {
+  0: repeat(LEFT, 16),
+  1: repeat(BOTH, 16),
+  2: [FULL, FULL, ...repeat(LEFT, 14)],
+  5: [FULL, FULL, ...repeat(EMPTY, 12), '#...............', LEFT],
+  6: [FULL, FULL, ...repeat(EMPTY, 12), '#...............', '##.............#'],
+  7: [BOTH, '#.............##', ...repeat(RIGHT, 12), '#.............##', BOTH],
+  10: [BOTH, '#.............##', ...repeat(RIGHT, 12), FULL, FULL],
+  14: [BOTH, '#..............#', ...repeat(EMPTY, 12), '#..............#', BOTH],
+  15: [...repeat(EMPTY, 14), '...............#', RIGHT],
+  16: [FULL, FULL, ...repeat(BOTH, 4), FULL, FULL, FULL, FULL, ...repeat(BOTH, 4), FULL, FULL],
+  23: [RIGHT, '...............#', ...repeat(EMPTY, 12), '...............#', RIGHT],
+};
 
 interface BoundaryEdge {
   start: WallContourPoint;
@@ -23,57 +41,62 @@ interface BoundaryEdge {
   visited: boolean;
 }
 
-export function buildMazeWallMask(map: WorldMapData, getMask: TileMaskReader): TileAlphaMask {
-  return buildTileMask(map, getMask, (tile) => tile.localId === null || tile.localId < 16 || tile.localId > 21);
+export function buildMazeWallFootprint(map: WorldMapData): MazeFootprint {
+  return buildFootprint(map, (tile) => tile.localId === null || tile.localId < 16 || tile.localId > 21);
 }
 
-export function buildMazePenMask(map: WorldMapData, getMask: TileMaskReader): TileAlphaMask {
-  return buildTileMask(map, getMask, (tile) => tile.localId === 16);
+export function buildMazePenFootprint(map: WorldMapData): MazeFootprint {
+  return buildFootprint(map, (tile) => tile.localId === 16);
 }
 
-function buildTileMask(map: WorldMapData, getMask: TileMaskReader, includeTile: (_tile: WorldTile) => boolean): TileAlphaMask {
+function buildFootprint(
+  map: WorldMapData,
+  includeTile: (_tile: WorldTile) => boolean,
+): MazeFootprint {
   const width = map.width * map.tileWidth;
   const height = map.height * map.tileHeight;
-  const opaque = new Uint8Array(width * height);
-  const masks = new Map<string, TileAlphaMask | undefined>();
+  const solid = new Uint8Array(width * height);
 
   for (const row of map.tiles) {
     for (const tile of row) {
-      // Select presentation layers independently of gameplay collision rules.
       if (tile.gid === null || !includeTile(tile)) {
         continue;
       }
-      if (!masks.has(tile.imagePath)) {
-        masks.set(tile.imagePath, getMask(tile.imagePath));
-      }
-      const source = masks.get(tile.imagePath);
+      const source = tile.localId === null ? undefined : TILE_FOOTPRINTS[tile.localId];
       if (!source) {
         continue;
       }
+      const sourceWidth = source[0]?.length ?? 0;
+      const sourceHeight = source.length;
       const cosine = Math.round(Math.cos(tile.rotation));
       const sine = Math.round(Math.sin(tile.rotation));
       for (let y = 0; y < map.tileHeight; y += 1) {
         for (let x = 0; x < map.tileWidth; x += 1) {
           const localX = (x + 0.5) / map.tileWidth - 0.5;
           const localY = (y + 0.5) / map.tileHeight - 0.5;
-          const sourceX = Math.floor(((localX * cosine + localY * sine) * (tile.flipX ? -1 : 1) + 0.5) * source.width);
-          const sourceY = Math.floor(((-localX * sine + localY * cosine) * (tile.flipY ? -1 : 1) + 0.5) * source.height);
-          if (source.opaque[sourceY * source.width + sourceX]) {
-            opaque[(tile.y * map.tileHeight + y) * width + tile.x * map.tileWidth + x] = 1;
+          const sourceX = Math.floor(
+            ((localX * cosine + localY * sine) * (tile.flipX ? -1 : 1) + 0.5) * sourceWidth,
+          );
+          const sourceY = Math.floor(
+            ((-localX * sine + localY * cosine) * (tile.flipY ? -1 : 1) + 0.5) * sourceHeight,
+          );
+          if (source[sourceY]?.[sourceX] === '#') {
+            solid[(tile.y * map.tileHeight + y) * width + tile.x * map.tileWidth + x] = 1;
           }
         }
       }
     }
   }
-  return { width, height, opaque };
+  return { width, height, solid };
 }
 
-export function traceWallContours(mask: TileAlphaMask): WallContourPoint[][] {
+export function traceWallContours(footprint: MazeFootprint): WallContourPoint[][] {
   const edges: BoundaryEdge[] = [];
   const outgoing = new Map<number, BoundaryEdge[]>();
-  const pointKey = (point: WallContourPoint): number => point.y * (mask.width + 1) + point.x;
+  const pointKey = (point: WallContourPoint): number => point.y * (footprint.width + 1) + point.x;
   const occupied = (x: number, y: number): boolean =>
-    x >= 0 && y >= 0 && x < mask.width && y < mask.height && Boolean(mask.opaque[y * mask.width + x]);
+    x >= 0 && y >= 0 && x < footprint.width && y < footprint.height
+      && Boolean(footprint.solid[y * footprint.width + x]);
   const addEdge = (x: number, y: number, endX: number, endY: number, direction: number): void => {
     const edge = { start: { x, y }, end: { x: endX, y: endY }, direction, visited: false };
     edges.push(edge);
@@ -83,8 +106,8 @@ export function traceWallContours(mask: TileAlphaMask): WallContourPoint[][] {
     outgoing.set(key, neighbors);
   };
 
-  for (let y = 0; y < mask.height; y += 1) {
-    for (let x = 0; x < mask.width; x += 1) {
+  for (let y = 0; y < footprint.height; y += 1) {
+    for (let x = 0; x < footprint.width; x += 1) {
       if (!occupied(x, y)) continue;
       if (!occupied(x, y - 1)) addEdge(x, y, x + 1, y, 0);
       if (!occupied(x + 1, y)) addEdge(x + 1, y, x + 1, y + 1, 1);
@@ -107,7 +130,7 @@ export function traceWallContours(mask: TileAlphaMask): WallContourPoint[][] {
       const next = [1, 0, 3, 2].map((turn) =>
         candidates.find((candidate) => !candidate.visited && candidate.direction === (edge.direction + turn) % 4),
       ).find((candidate) => candidate !== undefined);
-      if (!next) throw new Error('Wall mask contains an open boundary');
+      if (!next) throw new Error('Wall footprint contains an open boundary');
       edge = next;
     } while (!edge.visited);
 
@@ -147,23 +170,23 @@ function setPathPoints(path: Path, contour: WallContourPoint[]): void {
   path.closePath();
 }
 
-export function buildMazeWallGeometry(map: WorldMapData, getMask: TileMaskReader): BufferGeometry {
-  return buildMazeWallGeometryFromMask(buildMazeWallMask(map, getMask));
+export function buildMazeWallGeometry(map: WorldMapData): BufferGeometry {
+  return buildMazeWallGeometryFromFootprint(buildMazeWallFootprint(map));
 }
 
 export function buildMazeWallEdgeGeometry(
-  mask: TileAlphaMask, adjoiningMask?: TileAlphaMask, includeOuterContours = true,
+  footprint: MazeFootprint, adjoiningFootprint?: MazeFootprint, includeOuterContours = true,
 ): BufferGeometry {
   const positions: number[] = [];
   const corners = new Set<string>();
   const adjoins = (x: number, y: number): boolean => {
-    if (!adjoiningMask) return false;
+    if (!adjoiningFootprint) return false;
     const column = Math.floor(x);
     const row = Math.floor(y);
-    return column >= 0 && column < adjoiningMask.width && row >= 0 && row < adjoiningMask.height
-      && Boolean(adjoiningMask.opaque[row * adjoiningMask.width + column]);
+    return column >= 0 && column < adjoiningFootprint.width && row >= 0 && row < adjoiningFootprint.height
+      && Boolean(adjoiningFootprint.solid[row * adjoiningFootprint.width + column]);
   };
-  for (const contour of traceWallContours(mask)) {
+  for (const contour of traceWallContours(footprint)) {
     if (!includeOuterContours && signedArea(contour) > 0) continue;
     // The square wall profile keeps both rings aligned, including around holes.
     for (const height of [0.08, WALL_HEIGHT + 0.01]) {
@@ -194,7 +217,7 @@ export function buildMazeWallEdgeGeometry(
       const point = contour[index];
       const previous = contour[(index + contour.length - 1) % contour.length];
       const next = contour[(index + 1) % contour.length];
-      // Pixel stair-steps describe rounded artwork, not full-height wall corners.
+      // Unit-length boundary steps do not represent full-height wall corners.
       if (Math.hypot(point.x - previous.x, point.y - previous.y) <= 1
         && Math.hypot(next.x - point.x, next.y - point.y) <= 1) continue;
       if ([-0.5, 0.5].some((dx) => [-0.5, 0.5].some((dy) => adjoins(point.x + dx, point.y + dy)))) continue;
@@ -209,8 +232,8 @@ export function buildMazeWallEdgeGeometry(
   return new BufferGeometry().setAttribute('position', new Float32BufferAttribute(positions, 3));
 }
 
-export function buildMazeWallGeometryFromMask(mask: TileAlphaMask): BufferGeometry {
-  const contours = traceWallContours(mask);
+export function buildMazeWallGeometryFromFootprint(footprint: MazeFootprint): BufferGeometry {
+  const contours = traceWallContours(footprint);
   const outlines = contours.filter((contour) => signedArea(contour) > 0).map((contour) => {
     const shape = new Shape();
     setPathPoints(shape, contour);
