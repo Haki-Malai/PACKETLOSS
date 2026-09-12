@@ -1,10 +1,11 @@
 import {
-  BoxGeometry, BufferGeometry, Color, Float32BufferAttribute, Group, InstancedMesh,
+  BoxGeometry, BufferGeometry, Color, EdgesGeometry, Group, InstancedMesh,
   Material, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Vector3,
 } from 'three';
 import { WorldState, WorldTile } from '../../domain/world/WorldState';
 import { AssetCatalog } from '../assets/AssetCatalog';
-import { buildMazeWallEdgeGeometry, buildMazeWallGeometryFromMask, buildMazeWallMask } from './MazeGeometry';
+import { buildMazePenMask, buildMazeWallEdgeGeometry, buildMazeWallGeometryFromMask, buildMazeWallMask } from './MazeGeometry';
+import type { TileAlphaMask } from './MazeGeometry';
 import { buildPacmanSignGeometry } from './PacmanSignGeometry';
 
 export type MazeAssets = Pick<AssetCatalog, 'getTileMask'>;
@@ -32,11 +33,9 @@ export class MazeScene {
     this.group.add(floor);
 
     const hasPen = tiles.some((tile) => tile.localId === 16);
-    const wallMask = buildMazeWallMask(map, (path) => assets.getTileMask(path), hasPen ? world.ghostJailBounds : undefined);
+    const wallMask = buildMazeWallMask(map, (path) => assets.getTileMask(path));
     const wallGeometry = this.own(buildMazeWallGeometryFromMask(wallMask));
-    const wallMaterial = this.own(new MeshStandardMaterial({
-      color: '#061428', roughness: 0.3, metalness: 0.12,
-    }));
+    const wallMaterial = this.createWallMaterial('#061428');
     const walls = new Mesh(wallGeometry, wallMaterial);
     walls.name = 'walls';
     this.group.add(walls);
@@ -45,7 +44,7 @@ export class MazeScene {
     this.group.add(edges);
 
     if (hasPen) {
-      this.addPen(world);
+      this.addPen(buildMazePenMask(map, (path) => assets.getTileMask(path)));
     }
 
     this.addSigns(world, tiles);
@@ -60,6 +59,10 @@ export class MazeScene {
   private own<T extends BufferGeometry | Material | InstancedMesh>(resource: T): T {
     this.resources.add(resource);
     return resource;
+  }
+
+  private createWallMaterial(color: string): MeshStandardMaterial {
+    return this.own(new MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.12 }));
   }
 
   private createOutlineStrips(source: BufferGeometry, color: Color): InstancedMesh<BoxGeometry, MeshBasicMaterial> {
@@ -100,81 +103,31 @@ export class MazeScene {
       if (last && last.y === tile.y && last.x + 1 === tile.x) run.push(tile);
       else runs.push([tile]);
     }
-    const plaqueMaterial = this.own(new MeshStandardMaterial({ color: '#100d20', roughness: 0.6 }));
-    const faceMaterial = this.own(new MeshStandardMaterial({
-      color: '#ff2fa8', emissive: '#ff79d1', emissiveIntensity: 1.1, roughness: 0.6,
-    }));
-    const sideMaterial = this.own(new MeshStandardMaterial({
-      color: '#290b3d', emissive: '#7f197b', emissiveIntensity: 0.1, roughness: 0.6,
-    }));
+    const material = this.createWallMaterial('#241b0b');
     for (const run of runs) {
       const width = run.length * world.map.tileWidth;
       const height = world.map.tileHeight;
-      const plaque = new Mesh(this.own(new BoxGeometry(width, 0.5, height)), plaqueMaterial);
-      plaque.name = 'sign-plaque';
-      plaque.position.set((run[0].x + run.length / 2) * world.map.tileWidth, 0.25, (run[0].y + 0.5) * height);
-      this.group.add(plaque);
-      const lettering = new Mesh(this.own(buildPacmanSignGeometry(width - 2, height - 2)), [faceMaterial, sideMaterial]);
+      const geometry = this.own(buildPacmanSignGeometry(width - 2, height - 2));
+      const lettering = new Mesh(geometry, material);
       lettering.name = 'sign-lettering';
+      const edges = this.createOutlineStrips(new EdgesGeometry(geometry), new Color('#b9a36b'));
+      edges.name = 'sign-edges';
       const placement = new Group();
       placement.name = 'sign-artwork';
-      placement.position.set(plaque.position.x, 0.51, plaque.position.z);
-      placement.add(lettering);
+      placement.position.set((run[0].x + run.length / 2) * world.map.tileWidth, 0, (run[0].y + 0.5) * height);
+      placement.add(lettering, edges);
       this.group.add(placement);
     }
   }
 
-  private addPen(world: WorldState): void {
-    const { minX, maxX, y } = world.ghostJailBounds;
-    const size = world.tileSize;
-    const left = minX * size;
-    const right = (maxX + 1) * size;
-    const north = y * size;
-    const south = (y + 1) * size;
+  private addPen(mask: TileAlphaMask): void {
     const pen = new Group();
     pen.name = 'ghost-pen';
-    const material = this.own(new MeshStandardMaterial({ color: '#140b1d', metalness: 0.25, roughness: 0.35 }));
-    const railGeometry = this.own(new BoxGeometry(1, 2, 1));
-    const addRail = (x: number, z: number, width: number, depth: number): void => {
-      const rail = new Mesh(railGeometry, material);
-      rail.name = 'pen-rail';
-      rail.position.set(x, 1, z);
-      rail.scale.set(width, 1, depth);
-      pen.add(rail);
-    };
-    addRail(left + 0.5, (north + south) / 2, 1, size);
-    addRail(right - 0.5, (north + south) / 2, 1, size);
-    addRail((left + right) / 2, south - 0.5, right - left, 1);
-    const outline = [[left, north], [left, south], [right, south], [right, north],
-      [right - 1, north], [right - 1, south - 1], [left + 1, south - 1], [left + 1, north]];
-    const positions: number[] = [];
-    outline.forEach(([x, z], index) => {
-      const [nextX, nextZ] = outline[(index + 1) % outline.length];
-      positions.push(x, 2.01, z, nextX, 2.01, nextZ);
-      positions.push(x, 0.08, z, nextX, 0.08, nextZ);
-      positions.push(x, 0.08, z, x, 2.01, z);
-    });
-    const outlineGeometry = new BufferGeometry().setAttribute('position', new Float32BufferAttribute(positions, 3));
-    const penEdges = this.createOutlineStrips(outlineGeometry, new Color('#b579a1'));
-    penEdges.name = 'pen-edges';
-    pen.add(penEdges);
-
-    const floor = new Mesh(
-      this.own(new PlaneGeometry(right - left, size)),
-      this.own(new MeshStandardMaterial({ color: '#141026', roughness: 0.8 })),
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set((left + right) / 2, 0, (north + south) / 2);
-    pen.add(floor);
-    const thresholdDepth = world.map.tileHeight / 8;
-    const entrance = new Mesh(
-      this.own(new PlaneGeometry(right - left - 2, thresholdDepth + 0.4)),
-      this.own(new MeshBasicMaterial({ color: '#321338' })),
-    );
-    entrance.name = 'pen-entrance';
-    entrance.rotation.x = -Math.PI / 2;
-    entrance.position.set((left + right) / 2, 0.02, north - thresholdDepth / 2 + 0.2);
-    pen.add(entrance);
+    const bars = new Mesh(this.own(buildMazeWallGeometryFromMask(mask)), this.createWallMaterial('#1e0d20'));
+    bars.name = 'pen-bars';
+    const edges = this.createOutlineStrips(buildMazeWallEdgeGeometry(mask), new Color('#b579a1'));
+    edges.name = 'pen-edges';
+    pen.add(bars, edges);
     this.group.add(pen);
   }
 }

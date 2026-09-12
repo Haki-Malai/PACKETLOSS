@@ -1,5 +1,5 @@
 import { BufferGeometry, ExtrudeGeometry, Float32BufferAttribute, Path, Shape } from 'three';
-import type { GhostJailBounds, WorldMapData } from '../../domain/world/WorldState';
+import type { WorldMapData, WorldTile } from '../../domain/world/WorldState';
 
 export interface TileAlphaMask {
   width: number;
@@ -14,7 +14,7 @@ export interface WallContourPoint {
 
 type TileMaskReader = (_imagePath: string) => TileAlphaMask | undefined;
 
-const WALL_HEIGHT = 12;
+export const WALL_HEIGHT = 12;
 
 interface BoundaryEdge {
   start: WallContourPoint;
@@ -23,7 +23,15 @@ interface BoundaryEdge {
   visited: boolean;
 }
 
-export function buildMazeWallMask(map: WorldMapData, getMask: TileMaskReader, pen?: GhostJailBounds): TileAlphaMask {
+export function buildMazeWallMask(map: WorldMapData, getMask: TileMaskReader): TileAlphaMask {
+  return buildTileMask(map, getMask, (tile) => tile.localId === null || tile.localId < 16 || tile.localId > 21);
+}
+
+export function buildMazePenMask(map: WorldMapData, getMask: TileMaskReader): TileAlphaMask {
+  return buildTileMask(map, getMask, (tile) => tile.localId === 16);
+}
+
+function buildTileMask(map: WorldMapData, getMask: TileMaskReader, includeTile: (_tile: WorldTile) => boolean): TileAlphaMask {
   const width = map.width * map.tileWidth;
   const height = map.height * map.tileHeight;
   const opaque = new Uint8Array(width * height);
@@ -31,8 +39,8 @@ export function buildMazeWallMask(map: WorldMapData, getMask: TileMaskReader, pe
 
   for (const row of map.tiles) {
     for (const tile of row) {
-      // Pen bars and the sign have dedicated 3D assets, independent of collision rules.
-      if (tile.gid === null || (tile.localId !== null && tile.localId >= 16 && tile.localId <= 21)) {
+      // Select presentation layers independently of gameplay collision rules.
+      if (tile.gid === null || !includeTile(tile)) {
         continue;
       }
       if (!masks.has(tile.imagePath)) {
@@ -55,17 +63,6 @@ export function buildMazeWallMask(map: WorldMapData, getMask: TileMaskReader, pe
           }
         }
       }
-    }
-  }
-  if (pen) {
-    // The adjoining corridor owns this rail. Replace it with the pen's flush
-    // entrance so ghost release can cross it without changing gameplay collision.
-    const left = Math.max(0, pen.minX * map.tileWidth + 1);
-    const right = Math.min(width, (pen.maxX + 1) * map.tileWidth - 1);
-    const north = pen.y * map.tileHeight;
-    const firstRow = Math.max(0, Math.floor(north - map.tileHeight / 8));
-    for (let y = firstRow; y < Math.min(north, height); y += 1) {
-      opaque.fill(0, y * width + left, y * width + right);
     }
   }
   return { width, height, opaque };
@@ -150,8 +147,8 @@ function setPathPoints(path: Path, contour: WallContourPoint[]): void {
   path.closePath();
 }
 
-export function buildMazeWallGeometry(map: WorldMapData, getMask: TileMaskReader, pen?: GhostJailBounds): BufferGeometry {
-  return buildMazeWallGeometryFromMask(buildMazeWallMask(map, getMask, pen));
+export function buildMazeWallGeometry(map: WorldMapData, getMask: TileMaskReader): BufferGeometry {
+  return buildMazeWallGeometryFromMask(buildMazeWallMask(map, getMask));
 }
 
 export function buildMazeWallEdgeGeometry(mask: TileAlphaMask): BufferGeometry {

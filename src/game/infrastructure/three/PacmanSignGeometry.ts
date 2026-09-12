@@ -1,4 +1,5 @@
 import { ExtrudeGeometry, Path, Shape } from 'three';
+import { WALL_HEIGHT } from './MazeGeometry';
 
 type Point = readonly [number, number];
 interface Glyph {
@@ -26,7 +27,7 @@ const GLYPHS: Record<'P' | 'A' | 'C' | 'M' | 'N', Glyph> = {
   },
 };
 
-/** Horizontal lettering centered on the plaque; material 0 is faces, 1 is sides. */
+/** Horizontal lettering centered in its authored tile run, with the maze wall profile. */
 export function buildPacmanSignGeometry(width: number, height: number): ExtrudeGeometry {
   const letters = ['P', 'A', 'C', 'M', 'A', 'N'] as const;
   const scaleX = width / 58;
@@ -52,15 +53,11 @@ export function buildPacmanSignGeometry(width: number, height: number): ExtrudeG
     return shape;
   });
   const geometry = new ExtrudeGeometry(shapes, {
-    depth: 2.6,
+    depth: WALL_HEIGHT,
     steps: 1,
-    bevelEnabled: true,
-    bevelSize: Math.min(0.12, scaleX / 3, scaleY / 3),
-    bevelOffset: -Math.min(0.12, scaleX / 3, scaleY / 3),
-    bevelThickness: 0.2,
-    bevelSegments: 2,
+    bevelEnabled: false,
   });
-  geometry.translate(0, 0, 0.2);
   geometry.rotateX(-Math.PI / 2);
+  geometry.clearGroups();
   return geometry;
 }
