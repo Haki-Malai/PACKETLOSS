@@ -2,13 +2,14 @@ import { SeededRandom } from '../../shared/random/SeededRandom';
 import { DIRECTION_VECTORS, DIRECTIONS } from '../valueObjects/Direction';
 import { TilePosition } from '../valueObjects/TilePosition';
 import { canMove } from './MovementRules';
+import { GhostJailService } from './GhostJailService';
 import { CollisionGrid } from '../world/CollisionGrid';
 import { WorldMapData } from '../world/WorldState';
 
 const FNV_OFFSET_BASIS = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
-export const DEFAULT_POWER_POINT_RATIO = 1 / 13;
+export const DEFAULT_POWER_POINT_RATIO = 1 / 180;
 
 export interface PointLayout {
   basePoints: TilePosition[];
@@ -240,20 +241,61 @@ function computeMapBuildSeed(map: WorldMapData, startTile: TilePosition): number
   return hash >>> 0;
 }
 
-function pickPowerPoints(basePoints: TilePosition[], count: number, seed: number): TilePosition[] {
-  if (count <= 0 || basePoints.length === 0) {
-    return [];
-  }
+function pickPowerPoints(
+  basePoints: TilePosition[],
+  count: number,
+  seed: number,
+  map: WorldMapData,
+  collisionGrid: CollisionGrid,
+  startTile: TilePosition,
+  tileSize: number,
+): TilePosition[] {
+  if (count <= 0 || basePoints.length === 0) return [];
 
-  const shuffled = [...basePoints];
+  const distanceSquared = (a: TilePosition, b: TilePosition): number => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+  const entrances = map.tiles.flat().filter((tile) => tile.collision.portal || tile.collision.penGate);
+  const jail = new GhostJailService().resolveGhostJailBounds(map, startTile);
+  const safeTiles = basePoints.filter((tile) => distanceSquared(tile, startTile) >= 9 &&
+    (tile.x < jail.minX - 2 || tile.x > jail.maxX + 2 || Math.abs(tile.y - jail.y) > 2) &&
+    entrances.every((entrance) => distanceSquared(tile, entrance) > 4));
+  const bends = safeTiles.filter((tile) => {
+    const neighbors = getNavigablePlayableNeighbors(map, collisionGrid, tile, tileSize);
+    return neighbors.length === 1 || (neighbors.length === 2 &&
+      neighbors[0].x !== neighbors[1].x && neighbors[0].y !== neighbors[1].y);
+  });
+  // Prefer recognizable bends; tiny maps or explicit high counts can use other floor tiles.
+  const candidates = [...(bends.length >= count ? bends : safeTiles.length >= count ? safeTiles : basePoints)];
   const random = new SeededRandom(seed);
-
-  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+  for (let i = candidates.length - 1; i > 0; i -= 1) {
     const swapIndex = random.int(i + 1);
-    [shuffled[i], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[i]];
+    [candidates[i], candidates[swapIndex]] = [candidates[swapIndex], candidates[i]];
   }
 
-  return shuffled.slice(0, count).sort(compareTiles);
+  const minX = Math.min(...basePoints.map((tile) => tile.x));
+  const maxX = Math.max(...basePoints.map((tile) => tile.x));
+  const minY = Math.min(...basePoints.map((tile) => tile.y));
+  const maxY = Math.max(...basePoints.map((tile) => tile.y));
+  const corners = [
+    { x: minX, y: minY }, { x: maxX, y: maxY },
+    { x: maxX, y: minY }, { x: minX, y: maxY },
+  ].filter((corner, index, all) => all.findIndex((other) => distanceSquared(corner, other) === 0) === index);
+  const selected: TilePosition[] = [];
+  while (selected.length < count) {
+    const corner = corners[selected.length];
+    let bestIndex = 0;
+    let bestScore = -Infinity;
+    for (const [index, tile] of candidates.entries()) {
+      // Anchor the perimeter first, then spread powerups across routes away from the spawn.
+      const score = corner ? -distanceSquared(tile, corner)
+        : Math.min(distanceSquared(tile, startTile), ...selected.map((point) => distanceSquared(tile, point)));
+      if (score > bestScore) {
+        bestIndex = index;
+        bestScore = score;
+      }
+    }
+    selected.push(candidates.splice(bestIndex, 1)[0]);
+  }
+  return selected.sort(compareTiles);
 }
 
 export function buildPointLayout(params: BuildPointLayoutParams): PointLayout {
@@ -272,13 +314,13 @@ export function buildPointLayout(params: BuildPointLayoutParams): PointLayout {
   const basePoints = reachableTiles.filter((tile) => isPointPlayableTile(map, collisionGrid, tile, tileSize));
   const ratio = Math.max(0, options?.powerPointRatio ?? DEFAULT_POWER_POINT_RATIO);
 
-  const maxPowerPoints = Math.min(basePoints.length, Math.max(0, options?.maxPowerPoints ?? basePoints.length));
-  const minPowerPoints = Math.min(maxPowerPoints, Math.max(0, options?.minPowerPoints ?? 1));
+  const maxPowerPoints = Math.min(basePoints.length, Math.max(0, options?.maxPowerPoints ?? 12));
+  const minPowerPoints = Math.min(maxPowerPoints, Math.max(0, options?.minPowerPoints ?? 4));
   const requestedPowerPoints = Math.round(basePoints.length * ratio);
   const powerPointCount = clamp(requestedPowerPoints, minPowerPoints, maxPowerPoints);
 
   const seed = (options?.seed ?? computeMapBuildSeed(map, traversalStart)) >>> 0;
-  const powerPoints = pickPowerPoints(basePoints, powerPointCount, seed);
+  const powerPoints = pickPowerPoints(basePoints, powerPointCount, seed, map, collisionGrid, traversalStart, tileSize);
 
   return {
     basePoints,
