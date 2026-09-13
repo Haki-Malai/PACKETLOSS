@@ -4,6 +4,7 @@
 - Keep changes small, readable, and limited to the request.
 - Use strict TypeScript; avoid `any` and unnecessary abstractions.
 - Prefer Tailwind utilities for UI styling.
+- Every new or changed HTML interface must follow the canonical HTML visual contract in `docs/PRODUCT.md` and reuse the shared tokens and styles in `src/game/ui/gameUi.css`. Build menu UI with the shared element/button/panel constructors in `src/game/ui/MenuPanel.ts`; use its header/body/actions/footer slots and shared responsive columns instead of duplicating layout markup. Keep ambient decoration owned by `GameShell` across menu navigation. This includes future development-tool UI changes; do not restyle unrelated tools as part of another task.
 - Keep gameplay logic in `src/game/` and engine primitives in `src/engine/`.
 - Run `pnpm typecheck`, `pnpm lint`, and `pnpm test` after code changes.
 - Add focused regression tests when fixing gameplay bugs.

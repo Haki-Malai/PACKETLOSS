@@ -3,6 +3,8 @@ import { FakeDocument } from './helpers/fakeDom';
 
 const mocks = vi.hoisted(() => ({
   start: vi.fn(),
+  pause: vi.fn(),
+  resume: vi.fn(),
   destroy: vi.fn(),
   createPacketGame: vi.fn(),
   importShowcase: vi.fn(),
@@ -10,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   disposeShowcase: vi.fn(),
 }));
 vi.mock('../game/app/createPacketGame', () => ({ createPacketGame: mocks.createPacketGame }));
+vi.mock('../game/ui/TitleWordmark', () => ({ mountTitleWordmark: () => () => {} }));
 
 function installPage(pathname = '/') {
   const document = new FakeDocument();
@@ -47,7 +50,7 @@ describe('game startup and development asset route', () => {
     vi.stubEnv('BASE_URL', './');
     vi.stubEnv('VITE_GAME_ENV', 'DEMO');
     mocks.start.mockResolvedValue(undefined);
-    mocks.createPacketGame.mockReturnValue({ start: mocks.start, destroy: mocks.destroy });
+    mocks.createPacketGame.mockReturnValue({ start: mocks.start, pause: mocks.pause, resume: mocks.resume, destroy: mocks.destroy });
     mocks.mountAssetShowcase.mockResolvedValue(mocks.disposeShowcase);
     vi.doMock('../dev/assets/AssetShowcase', () => {
       mocks.importShowcase();
@@ -64,7 +67,11 @@ describe('game startup and development asset route', () => {
     const { mount } = installPage();
     mocks.start.mockRejectedValueOnce(new Error('The 3D game requires WebGL 2.'));
     await import('../main');
-    expect(mount.querySelector('[role="alert"]')?.textContent).toBe('The 3D game requires WebGL 2.');
+    mount.querySelector('[data-action="start"]')?.click();
+    await vi.dynamicImportSettled();
+    await vi.waitFor(() => expect(mount.querySelector('[role="alert"]')?.textContent).toBe('The 3D game requires WebGL 2.'));
+    expect(mount.querySelector('[data-action="retry"]')?.textContent).toBe('Retry');
+    expect(mount.querySelector('[data-action="main-menu"]')?.textContent).toBe('Main menu');
     expect(mount.querySelector('canvas')).toBeNull();
   });
 
@@ -81,25 +88,36 @@ describe('game startup and development asset route', () => {
   });
 
   it('keeps the game route in production without importing the showcase or adding its link', async () => {
-    const { document } = installPage('/dev/assets');
+    const { document, mount } = installPage('/dev/assets');
     vi.stubEnv('DEV', false);
     await import('../main');
     await vi.dynamicImportSettled();
-    expect(mocks.createPacketGame).toHaveBeenCalledOnce();
-    expect(mocks.start).toHaveBeenCalledOnce();
+    expect(mount.querySelector('h1')?.textContent).toBe('PACKETLOSS');
+    expect(mocks.createPacketGame).not.toHaveBeenCalled();
+    expect(mocks.start).not.toHaveBeenCalled();
     expect(mocks.importShowcase).not.toHaveBeenCalled();
     expect(document.body.querySelector('a')).toBeNull();
+    mount.querySelector('[data-action="start"]')?.click();
+    await vi.dynamicImportSettled();
+    expect(mocks.createPacketGame).toHaveBeenCalledOnce();
+    expect(mocks.start).toHaveBeenCalledOnce();
   });
 
-  it('starts the normal game and keeps the development Assets link outside its mount', async () => {
+  it('starts a run from the title and keeps the development Assets link outside its mount', async () => {
     const { document, mount, pagehide } = installPage();
     await import('../main');
-    expect(mocks.createPacketGame).toHaveBeenCalledWith({ mountId: 'game-root', mapVariant: 'demo' });
+    expect(mount.querySelector('h1')?.textContent).toBe('PACKETLOSS');
+    expect(mocks.createPacketGame).not.toHaveBeenCalled();
+    expect(mocks.start).not.toHaveBeenCalled();
     expect(mocks.importShowcase).not.toHaveBeenCalled();
     const link = document.body.querySelector('a');
     expect(link?.textContent).toBe('Assets');
     expect(link?.getAttribute('href')).toBe('/dev/assets');
     expect(mount.querySelector('a')).toBeNull();
+    mount.querySelector('[data-action="start"]')?.click();
+    await vi.dynamicImportSettled();
+    expect(mocks.createPacketGame).toHaveBeenCalledWith(expect.objectContaining({ mountId: 'packet-scene', mapVariant: 'demo' }));
+    expect(mocks.start).toHaveBeenCalledOnce();
     pagehide();
     pagehide();
     expect(mocks.destroy).toHaveBeenCalledOnce();
@@ -124,8 +142,10 @@ describe('game startup and development asset route', () => {
   });
 
   it('reloads a disposed page restored from browser history while ignoring an ordinary pageshow', async () => {
-    const { pagehide, pageshow, reload } = installPage();
+    const { mount, pagehide, pageshow, reload } = installPage();
     await import('../main');
+    mount.querySelector('[data-action="start"]')?.click();
+    await vi.dynamicImportSettled();
     pageshow(false);
     expect(reload).not.toHaveBeenCalled();
     pagehide();
@@ -150,10 +170,13 @@ describe('game startup and development asset route', () => {
     let failStartup!: (_error: Error) => void;
     mocks.start.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { failStartup = reject; }));
     await import('../main');
+    mount.querySelector('[data-action="start"]')?.click();
+    await vi.dynamicImportSettled();
     pagehide();
     const replacement = document.createElement('section');
     mount.replaceChildren(replacement);
     failStartup(new Error('Late failure'));
+    await Promise.resolve();
     await Promise.resolve();
     expect(mount.children).toEqual([replacement]);
     expect(mocks.destroy).toHaveBeenCalledOnce();

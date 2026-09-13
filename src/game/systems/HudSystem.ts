@@ -2,10 +2,10 @@ import { HudOverlayAdapter } from '../infrastructure/adapters/HudOverlayAdapter'
 
 export class HudSystem {
   private hud?: HudOverlayAdapter;
-  constructor(private readonly mount: HTMLElement) {}
+  constructor(private readonly mount: HTMLElement, private readonly onPause?: () => void) {}
 
   start(): void {
-    this.hud = new HudOverlayAdapter(this.mount);
+    this.hud = new HudOverlayAdapter(this.mount, this.onPause);
   }
 
   update(): void {

@@ -10,6 +10,18 @@ function toTokens(value: string): string[] {
 function createSelectorMatcher(selector: string): SelectorMatcher {
   const trimmed = selector.trim();
 
+  if (trimmed.includes(',')) {
+    const matchers = trimmed.split(',').map(createSelectorMatcher);
+    return (element) => matchers.some((matcher) => matcher(element));
+  }
+
+  if (trimmed.startsWith('#')) return (element) => element.id === trimmed.slice(1);
+
+  if (trimmed.includes('.') && !trimmed.startsWith('[')) {
+    const [tag, className] = trimmed.split('.');
+    return (element) => (!tag || element.tagName === tag) && element.classList.contains(className);
+  }
+
   if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
     const inner = trimmed.slice(1, -1).trim();
     const equalsIndex = inner.indexOf('=');
@@ -80,7 +92,7 @@ export class FakeClassList {
   }
 }
 
-export class FakeElement {
+export class FakeElement extends EventTarget {
   private readonly classTokens = new Set<string>();
   private readonly attributes = new Map<string, string>();
 
@@ -91,8 +103,16 @@ export class FakeElement {
   textContent = '';
   src = '';
   alt = '';
+  id = '';
+  value = '';
+  hidden = false;
+  disabled = false;
+  inert = false;
+  tabIndex = 0;
+  scrollTop = 0;
 
-  constructor(readonly tagName: string) {
+  constructor(readonly tagName: string, public ownerDocument?: FakeDocument) {
+    super();
     this.classList = new FakeClassList(this);
   }
 
@@ -118,6 +138,7 @@ export class FakeElement {
   appendChild(node: FakeElement): FakeElement {
     node.parentElement?.removeChild(node);
     node.parentElement = this;
+    node.ownerDocument = this.ownerDocument;
     this.children.push(node);
     return node;
   }
@@ -138,10 +159,41 @@ export class FakeElement {
 
   setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
+    if (name === 'id') this.id = value;
+    if (name === 'disabled') this.disabled = true;
   }
 
   getAttribute(name: string): string | null {
+    if (name === 'id') return this.id || null;
+    if (name === 'disabled' && this.disabled) return '';
     return this.attributes.get(name) ?? null;
+  }
+
+  hasAttribute(name: string): boolean {
+    return this.getAttribute(name) !== null;
+  }
+
+  removeAttribute(name: string): void {
+    this.attributes.delete(name);
+    if (name === 'id') this.id = '';
+    if (name === 'disabled') this.disabled = false;
+  }
+
+  focus(_options?: FocusOptions): void {
+    if (this.ownerDocument) this.ownerDocument.activeElement = this;
+  }
+
+  click(): void {
+    if (!this.disabled) this.dispatchEvent(new Event('click', { cancelable: true }));
+  }
+
+  contains(element: FakeElement | null): boolean {
+    return element === this || this.children.some((child) => child.contains(element));
+  }
+
+  closest(selector: string): FakeElement | null {
+    const matcher = createSelectorMatcher(selector);
+    return matcher(this) ? this : this.parentElement?.closest(selector) ?? null;
   }
 
   querySelector(selector: string): FakeElement | null {
@@ -182,11 +234,12 @@ export class FakeElement {
   }
 }
 
-export class FakeDocument {
-  readonly body = new FakeElement('body');
+export class FakeDocument extends EventTarget {
+  readonly body = new FakeElement('body', this);
+  activeElement: FakeElement | null = this.body;
 
   createElement(tagName: string): FakeElement {
-    return new FakeElement(tagName.toLowerCase());
+    return new FakeElement(tagName.toLowerCase(), this);
   }
 
   querySelector(selector: string): FakeElement | null {

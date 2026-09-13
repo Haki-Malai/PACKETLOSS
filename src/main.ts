@@ -1,6 +1,7 @@
 import './tailwind.css';
 import './style.css';
-import { createPacketGame } from './game/app/createPacketGame';
+import './game/ui/gameUi.css';
+import { GameShell } from './game/ui/GameShell';
 import { resolveMapVariantFromEnv } from './game/app/mapRuntimeConfig';
 
 let disposed = false;
@@ -19,7 +20,7 @@ function dispose(): void {
 function showStartupFailure(error: unknown): void {
   if (disposed) return;
   const message = document.createElement('p');
-  message.className = 'm-auto max-w-lg p-8 text-center text-white';
+  message.className = 'packet-panel packet-copy';
   message.setAttribute('role', 'alert');
   message.textContent = error instanceof Error ? error.message : 'The game could not start. Please reload and try again.';
   document.getElementById('game-root')?.replaceChildren(message);
@@ -46,17 +47,17 @@ if (import.meta.env.DEV && (window.location.pathname === '/dev/assets' || window
     else disposeActive = cleanup;
   }).catch(showStartupFailure);
 } else {
-  const game = createPacketGame({
-    mountId: 'game-root',
+  const root = document.getElementById('game-root');
+  if (!root) throw new Error('Game mount element not found: #game-root');
+  const shell = new GameShell(root, {
     mapVariant: resolveMapVariantFromEnv(import.meta.env.VITE_GAME_ENV),
   });
-  disposeActive = () => game.destroy();
+  disposeActive = () => shell.destroy();
   if (import.meta.env.DEV) {
     assetsLink = document.createElement('a');
     assetsLink.setAttribute('href', new URL('dev/assets', new URL(import.meta.env.BASE_URL, `${window.location.origin}/`)).pathname);
-    assetsLink.className = 'fixed bottom-4 right-4 z-50 rounded border border-cyan-400/50 bg-black/80 px-3 py-2 text-sm text-cyan-200 hover:bg-cyan-950';
+    assetsLink.className = 'packet-button packet-dev-link';
     assetsLink.textContent = 'Assets';
     document.body.appendChild(assetsLink);
   }
-  void game.start().catch(showStartupFailure);
 }

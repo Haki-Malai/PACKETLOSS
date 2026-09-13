@@ -1,0 +1,199 @@
+import type { RunResult } from '../../app/contracts';
+import type { MapVariant } from '../../app/mapRuntimeConfig';
+
+export type MenuMotion = 'system' | 'reduced' | 'full';
+
+export interface LocalRunRecord extends RunResult {
+    id: string;
+    completedAt: string;
+    map: MapVariant;
+    nickname: string;
+}
+
+interface LocalProfile {
+    version: 1;
+    nickname: string;
+    motion: MenuMotion;
+    records: LocalRunRecord[];
+}
+
+type ProfileStorage = Pick<Storage, 'getItem' | 'setItem'>;
+
+const STORAGE_KEY = 'packetloss.profile.v1';
+const STORAGE_UNAVAILABLE = 'Local saving is unavailable. Changes last for this visit only.';
+
+function normalizeNickname(value: string): string {
+    return value.trim().slice(0, 16) || 'PLAYER';
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isMotion(value: unknown): value is MenuMotion {
+    return value === 'system' || value === 'reduced' || value === 'full';
+}
+
+function isNonnegativeNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isRunRecord(value: unknown): value is LocalRunRecord {
+    if (!isObject(value)) return false;
+    return (
+        typeof value.id === 'string' &&
+        value.id.length > 0 &&
+        typeof value.completedAt === 'string' &&
+        Number.isFinite(Date.parse(value.completedAt)) &&
+        (value.map === 'default' || value.map === 'demo') &&
+        typeof value.nickname === 'string' &&
+        (value.outcome === 'lost' || value.outcome === 'cleared') &&
+        isNonnegativeNumber(value.score) &&
+        isNonnegativeNumber(value.lives) &&
+        isNonnegativeNumber(value.elapsedMs) &&
+        isNonnegativeNumber(value.pointsCollected) &&
+        isNonnegativeNumber(value.totalPoints) &&
+        value.pointsCollected <= value.totalPoints
+    );
+}
+
+function recentFirst(a: LocalRunRecord, b: LocalRunRecord): number {
+    return Date.parse(b.completedAt) - Date.parse(a.completedAt);
+}
+
+function bestFirst(a: LocalRunRecord, b: LocalRunRecord): number {
+    return b.score - a.score || recentFirst(a, b);
+}
+
+function retainedRecords(records: LocalRunRecord[]): LocalRunRecord[] {
+    const retained = new Map<string, LocalRunRecord>();
+    for (const map of ['default', 'demo'] as const) {
+        const forMap = records.filter((record) => record.map === map);
+        for (const record of [
+            ...[...forMap].sort(bestFirst).slice(0, 10),
+            ...[...forMap].sort(recentFirst).slice(0, 10),
+        ]) {
+            if (!retained.has(record.id)) retained.set(record.id, record);
+        }
+    }
+    return [...retained.values()];
+}
+
+export class LocalProfileStore {
+    private profile: LocalProfile = {
+        version: 1,
+        nickname: 'PLAYER',
+        motion: 'system',
+        records: [],
+    };
+    private storage?: ProfileStorage;
+    private statusMessage = '';
+    private readonly savedIds = new Set<string>();
+
+    constructor(storage?: ProfileStorage) {
+        try {
+            this.storage = storage ?? window.localStorage;
+            const raw = this.storage.getItem(STORAGE_KEY);
+            if (raw === null) return;
+
+            const value: unknown = JSON.parse(raw);
+            if (
+                !isObject(value) ||
+                value.version !== 1 ||
+                typeof value.nickname !== 'string' ||
+                !isMotion(value.motion) ||
+                !Array.isArray(value.records) ||
+                !value.records.every(isRunRecord)
+            ) {
+                this.statusMessage = 'Saved local data could not be read. Using a fresh profile.';
+                return;
+            }
+            this.profile = {
+                version: 1,
+                nickname: normalizeNickname(value.nickname),
+                motion: value.motion,
+                records: retainedRecords(
+                    value.records.map((record) => ({
+                        ...record,
+                        nickname: normalizeNickname(record.nickname),
+                    }))
+                ),
+            };
+            for (const record of this.profile.records) this.savedIds.add(record.id);
+        } catch (error) {
+            this.statusMessage =
+                error instanceof SyntaxError
+                    ? 'Saved local data could not be read. Using a fresh profile.'
+                    : STORAGE_UNAVAILABLE;
+        }
+    }
+
+    getNickname(): string {
+        return this.profile.nickname;
+    }
+
+    setNickname(value: string): void {
+        this.profile.nickname = normalizeNickname(value);
+        this.persist();
+    }
+
+    getMotion(): MenuMotion {
+        return this.profile.motion;
+    }
+
+    setMotion(value: MenuMotion): void {
+        this.profile.motion = value;
+        this.persist();
+    }
+
+    getTopRecords(map: MapVariant): readonly LocalRunRecord[] {
+        return this.recordsForMap(map, bestFirst);
+    }
+
+    getRecentRecords(map: MapVariant): readonly LocalRunRecord[] {
+        return this.recordsForMap(map, recentFirst);
+    }
+
+    saveRun(record: LocalRunRecord): void {
+        if (!isRunRecord(record) || this.savedIds.has(record.id)) return;
+        this.savedIds.add(record.id);
+        this.profile.records = retainedRecords([
+            ...this.profile.records,
+            { ...record, nickname: normalizeNickname(record.nickname) },
+        ]);
+        this.persist();
+    }
+
+    clearRecords(): void {
+        this.profile.records = [];
+        this.persist();
+    }
+
+    getStatusMessage(): string {
+        return this.statusMessage;
+    }
+
+    private recordsForMap(
+        map: MapVariant,
+        compare: (a: LocalRunRecord, b: LocalRunRecord) => number
+    ): LocalRunRecord[] {
+        return this.profile.records
+            .filter((record) => record.map === map)
+            .sort(compare)
+            .slice(0, 10)
+            .map((record) => ({ ...record }));
+    }
+
+    private persist(): void {
+        try {
+            if (!this.storage) {
+                this.statusMessage = STORAGE_UNAVAILABLE;
+                return;
+            }
+            this.storage.setItem(STORAGE_KEY, JSON.stringify(this.profile));
+            this.statusMessage = '';
+        } catch {
+            this.statusMessage = STORAGE_UNAVAILABLE;
+        }
+    }
+}
