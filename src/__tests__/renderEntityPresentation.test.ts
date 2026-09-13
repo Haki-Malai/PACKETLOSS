@@ -40,6 +40,24 @@ describe('RenderSystem entity presentation', () => {
     resetGameState();
   });
 
+  it('keeps the Packet and its shadow cut out after the final death timer reaches zero', () => {
+    const { world, ghost, packetModel, renderSystem } = createEntityHarness();
+    const movement = new MovementRules(world.tileSize);
+    movement.setEntityTile(world.packet, ghost.tile);
+    ghost.state.free = true;
+    resetGameState(0, 1);
+    const collisions = new GhostPacketCollisionSystem(world, movement);
+    collisions.update();
+    collisions.update(900);
+    world.isMoving = false;
+    renderSystem.render();
+    expect(packetModel.getObjectByName('hologram-body')?.visible).toBe(false);
+    expect(packetModel.getObjectByName('contact-shadow')?.visible).toBe(false);
+    renderSystem.render(0.5);
+    expect(packetModel.getObjectByName('hologram-body')?.visible).toBe(false);
+    renderSystem.destroy();
+  });
+
   it.each([
     { pointType: 'pellet', kind: 'base', radius: 1.25 },
     { pointType: 'power-pellet', kind: 'power', radius: 2 },

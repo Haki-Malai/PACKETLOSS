@@ -1,5 +1,6 @@
 import { FixedStepLoop } from '../../engine/loop';
-import { ComposedGame, PacketGame, RenderCapableSystem, RuntimeControl, UpdateCapableSystem } from './contracts';
+import { getGameState } from '../../state/gameState';
+import { ComposedGame, PacketGame, RenderCapableSystem, RunResult, RuntimeControl, RuntimeState, UpdateCapableSystem } from './contracts';
 import { GameCompositionRoot } from './GameCompositionRoot';
 
 export class GameRuntime implements PacketGame {
@@ -11,9 +12,15 @@ export class GameRuntime implements PacketGame {
   private focusListenersBound = false;
   private presentationReady = false;
   private starting: Promise<void> | null = null;
+  private elapsedMs = 0;
+  private totalPoints = 0;
+  private result: RunResult | null = null;
   private readonly startupAbort = new AbortController();
 
-  constructor(private readonly compositionRoot: GameCompositionRoot) {}
+  constructor(
+    private readonly compositionRoot: GameCompositionRoot,
+    private readonly onStateChange?: (_state: RuntimeState) => void,
+  ) {}
 
   start(): Promise<void> {
     if (this.started || this.destroyed) {
@@ -38,6 +45,9 @@ export class GameRuntime implements PacketGame {
       return;
     }
     this.composed = composed;
+    this.elapsedMs = 0;
+    this.totalPoints = composed.getRemainingPointCount();
+    this.result = null;
 
     this.loop = new FixedStepLoop(this.update, this.render);
     this.started = true;
@@ -47,6 +57,7 @@ export class GameRuntime implements PacketGame {
         system.start?.();
       });
       this.loop.start();
+      this.notifyState();
     } catch (error) {
       this.loop.stop();
       this.loop = null;
@@ -59,24 +70,27 @@ export class GameRuntime implements PacketGame {
   }
 
   pause(): void {
-    if (!this.composed) {
-      return;
-    }
-
-    this.composed.world.isMoving = false;
-    this.presentationReady = false;
-    this.composed.scheduler.setPaused(true);
+    this.pausedByFocusLoss = false;
+    this.setPaused(true);
   }
 
   resume(): void {
-    if (!this.composed) {
-      return;
-    }
-
     this.pausedByFocusLoss = false;
+    this.setPaused(false);
+  }
+
+  private setPaused(paused: boolean): void {
+    if (!this.composed || this.composed.world.outcome || this.composed.world.isMoving === !paused) return;
     this.presentationReady = false;
-    this.composed.world.isMoving = true;
-    this.composed.scheduler.setPaused(false);
+    this.composed.world.isMoving = !paused;
+    this.composed.input.reset();
+    this.composed.scheduler.setPaused(paused);
+    this.notifyState();
+  }
+
+  private notifyState(): void {
+    if (!this.composed || this.destroyed) return;
+    this.onStateChange?.({ paused: !this.composed.world.isMoving, result: this.result });
   }
 
   destroy(): void {
@@ -187,8 +201,8 @@ export class GameRuntime implements PacketGame {
       return;
     }
 
-    this.pause();
     this.pausedByFocusLoss = true;
+    this.setPaused(true);
   }
 
   private handleFocusReturned(): void {
@@ -217,13 +231,38 @@ export class GameRuntime implements PacketGame {
       system.capturePreviousState?.();
     });
     this.composed.world.nextTick();
+    this.elapsedMs += deltaMs;
     this.composed.scheduler.update(deltaMs);
 
     this.composed.updateSystems.forEach((system) => {
       system.update(deltaMs);
     });
+    this.finishRunIfComplete();
+    if (!this.composed) return;
     this.presentationReady = this.composed.world.isMoving;
   };
+
+  private finishRunIfComplete(): void {
+    if (!this.composed || this.result) return;
+    const remaining = this.composed.getRemainingPointCount();
+    const world = this.composed.world;
+    if (!world.outcome && this.totalPoints > 0 && remaining === 0) world.outcome = 'cleared';
+    if (!world.outcome) return;
+
+    this.result = {
+      outcome: world.outcome,
+      ...getGameState(),
+      elapsedMs: Math.round(this.elapsedMs),
+      pointsCollected: this.totalPoints - remaining,
+      totalPoints: this.totalPoints,
+    };
+    world.isMoving = false;
+    this.pausedByFocusLoss = false;
+    this.presentationReady = false;
+    this.composed.scheduler.setPaused(true);
+    this.composed.input.reset();
+    this.notifyState();
+  }
 
   private readonly render = (alpha: number): void => {
     if (!this.composed || this.destroyed) {

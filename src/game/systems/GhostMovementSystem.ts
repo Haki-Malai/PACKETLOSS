@@ -25,7 +25,7 @@ export class GhostMovementSystem {
   }
 
   update(deltaMs = 1000 / 60): void {
-    if (!this.world.isMoving) return;
+    if (!this.world.isMoving || this.world.outcome) return;
     this.world.ghosts.forEach((ghost) => {
       if (ghost.active && ghost.state.dead) {
         this.returnToJail(ghost, deltaMs);

@@ -69,7 +69,7 @@ export class CollectibleSystem {
   }
 
   private consumePointAtPacketTile(): void {
-    if (this.world.packet.deathAnimationRemainingMs > 0) return;
+    if (this.world.outcome || this.world.packet.deathAnimationRemainingMs > 0) return;
     const key = tileKey(this.world.packet.tile);
     const point = this.pointsByTile.get(key);
     if (!point || !this.isPacketCenteredOnPoint(point)) {

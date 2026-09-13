@@ -1,7 +1,15 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { GameRuntime } from '../game/app/GameRuntime';
-import { ComposedGame } from '../game/app/contracts';
+import { ComposedGame, RuntimeState } from '../game/app/contracts';
 import { GameCompositionRoot } from '../game/app/GameCompositionRoot';
+import { GhostEntity } from '../game/domain/entities/GhostEntity';
+import { PacketEntity } from '../game/domain/entities/PacketEntity';
+import { MovementRules } from '../game/domain/services/MovementRules';
+import { WorldState } from '../game/domain/world/WorldState';
+import { CollectibleSystem } from '../game/systems/CollectibleSystem';
+import { GhostPacketCollisionSystem } from '../game/systems/GhostPacketCollisionSystem';
+import { getGameState, resetGameState } from '../state/gameState';
+import { createCollisionTile, createMapFixture } from './fixtures/pointLayoutFixtures';
 
 type EventCallback = (_event?: Event) => void;
 
@@ -20,10 +28,12 @@ function createComposedGame() {
 
   const input = {
     destroy: vi.fn(),
+    reset: vi.fn(),
   };
 
   const world = {
     isMoving: true,
+    outcome: null as WorldState['outcome'],
     nextTick: vi.fn(),
   };
 
@@ -34,6 +44,7 @@ function createComposedGame() {
     scheduler: scheduler as never,
     updateSystems: [{ start, update, destroy: updateDestroy }],
     renderSystems: [{ render, destroy: renderDestroy }],
+    getRemainingPointCount: vi.fn(() => 1),
     destroy: vi.fn(),
   };
 
@@ -52,6 +63,31 @@ function createComposedGame() {
   };
 }
 
+function createFinishingGame(kind: 'pellet' | 'power-pellet', ghostState?: 'dangerous' | 'scared') {
+  const { composed } = createComposedGame();
+  const { map, collisionGrid } = createMapFixture([[createCollisionTile(), createCollisionTile()]]);
+  map.collectibleObjects = [{ type: kind, x: 8, y: 8 }];
+  const movement = new MovementRules(16);
+  const packet = new PacketEntity({ x: 0, y: 0 }, 10, 10);
+  movement.setEntityTile(packet, packet.tile);
+  const ghost = new GhostEntity({
+    key: 'virus', tile: packet.tile, direction: 'left', speed: 1, displayWidth: 10, displayHeight: 10,
+  });
+  movement.setEntityTile(ghost, ghost.tile);
+  ghost.state.free = true;
+  ghost.state.scared = ghostState === 'scared';
+  const world = new WorldState({
+    map, collisionGrid, tileSize: 16, packet, packetSpawnTile: { x: 1, y: 0 },
+    ghosts: ghostState ? [ghost] : [], ghostJailBounds: { minX: 1, maxX: 1, y: 0 },
+  });
+  const collisions = new GhostPacketCollisionSystem(world, movement);
+  const collectibles = new CollectibleSystem(world);
+  composed.world = world;
+  composed.updateSystems = [collisions, collectibles];
+  composed.getRemainingPointCount = () => collectibles.getPointCount();
+  return { composed, world, collectibles };
+}
+
 describe('GameRuntime', () => {
   let nextFrame: ((_timestamp: number) => void) | null = null;
   let frameId = 0;
@@ -64,6 +100,7 @@ describe('GameRuntime', () => {
   let documentRemoveEventListener: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    resetGameState();
     nextFrame = null;
     frameId = 0;
     const windowListeners = new Map<string, Set<EventCallback>>();
@@ -160,6 +197,74 @@ describe('GameRuntime', () => {
     expect(spies.render).toHaveBeenCalled();
   });
 
+  it.each([
+    { kind: 'pellet' as const, score: 10, ghostState: undefined },
+    { kind: 'power-pellet' as const, score: 50, ghostState: undefined },
+    { kind: 'pellet' as const, score: 210, ghostState: 'scared' as const },
+  ])('finishes on the final $kind with its score and any scared-ghost bonus ($score)', async ({ kind, score, ghostState }) => {
+    const { composed, world } = createFinishingGame(kind, ghostState);
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime({ compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot, onStateChange);
+    await runtime.start();
+    nextFrame?.(1);
+    nextFrame?.(20);
+    const result = { outcome: 'cleared', score, lives: 3, elapsedMs: 17, pointsCollected: 1, totalPoints: 1 };
+    expect(onStateChange).toHaveBeenLastCalledWith({ paused: true, result });
+    expect(world.isMoving).toBe(false);
+
+    runtime.resume();
+    emitWindowEvent('blur');
+    emitWindowEvent('focus');
+    nextFrame?.(60);
+    expect(world.isMoving).toBe(false);
+    expect(onStateChange.mock.calls.filter(([state]) => state.result)).toHaveLength(1);
+    expect(getGameState().score).toBe(score);
+    runtime.destroy();
+  });
+
+  it('lets a final-life collision beat the last power pellet, freezes death on pause, and records active time once', async () => {
+    const { composed, world, collectibles } = createFinishingGame('power-pellet', 'dangerous');
+    resetGameState(100, 1);
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime({ compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot, onStateChange);
+    await runtime.start();
+    nextFrame?.(1);
+    nextFrame?.(20);
+    runtime.pause();
+    nextFrame?.(120);
+    nextFrame?.(220);
+    expect(world.packet.deathAnimationRemainingMs).toBe(900);
+    expect(collectibles.getPointCount()).toBe(1);
+    expect(world.outcome).toBeNull();
+
+    runtime.resume();
+    for (let frame = 1; frame <= 65; frame += 1) nextFrame?.(220 + frame * 17);
+    const result = onStateChange.mock.lastCall?.[0].result;
+    expect(result).toMatchObject({ outcome: 'lost', score: 100, lives: 0, pointsCollected: 0, totalPoints: 1 });
+    expect(result?.elapsedMs).toBeGreaterThanOrEqual(917);
+    expect(result?.elapsedMs).toBeLessThanOrEqual(934);
+    expect(world.packet.tile).toEqual({ x: 0, y: 0 });
+    expect(world.packet.deathRecoveryRemainingMs).toBe(0);
+    runtime.resume();
+    nextFrame?.(1500);
+    expect(world.isMoving).toBe(false);
+    expect(onStateChange.mock.calls.filter(([state]) => state.result)).toHaveLength(1);
+    runtime.destroy();
+  });
+
+  it('does not award a clear for a map that starts with no points', async () => {
+    const { composed, spies } = createComposedGame();
+    composed.getRemainingPointCount = () => 0;
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime({ compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot, onStateChange);
+    await runtime.start();
+    nextFrame?.(1);
+    nextFrame?.(50);
+    expect(spies.world.isMoving).toBe(true);
+    expect(onStateChange).toHaveBeenCalledExactlyOnceWith({ paused: false, result: null });
+    runtime.destroy();
+  });
+
   it('freezes simulation while paused and resumes interpolation only after a fresh update', async () => {
     const { composed, spies } = createComposedGame();
     const compositionRoot = {
@@ -175,6 +280,7 @@ describe('GameRuntime', () => {
     spies.world.nextTick.mockClear();
 
     runtime.pause();
+    expect(spies.input.reset).toHaveBeenCalledTimes(1);
     expect(spies.world.isMoving).toBe(false);
     expect(spies.scheduler.setPaused).toHaveBeenCalledWith(true);
     nextFrame?.(40);
@@ -185,6 +291,7 @@ describe('GameRuntime', () => {
     expect(spies.render).toHaveBeenLastCalledWith(1);
 
     runtime.resume();
+    expect(spies.input.reset).toHaveBeenCalledTimes(2);
     expect(spies.world.isMoving).toBe(true);
     expect(spies.scheduler.setPaused).toHaveBeenCalledWith(false);
     nextFrame?.(61);
@@ -258,6 +365,19 @@ describe('GameRuntime', () => {
     expect(spies.world.isMoving).toBe(false);
     expect(spies.scheduler.setPaused).toHaveBeenCalledTimes(1);
     expect(spies.scheduler.setPaused).toHaveBeenCalledWith(true);
+  });
+
+  it('cancels focus-driven resume when an already paused menu is explicitly opened', async () => {
+    const { composed, spies } = createComposedGame();
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime({ compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot, onStateChange);
+    await runtime.start();
+    emitWindowEvent('blur');
+    runtime.pause();
+    emitWindowEvent('focus');
+    expect(spies.world.isMoving).toBe(false);
+    expect(onStateChange.mock.calls.map(([state]) => state.paused)).toEqual([false, true]);
+    runtime.destroy();
   });
 
   it('destroys loop resources and composed systems exactly once', async () => {

@@ -157,7 +157,7 @@ describe('GhostPacketCollisionSystem', () => {
     }
   });
 
-  it('clamps lives at zero when additional collisions happen after recovery expires', () => {
+  it('ends the final life at 900 ms without respawn, recovery, or further collision scoring', () => {
     const harness = new MechanicsDomainHarness({ seed: 4103, fixture: 'default-map', ghostCount: 1, autoStartSystems: false });
 
     try {
@@ -167,17 +167,24 @@ describe('GhostPacketCollisionSystem', () => {
         throw new Error('expected one ghost');
       }
 
-      harness.movementRules.setEntityTile(harness.world.packet, harness.world.packetSpawnTile);
-      harness.movementRules.setEntityTile(ghost, harness.world.packetSpawnTile);
+      const contactTile = { x: 18, y: 18 };
+      harness.movementRules.setEntityTile(harness.world.packet, contactTile);
+      harness.movementRules.setEntityTile(ghost, contactTile);
       ghost.state.free = true;
 
       harness.ghostPacketCollisionSystem.update();
       expect(getGameState().lives).toBe(0);
 
-      harness.ghostPacketCollisionSystem.update(PACKET_DEATH_ANIMATION.durationMs);
-      harness.packetSystem.update(PACKET_DEATH_RECOVERY.durationMs);
+      harness.ghostPacketCollisionSystem.update(899);
+      expect(harness.world.outcome).toBeNull();
+      expect(harness.world.packet.deathAnimationRemainingMs).toBe(1);
+      harness.ghostPacketCollisionSystem.update(1);
+      expect(harness.world.outcome).toBe('lost');
+      expect(harness.world.packet.tile).toEqual(contactTile);
+      expect(harness.world.packet.deathRecoveryRemainingMs).toBe(0);
+      ghost.state.scared = true;
       harness.ghostPacketCollisionSystem.update();
-      expect(getGameState().lives).toBe(0);
+      expect(getGameState()).toEqual({ score: 0, lives: 0 });
     } finally {
       harness.destroy();
     }

@@ -4,7 +4,7 @@ import {
   PACKET_DEATH_RECOVERY,
   SPEED,
 } from '../../config/constants';
-import { addScore, loseLife } from '../../state/gameState';
+import { addScore, getGameState, loseLife } from '../../state/gameState';
 import { GhostEntity } from '../domain/entities/GhostEntity';
 import { CollisionBody } from '../domain/valueObjects/CollisionBody';
 import { GhostCollisionCandidate, findFirstCollision } from '../domain/services/GhostPacketCollisionService';
@@ -24,12 +24,16 @@ export class GhostPacketCollisionSystem {
 
   update(deltaMs = 0): void {
     if (!this.world.isMoving) return;
+    if (this.world.outcome) return;
     const elapsed = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
     this.world.packet.ghostEatRemainingMs = Math.max(0, this.world.packet.ghostEatRemainingMs - elapsed);
     this.resetGhostEatChainIfNoScaredGhosts();
     if (this.world.packet.deathAnimationRemainingMs > 0) {
       this.world.packet.deathAnimationRemainingMs = Math.max(0, this.world.packet.deathAnimationRemainingMs - elapsed);
-      if (this.world.packet.deathAnimationRemainingMs === 0) this.respawnPacket();
+      if (this.world.packet.deathAnimationRemainingMs === 0) {
+        if (getGameState().lives === 0) this.world.outcome = 'lost';
+        else this.respawnPacket();
+      }
       return;
     }
     if (this.isPacketInDeathRecovery()) {
