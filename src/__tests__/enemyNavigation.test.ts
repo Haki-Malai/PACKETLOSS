@@ -31,12 +31,12 @@ describe('enemy navigation', () => {
     const grid = createPenGateGrid();
     const navigation = new EnemyNavigationService(grid, 16, new PortalService(grid));
     expect(navigation.getSteps({ x: 0, y: 1 }).some((step) => step.direction === 'down')).toBe(false);
-    expect(new MovementRules(16).canMove('down', 0, 0, grid.getTilesAt({ x: 0, y: 1 }), 'ghostRelease')).toBe(true);
+    expect(new MovementRules(16).canMove('down', 0, 0, grid.getTilesAt({ x: 0, y: 1 }), 'enemyRelease')).toBe(true);
     expect(new EnemyNavigationService(grid, 16, new PortalService(grid), 'returning')
       .getSteps({ x: 0, y: 1 }).some((step) => step.direction === 'down')).toBe(true);
   });
 
-  it('opens only the authored jail ingress and bounded home row for returning ghosts', () => {
+  it('opens only the authored jail ingress and bounded home row for returning enemies', () => {
     const { world, portals } = createEnemyWorld(['#######', '#.....#', '#######', '#######']);
     const bounds = { minX: 2, maxX: 4, y: 2 };
     const returning = new EnemyNavigationService(world.collisionGrid, 16, portals, 'returning', bounds);
@@ -58,32 +58,32 @@ describe('enemy navigation', () => {
   });
 
   it('lets Virus reverse toward the occupied player tile while the movement anchor still lags behind', () => {
-    const { world, movement, ghostMovement } = createEnemyWorld(['#######', '#.....#', '#######'], [
+    const { world, movement, enemyMovement } = createEnemyWorld(['#######', '#.....#', '#######'], [
       { key: 'virus', tile: { x: 4, y: 1 }, direction: 'right' },
     ], { x: 4, y: 1 });
     movement.advanceEntity(world.packet, 'left', 9);
     movement.syncEntityPosition(world.packet);
     expect(world.packet.tile.x).toBe(4);
-    ghostMovement.update();
-    expect(world.ghosts[0].direction).toBe('left');
-    expect(world.ghosts[0].x).toBe(71);
+    enemyMovement.update();
+    expect(world.enemies[0].direction).toBe('left');
+    expect(world.enemies[0].x).toBe(71);
   });
 
   it('repeats Firewall’s cached patrol independently of the player and rejoins after a position reset', () => {
-    const { world, movement, ghostMovement } = createEnemyWorld(['#####', '#...#', '#.#.#', '#...#', '#####'], [
+    const { world, movement, enemyMovement } = createEnemyWorld(['#####', '#...#', '#.#.#', '#...#', '#####'], [
       { key: 'firewall', tile: { x: 1, y: 1 }, direction: 'up' },
     ], { x: 3, y: 3 });
-    const ghost = world.ghosts[0];
+    const enemy = world.enemies[0];
     const expected = [[2, 1], [3, 1], [3, 2], [3, 3], [2, 3], [1, 3], [1, 2], [1, 1]];
     for (const [x, y] of expected) {
       movement.setEntityTile(world.packet, { x: y, y: x });
-      for (let step = 0; step < 16; step += 1) ghostMovement.update();
-      expect(ghost.tile).toEqual({ x, y });
-      expect(ghost.moved).toEqual({ x: 0, y: 0 });
+      for (let step = 0; step < 16; step += 1) enemyMovement.update();
+      expect(enemy.tile).toEqual({ x, y });
+      expect(enemy.moved).toEqual({ x: 0, y: 0 });
     }
-    movement.setEntityTile(ghost, { x: 2, y: 3 });
-    ghost.direction = 'up';
-    for (let step = 0; step < 16; step += 1) ghostMovement.update();
-    expect(ghost.tile).toEqual({ x: 1, y: 3 });
+    movement.setEntityTile(enemy, { x: 2, y: 3 });
+    enemy.direction = 'up';
+    for (let step = 0; step < 16; step += 1) enemyMovement.update();
+    expect(enemy.tile).toEqual({ x: 1, y: 3 });
   });
 });

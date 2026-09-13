@@ -133,11 +133,11 @@ describe('GameCompositionRoot startup', () => {
     expect(composed.updateSystems[animationIndex + 1]).toBe(render);
     expect(mount.children).toHaveLength(1);
     expect(render.scene.getObjectByName('binary-000')).toBeDefined();
-    expect(composed.world.ghosts.filter((ghost) => ghost.active).map((ghost) => ghost.key))
+    expect(composed.world.enemies.filter((enemy) => enemy.active).map((enemy) => enemy.key))
       .toEqual(['firewall', 'virus', 'ping', 'spam', 'lag']);
-    const copies = composed.world.ghosts.filter((ghost) => ghost.isCopy);
+    const copies = composed.world.enemies.filter((enemy) => enemy.isCopy);
     expect(copies).toHaveLength(3);
-    expect(copies.every((ghost) => !ghost.active && !ghost.state.soonFree && ghost.displayWidth === 8.8)).toBe(true);
+    expect(copies.every((enemy) => !enemy.active && !enemy.state.soonFree && enemy.displayWidth === 8.8)).toBe(true);
     render.destroy?.();
     composed.destroy();
     expect(rendererDispose).toHaveBeenCalledOnce();

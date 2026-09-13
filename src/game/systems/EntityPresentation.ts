@@ -17,8 +17,8 @@ export class EntityPresentation {
 
   capturePreviousState(): void {
     this.capture(this.world.packet);
-    for (const ghost of this.world.ghosts) {
-      this.capture(ghost);
+    for (const enemy of this.world.enemies) {
+      this.capture(enemy);
     }
   }
 

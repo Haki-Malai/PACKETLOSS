@@ -1,11 +1,11 @@
-import { GhostEntity } from '../entities/GhostEntity';
+import { EnemyEntity } from '../entities/EnemyEntity';
 import { Direction } from '../valueObjects/Direction';
 import { TilePosition } from '../valueObjects/TilePosition';
 import { WorldMapData, WorldObject } from '../world/WorldState';
 import { CollisionGrid } from '../world/CollisionGrid';
 import { MovementRules } from './MovementRules';
 import { RandomSource } from '../../shared/random/RandomSource';
-import { inferJailAnchor, inferPacketMarkerRow } from './GhostJailLayout';
+import { inferJailAnchor, inferPacketMarkerRow } from './EnemyJailLayout';
 
 function clamp(value: number, min: number, max: number): number {
   if (value < min) {
@@ -22,7 +22,7 @@ export function getObjectNumberProperty(obj: WorldObject | undefined, name: stri
   return typeof property?.value === 'number' ? property.value : undefined;
 }
 
-export class GhostJailService {
+export class EnemyJailService {
   resolveSpawnTile(objectTile: WorldObject | undefined, fallback: TilePosition, map: WorldMapData): TilePosition {
     const gridX = getObjectNumberProperty(objectTile, 'gridX');
     const gridY = getObjectNumberProperty(objectTile, 'gridY');
@@ -61,24 +61,24 @@ export class GhostJailService {
     return this.clampTilePosition(fallback, map);
   }
 
-  resolveGhostJailBounds(map: WorldMapData, fallbackTile: TilePosition): { minX: number; maxX: number; y: number } {
+  resolveEnemyJailBounds(map: WorldMapData, fallbackTile: TilePosition): { minX: number; maxX: number; y: number } {
     const inferredAnchor = inferJailAnchor(map);
-    const ghostStartXRaw = getObjectNumberProperty(map.ghostHome, 'startX') ?? inferredAnchor?.minX ?? fallbackTile.x;
-    const ghostEndXRaw = getObjectNumberProperty(map.ghostHome, 'endX') ?? inferredAnchor?.maxX ?? fallbackTile.x;
-    const minX = clamp(Math.round(Math.min(ghostStartXRaw, ghostEndXRaw)), 0, map.width - 1);
-    const maxX = clamp(Math.round(Math.max(ghostStartXRaw, ghostEndXRaw)), 0, map.width - 1);
+    const enemyStartXRaw = getObjectNumberProperty(map.enemyHome, 'startX') ?? inferredAnchor?.minX ?? fallbackTile.x;
+    const enemyEndXRaw = getObjectNumberProperty(map.enemyHome, 'endX') ?? inferredAnchor?.maxX ?? fallbackTile.x;
+    const minX = clamp(Math.round(Math.min(enemyStartXRaw, enemyEndXRaw)), 0, map.width - 1);
+    const maxX = clamp(Math.round(Math.max(enemyStartXRaw, enemyEndXRaw)), 0, map.width - 1);
 
-    const ghostGridY = getObjectNumberProperty(map.ghostHome, 'gridY');
-    const ghostYRaw =
-      typeof ghostGridY === 'number'
-        ? ghostGridY
-        : map.ghostHome && typeof map.ghostHome.y === 'number'
-          ? Math.round(map.ghostHome.y / map.tileHeight)
+    const enemyGridY = getObjectNumberProperty(map.enemyHome, 'gridY');
+    const enemyYRaw =
+      typeof enemyGridY === 'number'
+        ? enemyGridY
+        : map.enemyHome && typeof map.enemyHome.y === 'number'
+          ? Math.round(map.enemyHome.y / map.tileHeight)
           : inferredAnchor
             ? inferredAnchor.homeY
           : fallbackTile.y;
 
-    const y = clamp(ghostYRaw, 0, map.height - 1);
+    const y = clamp(enemyYRaw, 0, map.height - 1);
 
     return { minX, maxX, y };
   }
@@ -102,7 +102,7 @@ export class GhostJailService {
         continue;
       }
 
-      if (this.canGhostMoveFromTile(tile, params.collisionGrid, params.movementRules)) {
+      if (this.canEnemyMoveFromTile(tile, params.collisionGrid, params.movementRules)) {
         candidates.push(tile);
       }
     }
@@ -133,42 +133,42 @@ export class GhostJailService {
     return nearestCandidates[randomIndex] ?? fallback;
   }
 
-  moveGhostInJail(
-    ghost: GhostEntity,
+  moveEnemyInJail(
+    enemy: EnemyEntity,
     bounds: { minX: number; maxX: number; y: number },
     movementRules: MovementRules,
     rng: RandomSource,
     jailMoveSpeed: number,
   ): void {
-    if (ghost.tile.y !== bounds.y || ghost.moved.y !== 0) {
-      movementRules.setEntityTile(ghost, { x: ghost.tile.x, y: bounds.y });
+    if (enemy.tile.y !== bounds.y || enemy.moved.y !== 0) {
+      movementRules.setEntityTile(enemy, { x: enemy.tile.x, y: bounds.y });
     }
 
-    if (ghost.moved.x === 0) {
-      if (ghost.direction !== 'left' && ghost.direction !== 'right') {
-        ghost.direction = rng.next() < 0.5 ? 'right' : 'left';
+    if (enemy.moved.x === 0) {
+      if (enemy.direction !== 'left' && enemy.direction !== 'right') {
+        enemy.direction = rng.next() < 0.5 ? 'right' : 'left';
       }
 
-      if (ghost.tile.x <= bounds.minX && ghost.direction === 'left') {
-        ghost.direction = 'right';
-      } else if (ghost.tile.x >= bounds.maxX && ghost.direction === 'right') {
-        ghost.direction = 'left';
+      if (enemy.tile.x <= bounds.minX && enemy.direction === 'left') {
+        enemy.direction = 'right';
+      } else if (enemy.tile.x >= bounds.maxX && enemy.direction === 'right') {
+        enemy.direction = 'left';
       }
     }
 
-    movementRules.advanceEntity(ghost, ghost.direction, jailMoveSpeed);
+    movementRules.advanceEntity(enemy, enemy.direction, jailMoveSpeed);
 
-    if (ghost.tile.x < bounds.minX || ghost.tile.x > bounds.maxX) {
-      const clampedX = clamp(ghost.tile.x, bounds.minX, bounds.maxX);
-      movementRules.setEntityTile(ghost, { x: clampedX, y: bounds.y });
-      ghost.direction = ghost.direction === 'left' ? 'right' : 'left';
+    if (enemy.tile.x < bounds.minX || enemy.tile.x > bounds.maxX) {
+      const clampedX = clamp(enemy.tile.x, bounds.minX, bounds.maxX);
+      movementRules.setEntityTile(enemy, { x: clampedX, y: bounds.y });
+      enemy.direction = enemy.direction === 'left' ? 'right' : 'left';
     }
   }
 
-  private canGhostMoveFromTile(tile: TilePosition, collisionGrid: CollisionGrid, movementRules: MovementRules): boolean {
+  private canEnemyMoveFromTile(tile: TilePosition, collisionGrid: CollisionGrid, movementRules: MovementRules): boolean {
     const collisionTiles = collisionGrid.getTilesAt(tile);
     const directions: Direction[] = ['up', 'down', 'left', 'right'];
-    return directions.some((direction) => movementRules.canMove(direction, 0, 0, collisionTiles, 'ghost'));
+    return directions.some((direction) => movementRules.canMove(direction, 0, 0, collisionTiles, 'enemy'));
   }
 
   private clampTilePosition(tile: TilePosition, map: WorldMapData): TilePosition {

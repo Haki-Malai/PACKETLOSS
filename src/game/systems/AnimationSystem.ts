@@ -1,6 +1,6 @@
-import { GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY } from '../../config/constants';
-import { GhostEntity } from '../domain/entities/GhostEntity';
-import { clearGhostScaredWindow } from '../domain/services/GhostScaredStateService';
+import { ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY } from '../../config/constants';
+import { EnemyEntity } from '../domain/entities/EnemyEntity';
+import { clearEnemyScaredWindow } from '../domain/services/EnemyScaredStateService';
 import { resolveNextBlinkToggleAt } from '../shared/blinkCadence';
 import {
   AnimationKey,
@@ -32,25 +32,25 @@ export const PACKET_CHOMP_FRAME_RATE = 20;
 export class AnimationSystem {
   constructor(
     private readonly world: WorldState,
-    _defaultGhostSpeed: number,
+    _defaultEnemySpeed: number,
     private readonly animations: Record<AnimationKey, AnimationDefinition> = ANIMATIONS,
   ) {}
 
   start(): void {
     this.world.packetAnimation = this.createPacketAnimationPlayback();
 
-    this.world.ghosts.forEach((ghost) => {
-      if (!ghost.active) return;
-      this.world.ghostAnimations.set(ghost, this.createAnimationPlayback(`${ghost.key}Idle` as AnimationKey));
+    this.world.enemies.forEach((enemy) => {
+      if (!enemy.active) return;
+      this.world.enemyAnimations.set(enemy, this.createAnimationPlayback(`${enemy.key}Idle` as AnimationKey));
     });
   }
 
   update(deltaMs: number): void {
     this.updatePacketAnimationState(deltaMs);
 
-    this.world.ghosts.forEach((ghost) => {
-      if (!ghost.active) return;
-      this.updateGhostAnimationState(ghost, deltaMs);
+    this.world.enemies.forEach((enemy) => {
+      if (!enemy.active) return;
+      this.updateEnemyAnimationState(enemy, deltaMs);
     });
   }
 
@@ -83,21 +83,21 @@ export class AnimationSystem {
     }
   }
 
-  private updateGhostAnimationState(ghost: GhostEntity, deltaMs: number): void {
-    this.updateGhostScaredTimer(ghost, deltaMs);
-    if (!this.world.ghostAnimations.has(ghost)) {
-      this.world.ghostAnimations.set(ghost, this.createAnimationPlayback(`${ghost.key}Idle` as AnimationKey));
+  private updateEnemyAnimationState(enemy: EnemyEntity, deltaMs: number): void {
+    this.updateEnemyScaredTimer(enemy, deltaMs);
+    if (!this.world.enemyAnimations.has(enemy)) {
+      this.world.enemyAnimations.set(enemy, this.createAnimationPlayback(`${enemy.key}Idle` as AnimationKey));
     }
 
-    if (ghost.state.scared && ghost.state.animation !== 'scared') {
-      ghost.state.animation = 'scared';
-      this.world.ghostAnimations.set(ghost, this.createAnimationPlayback('scaredIdle'));
-    } else if (!ghost.state.scared && ghost.state.animation === 'scared') {
-      ghost.state.animation = 'default';
-      this.world.ghostAnimations.set(ghost, this.createAnimationPlayback(`${ghost.key}Idle` as AnimationKey));
+    if (enemy.state.scared && enemy.state.animation !== 'scared') {
+      enemy.state.animation = 'scared';
+      this.world.enemyAnimations.set(enemy, this.createAnimationPlayback('scaredIdle'));
+    } else if (!enemy.state.scared && enemy.state.animation === 'scared') {
+      enemy.state.animation = 'default';
+      this.world.enemyAnimations.set(enemy, this.createAnimationPlayback(`${enemy.key}Idle` as AnimationKey));
     }
 
-    const playback = this.world.ghostAnimations.get(ghost);
+    const playback = this.world.enemyAnimations.get(enemy);
     if (!playback) {
       return;
     }
@@ -130,63 +130,63 @@ export class AnimationSystem {
     }
   }
 
-  private updateGhostScaredTimer(ghost: GhostEntity, deltaMs: number): void {
-    const remainingBefore = this.world.ghostScaredTimers.get(ghost) ?? 0;
+  private updateEnemyScaredTimer(enemy: EnemyEntity, deltaMs: number): void {
+    const remainingBefore = this.world.enemyScaredTimers.get(enemy) ?? 0;
     if (remainingBefore <= 0) {
-      this.world.ghostScaredWarnings.delete(ghost);
+      this.world.enemyScaredWarnings.delete(enemy);
       return;
     }
 
-    if (!ghost.state.scared) {
-      ghost.state.scared = true;
+    if (!enemy.state.scared) {
+      enemy.state.scared = true;
     }
 
     const safeDelta = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
     const remainingAfter = Math.max(0, remainingBefore - safeDelta);
 
     if (remainingAfter <= 0) {
-      clearGhostScaredWindow(this.world, ghost);
+      clearEnemyScaredWindow(this.world, enemy);
       return;
     }
 
-    this.world.ghostScaredTimers.set(ghost, remainingAfter);
-    this.updateGhostWarningState(ghost, remainingBefore, remainingAfter);
+    this.world.enemyScaredTimers.set(enemy, remainingAfter);
+    this.updateEnemyWarningState(enemy, remainingBefore, remainingAfter);
   }
 
-  private updateGhostWarningState(ghost: GhostEntity, remainingBefore: number, remainingAfter: number): void {
-    if (remainingAfter > GHOST_SCARED_WARNING_DURATION_MS) {
-      this.world.ghostScaredWarnings.delete(ghost);
+  private updateEnemyWarningState(enemy: EnemyEntity, remainingBefore: number, remainingAfter: number): void {
+    if (remainingAfter > ENEMY_SCARED_WARNING_DURATION_MS) {
+      this.world.enemyScaredWarnings.delete(enemy);
       return;
     }
 
-    const warningElapsedBeforeTick = Math.max(0, GHOST_SCARED_WARNING_DURATION_MS - remainingBefore);
-    const warningElapsedAfterTick = Math.max(0, GHOST_SCARED_WARNING_DURATION_MS - remainingAfter);
+    const warningElapsedBeforeTick = Math.max(0, ENEMY_SCARED_WARNING_DURATION_MS - remainingBefore);
+    const warningElapsedAfterTick = Math.max(0, ENEMY_SCARED_WARNING_DURATION_MS - remainingAfter);
     const warningDelta = Math.max(0, warningElapsedAfterTick - warningElapsedBeforeTick);
 
-    let warning = this.world.ghostScaredWarnings.get(ghost);
+    let warning = this.world.enemyScaredWarnings.get(enemy);
     if (!warning) {
       warning = {
         elapsedMs: warningElapsedBeforeTick,
-        nextToggleAtMs: resolveNextBlinkToggleAt(warningElapsedBeforeTick, GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY),
+        nextToggleAtMs: resolveNextBlinkToggleAt(warningElapsedBeforeTick, ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY),
         showBaseColor: false,
       };
     }
 
     const elapsedBefore = warning.elapsedMs;
-    warning.elapsedMs = Math.min(GHOST_SCARED_WARNING_DURATION_MS, warning.elapsedMs + warningDelta);
+    warning.elapsedMs = Math.min(ENEMY_SCARED_WARNING_DURATION_MS, warning.elapsedMs + warningDelta);
 
     let nextToggleAtMs = warning.nextToggleAtMs;
     if (!Number.isFinite(nextToggleAtMs) || nextToggleAtMs <= 0) {
-      nextToggleAtMs = resolveNextBlinkToggleAt(elapsedBefore, GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY);
+      nextToggleAtMs = resolveNextBlinkToggleAt(elapsedBefore, ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY);
     }
 
     while (nextToggleAtMs > 0 && warning.elapsedMs >= nextToggleAtMs) {
       warning.showBaseColor = !warning.showBaseColor;
-      nextToggleAtMs = resolveNextBlinkToggleAt(nextToggleAtMs, GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY);
+      nextToggleAtMs = resolveNextBlinkToggleAt(nextToggleAtMs, ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_RECOVERY);
     }
 
     warning.nextToggleAtMs = nextToggleAtMs;
-    this.world.ghostScaredWarnings.set(ghost, warning);
+    this.world.enemyScaredWarnings.set(enemy, warning);
   }
 
   private createAnimationPlayback(key: AnimationKey): AnimationPlayback {

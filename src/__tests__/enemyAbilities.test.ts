@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ENEMY_CONFIG } from '../config/constants';
-import { clearAllGhostScaredWindow, setActiveGhostsScaredWindow } from '../game/domain/services/GhostScaredStateService';
+import { clearAllEnemyScaredWindow, setActiveEnemiesScaredWindow } from '../game/domain/services/EnemyScaredStateService';
 import { AnimationSystem } from '../game/systems/AnimationSystem';
 import { CollectibleSystem } from '../game/systems/CollectibleSystem';
-import { GhostPacketCollisionSystem } from '../game/systems/GhostPacketCollisionSystem';
+import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
 import { getGameState, resetGameState } from '../state/gameState';
 import { createEnemyWorld } from './fixtures/enemyFixtures';
 
@@ -18,7 +18,7 @@ describe('enemy abilities', () => {
     const { world, movement, abilities } = createEnemyWorld([
       '############', '#..#.......#', '#..........#', '############',
     ], [{ key: 'ping', tile: { x: 1, y: 1 } }], { x: 4, y: 1 });
-    const ping = world.ghosts[0];
+    const ping = world.enemies[0];
     movement.advanceEntity(world.packet, 'right', 9);
     movement.syncEntityPosition(world.packet);
     abilities.update(2999);
@@ -35,43 +35,43 @@ describe('enemy abilities', () => {
 
     abilities.update(2999);
     movement.setEntityTile(world.packet, ping.tile);
-    new GhostPacketCollisionSystem(world, movement).update();
+    new EnemyPacketCollisionSystem(world, movement).update();
     expect(world.packet.deathAnimationRemainingMs).toBeGreaterThan(0);
     abilities.update(1);
     expect(world.enemyEffects[0].target).toEqual({ x: 24, y: 24 });
   });
 
   it('caps Spam at four threats and recycles eaten copies after they reach jail', () => {
-    const { world, movement, abilities, ghostMovement } = createEnemyWorld([
+    const { world, movement, abilities, enemyMovement } = createEnemyWorld([
       '#######', '#.....#', '#.....#', '#.....#', '#.....#', '#.....#', '#######',
     ], [{ key: 'spam', tile: { x: 3, y: 3 } }, ...copies()], { x: 1, y: 1 });
     abilities.update(4000);
-    expect(world.ghosts.filter((ghost) => ghost.active)).toHaveLength(2);
-    const copy = world.ghosts.find((ghost) => ghost.isCopy && ghost.active)!;
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(2);
+    const copy = world.enemies.find((enemy) => enemy.isCopy && enemy.active)!;
     expect(copy.displayWidth).toBeCloseTo(8.8);
     abilities.update(4000);
-    expect(world.ghosts.filter((ghost) => ghost.active)).toHaveLength(4);
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(4);
     abilities.update(4000);
-    expect(world.ghosts.filter((ghost) => ghost.active)).toHaveLength(4);
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(4);
 
-    setActiveGhostsScaredWindow(world, 6000);
+    setActiveEnemiesScaredWindow(world, 6000);
     movement.setEntityTile(world.packet, copy.tile);
-    new GhostPacketCollisionSystem(world, movement).update();
+    new EnemyPacketCollisionSystem(world, movement).update();
     expect(getGameState()).toEqual({ score: 200, lives: 3 });
     expect(copy.active).toBe(true);
     expect(copy.state.dead).toBe(true);
     expect(copy.state.free).toBe(false);
     expect(copy.state.soonFree).toBe(false);
-    expect(world.ghostScaredTimers.has(copy)).toBe(false);
-    clearAllGhostScaredWindow(world);
+    expect(world.enemyScaredTimers.has(copy)).toBe(false);
+    clearAllEnemyScaredWindow(world);
     abilities.update(4000);
-    expect(world.ghosts.filter((ghost) => ghost.active)).toHaveLength(4);
-    for (let tick = 0; tick < 150 && copy.active; tick += 1) ghostMovement.update();
-    expect(copy.tile).toEqual(world.ghostJailReturnTile);
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(4);
+    for (let tick = 0; tick < 150 && copy.active; tick += 1) enemyMovement.update();
+    expect(copy.tile).toEqual(world.enemyJailReturnTile);
     expect(copy.active).toBe(false);
     const oldTile = copy.tile;
     for (let tick = 0; tick < 40 && !copy.active; tick += 1) {
-      ghostMovement.update();
+      enemyMovement.update();
       abilities.update(1000);
     }
     expect(copy.active).toBe(true);
@@ -84,19 +84,19 @@ describe('enemy abilities', () => {
       '#######', '#######', '#.P...#', '#######',
     ], [{ key: 'spam', tile: { x: 1, y: 2 } }, ...copies()], { x: 5, y: 2 });
     abilities.update(4000);
-    expect(world.ghosts.filter((ghost) => ghost.active)).toHaveLength(1);
-    movement.setEntityTile(world.ghosts[0], { x: 4, y: 2 });
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(1);
+    movement.setEntityTile(world.enemies[0], { x: 4, y: 2 });
     abilities.update(999);
-    expect(world.ghosts.filter((ghost) => ghost.active)).toHaveLength(1);
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(1);
     abilities.update(1);
-    expect(world.ghosts.find((ghost) => ghost.active && ghost.isCopy)?.tile).toEqual({ x: 3, y: 2 });
+    expect(world.enemies.find((enemy) => enemy.active && enemy.isCopy)?.tile).toEqual({ x: 3, y: 2 });
   });
 
   it('drops Lag fields only after traversal and restores slowed movement without skipping a pickup center', () => {
     const { world, movement, abilities, packetMovement } = createEnemyWorld(['#######', '#.....#', '#######'], [
       { key: 'lag', tile: { x: 1, y: 1 } },
     ], { x: 1, y: 1 });
-    const lag = world.ghosts[0];
+    const lag = world.enemies[0];
     abilities.update(1000);
     expect(world.lagZones).toHaveLength(0);
     movement.setEntityTile(lag, { x: 2, y: 1 });
@@ -123,19 +123,19 @@ describe('enemy abilities', () => {
   });
 
   it('clears Lag fields on power and resumes abilities with fresh cooldowns while preserving half-base scared speed', () => {
-    const { world, movement, abilities, ghostMovement } = createEnemyWorld(['#######', '#.....#', '#######'], [
+    const { world, movement, abilities, enemyMovement } = createEnemyWorld(['#######', '#.....#', '#######'], [
       { key: 'lag', tile: { x: 1, y: 1 } },
     ], { x: 5, y: 1 });
-    const lag = world.ghosts[0];
+    const lag = world.enemies[0];
     abilities.update(0);
     movement.setEntityTile(lag, { x: 2, y: 1 });
     abilities.update(1000);
     expect(world.lagZones).toHaveLength(1);
-    setActiveGhostsScaredWindow(world, 6000);
+    setActiveEnemiesScaredWindow(world, 6000);
     expect(world.lagZones).toHaveLength(0);
     abilities.update(6000);
     expect(world.lagZones).toHaveLength(0);
-    ghostMovement.update();
+    enemyMovement.update();
     expect(lag.speed).toBe(ENEMY_CONFIG.lag.speed / 2);
     const animation = new AnimationSystem(world, 1);
     animation.start();
@@ -148,7 +148,7 @@ describe('enemy abilities', () => {
     expect(world.lagZones).toHaveLength(0);
     abilities.update(1);
     expect(world.lagZones[0].tile).toEqual({ x: 3, y: 1 });
-    ghostMovement.update();
+    enemyMovement.update();
     animation.update(0);
     expect(lag.speed).toBe(ENEMY_CONFIG.lag.speed);
   });

@@ -91,7 +91,7 @@ describe('canMove', () => {
     expect(canMove('left', 0, -4, collisionTiles, tileSize)).toBe(true);
   });
 
-  it('allows only release ghosts through pen-gate edges but blocks packet and free ghosts', () => {
+  it('allows only release enemies through pen-gate edges but blocks packet and free enemies', () => {
     const collisionTiles: CollisionTiles = {
       current: tile({ down: true, penGate: true }),
       down: tile(),
@@ -101,8 +101,8 @@ describe('canMove', () => {
     };
 
     expect(canMove('down', 0, 0, collisionTiles, tileSize, 'packet')).toBe(false);
-    expect(canMove('down', 0, 0, collisionTiles, tileSize, 'ghost')).toBe(false);
-    expect(canMove('down', 0, 0, collisionTiles, tileSize, 'ghostRelease')).toBe(true);
+    expect(canMove('down', 0, 0, collisionTiles, tileSize, 'enemy')).toBe(false);
+    expect(canMove('down', 0, 0, collisionTiles, tileSize, 'enemyRelease')).toBe(true);
   });
 
   it('blocks center movement into out-of-bounds neighbors on both axes', () => {

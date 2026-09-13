@@ -2,12 +2,12 @@ export const TILE_SIZE = 16;
 
 export const SPRITE_SIZE = {
   packet: 10,
-  ghost: 11,
+  enemy: 11,
 } as const;
 
 export const SPEED = {
   packet: 1,
-  ghost: 1,
+  enemy: 1,
 } as const;
 
 export const ENEMY_CONFIG = {
@@ -58,14 +58,14 @@ export const MOBILE_SWIPE_AXIS_LOCK_RATIO = 1.2;
 export const MOBILE_TAP_MAX_DELTA_PX = 10;
 
 export const INITIAL_LIVES = 3;
-export const GHOST_JAIL_RELEASE_DELAY_MS = 5000;
-export const GHOST_JAIL_RELEASE_INTERVAL_MS = 900;
-export const GHOST_JAIL_MOVE_SPEED = 0.5;
-export const GHOST_JAIL_RELEASE_ALIGN_TWEEN_MS = 260;
-export const GHOST_JAIL_RELEASE_TWEEN_MS = 650;
-export const GHOST_SCARED_DURATION_MS = 6000;
-export const GHOST_SCARED_WARNING_DURATION_MS = 1200;
-export const GHOST_EAT_CHAIN_SCORES = [200, 400, 800, 1600] as const;
+export const ENEMY_JAIL_RELEASE_DELAY_MS = 5000;
+export const ENEMY_JAIL_RELEASE_INTERVAL_MS = 900;
+export const ENEMY_JAIL_MOVE_SPEED = 0.5;
+export const ENEMY_JAIL_RELEASE_ALIGN_TWEEN_MS = 260;
+export const ENEMY_JAIL_RELEASE_TWEEN_MS = 650;
+export const ENEMY_SCARED_DURATION_MS = 6000;
+export const ENEMY_SCARED_WARNING_DURATION_MS = 1200;
+export const ENEMY_EAT_CHAIN_SCORES = [200, 400, 800, 1600] as const;
 
 export const COLLECTIBLE_CONFIG: Record<
   number,

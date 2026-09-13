@@ -43,6 +43,11 @@ const GLYPHS: Record<'P' | 'A' | 'C' | 'K' | 'E' | 'T' | 'L' | 'O' | 'S', Glyph>
 const WORDMARK = ['P', 'A', 'C', 'K', 'E', 'T', 'L', 'O', 'S', 'S'] as const;
 const WORDMARK_WIDTH = WORDMARK.length * 10 - 2;
 
+/** Local X centers let title effects address the same authored glyphs as the map. */
+export function getPacketSignGlyphCenters(width: number): number[] {
+  return WORDMARK.map((_, index) => (index * 10 + 4) * width / WORDMARK_WIDTH - width / 2);
+}
+
 /** Horizontal lettering centered in its authored tile run, with the maze wall profile. */
 export function buildPacketSignGeometry(width: number, height: number): ExtrudeGeometry {
   const scaleX = width / WORDMARK_WIDTH;

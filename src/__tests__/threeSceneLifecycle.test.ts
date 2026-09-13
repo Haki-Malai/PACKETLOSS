@@ -11,7 +11,7 @@ import {
 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { Camera3D } from '../engine/camera3d';
-import { GhostEntity } from '../game/domain/entities/GhostEntity';
+import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import { PacketEntity } from '../game/domain/entities/PacketEntity';
 import { CollisionGrid, createEmptyCollisionTile } from '../game/domain/world/CollisionGrid';
 import { WorldState, type WorldMapData } from '../game/domain/world/WorldState';
@@ -51,19 +51,19 @@ function createSceneHarness() {
   const packet = new PacketEntity({ x: 0, y: 1 }, 10, 10);
   packet.x = 8;
   packet.y = 24;
-  const ghost = new GhostEntity({
+  const enemy = new EnemyEntity({
     key: 'firewall', tile: { x: 2, y: 1 }, direction: 'left', speed: 1, displayWidth: 11, displayHeight: 11,
   });
-  ghost.x = 40;
-  ghost.y = 24;
+  enemy.x = 40;
+  enemy.y = 24;
   const world = new WorldState({
     map,
     tileSize: 16,
     collisionGrid: new CollisionGrid(tiles.map((row) => row.map((tile) => tile.collision))),
     packetSpawnTile: packet.tile,
     packet,
-    ghosts: [ghost],
-    ghostJailBounds: { minX: 1, maxX: 2, y: 1 },
+    enemies: [enemy],
+    enemyJailBounds: { minX: 1, maxX: 2, y: 1 },
   });
   const camera = new Camera3D();
   camera.setBounds(64, 48);
@@ -74,7 +74,7 @@ function createSceneHarness() {
   const renderer = { pixelRatio: 1, render: vi.fn(), dispose: vi.fn() };
   const collectibles = new CollectibleSystem(world);
   const system = new RenderSystem(world, renderer, camera, collectibles, createCharacterAssets());
-  return { world, ghost, camera, renderer, collectibles, system };
+  return { world, enemy, camera, renderer, collectibles, system };
 }
 
 type DisposableResource = BufferGeometry | Material | Texture | InstancedMesh;
@@ -99,7 +99,7 @@ function sceneResources(scene: Object3D): Set<DisposableResource> {
 
 describe('Three.js scene lifecycle', () => {
   it('disposes active and cached GPU resources once, including retired effects and sign lettering', () => {
-    const { system, world, ghost, renderer, collectibles } = createSceneHarness();
+    const { system, world, enemy, renderer, collectibles } = createSceneHarness();
     const calls = new Map<DisposableResource, () => number>();
     const captureResources = (): void => {
       for (const resource of sceneResources(system.scene)) {
@@ -112,17 +112,17 @@ describe('Three.js scene lifecycle', () => {
     collectibles.update(16);
     for (let frame = 0; frame < 4; frame += 1) {
       world.packetAnimation.frame = frame;
-      world.ghostAnimations.set(ghost, { key: 'firewallIdle', frame, elapsedMs: 0, forward: 1 });
+      world.enemyAnimations.set(enemy, { key: 'firewallIdle', frame, elapsedMs: 0, forward: 1 });
       system.render();
       captureResources();
     }
     for (const key of ['virus', 'lag', 'spam', 'firewall'] as const) {
-      ghost.key = key;
+      enemy.key = key;
       system.render();
       captureResources();
     }
-    ghost.state.scared = true;
-    world.ghostScaredTimers.set(ghost, 3000);
+    enemy.state.scared = true;
+    world.enemyScaredTimers.set(enemy, 3000);
     system.render();
     captureResources();
     const effect = system.scene.getObjectByName('pellet-effect') as Mesh<BufferGeometry, MeshBasicMaterial>;
@@ -145,36 +145,36 @@ describe('Three.js scene lifecycle', () => {
   });
 
   it('keeps poses, blinking, eat effects, and projected coordinates fixed between simulation updates', () => {
-    const { system, world, ghost, camera, collectibles } = createSceneHarness();
+    const { system, world, enemy, camera, collectibles } = createSceneHarness();
     collectibles.update(16);
     world.isMoving = false;
     world.packetAnimation.frame = 2;
     world.packet.portalBlinkRemainingMs = 1000;
     world.packet.portalBlinkElapsedMs = 120;
-    ghost.state.scared = true;
-    world.ghostScaredTimers.set(ghost, 700);
-    world.ghostScaredWarnings.set(ghost, { elapsedMs: 500, nextToggleAtMs: 600, showBaseColor: true });
-    world.ghostAnimations.set(ghost, { key: 'scaredIdle', frame: 3, elapsedMs: 40, forward: 1 });
+    enemy.state.scared = true;
+    world.enemyScaredTimers.set(enemy, 700);
+    world.enemyScaredWarnings.set(enemy, { elapsedMs: 500, nextToggleAtMs: 600, showBaseColor: true });
+    world.enemyAnimations.set(enemy, { key: 'scaredIdle', frame: 3, elapsedMs: 40, forward: 1 });
     system.render();
     const packet = system.scene.getObjectByName('packet')!;
-    const ghostModel = system.scene.getObjectByName('ghost-firewall')!;
+    const enemyModel = system.scene.getObjectByName('enemy-firewall')!;
     const packetBody = packet.getObjectByName('hologram-model')!;
-    const ghostBody = ghostModel.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
+    const enemyBody = enemyModel.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
     const effect = system.scene.getObjectByName('pellet-effect') as Mesh<BufferGeometry, MeshBasicMaterial>;
     const snapshot = () => ({
       packetPosition: packet.position.toArray(),
       packetVisible: packet.visible,
       packetPose: packetBody.position.toArray(),
-      ghostPosition: ghostModel.position.toArray(),
-      ghostPose: ghostBody.position.toArray(),
-      ghostColor: ghostBody.material.color.getHex(),
+      enemyPosition: enemyModel.position.toArray(),
+      enemyPose: enemyBody.position.toArray(),
+      enemyColor: enemyBody.material.color.getHex(),
       effectScale: effect.scale.toArray(),
       effectOpacity: effect.material.opacity,
       effectElapsed: collectibles.getEatEffects()[0]?.elapsedMs,
       camera: camera.camera.matrixWorld.toArray(),
       projection: camera.camera.projectionMatrix.toArray(),
       pickedPoint: camera.screenToWorld(57, 43),
-      warning: { ...world.ghostScaredWarnings.get(ghost) },
+      warning: { ...world.enemyScaredWarnings.get(enemy) },
     });
     const paused = snapshot();
     expect(paused.packetVisible).toBe(false);

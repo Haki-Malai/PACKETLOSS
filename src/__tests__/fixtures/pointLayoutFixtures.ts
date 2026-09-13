@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect } from 'vitest';
-import { getObjectNumberProperty } from '../../game/domain/services/GhostJailService';
+import { getObjectNumberProperty } from '../../game/domain/services/EnemyJailService';
 import { TilePosition } from '../../game/domain/valueObjects/TilePosition';
 import { CollisionGrid, CollisionTile, createEmptyCollisionTile } from '../../game/domain/world/CollisionGrid';
 import { WorldMapData, WorldTile } from '../../game/domain/world/WorldState';

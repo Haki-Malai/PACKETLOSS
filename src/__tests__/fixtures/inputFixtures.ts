@@ -111,7 +111,7 @@ function createWorld(): WorldState {
         next: 'left',
       },
     },
-    ghosts: [],
+    enemies: [],
     lagZones: [],
     enemyEffects: [],
     collisionDebugEnabled: false,

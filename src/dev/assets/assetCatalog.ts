@@ -1,13 +1,13 @@
 import {
-  ENEMY_CONFIG, GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_ANIMATION, PACKET_DEATH_RECOVERY, PACKET_PORTAL_BLINK,
+  ENEMY_CONFIG, ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_ANIMATION, PACKET_DEATH_RECOVERY, PACKET_PORTAL_BLINK,
   TILE_SIZE,
 } from '../../config/constants';
 import { EAT_EFFECT_DURATION_MS } from '../../game/shared/pickupEffects';
-import { GHOST_EAT_DURATION_MS } from '../../game/shared/ghostEating';
+import { ENEMY_EAT_DURATION_MS } from '../../game/shared/enemyEating';
 
 export interface AssetPreviewEntry {
   id: string;
-  category: 'Player' | 'Ghosts' | 'Points' | 'Walls' | 'Other';
+  category: 'Player' | 'Enemies' | 'Points' | 'Walls' | 'Other';
   name: string;
   state: string;
   source: string;
@@ -17,7 +17,7 @@ export interface AssetPreviewEntry {
   transformable?: boolean;
 }
 
-export const GHOST_IDENTITIES = ['firewall', 'virus', 'ping', 'spam', 'lag'] as const;
+export const ENEMY_IDENTITIES = ['firewall', 'virus', 'ping', 'spam', 'lag'] as const;
 export const WALL_TILE_IDS = [0, 1, 2, 5, 6, 7, 10, 14, 15, 23] as const;
 const PLAYER_SOURCE = 'src/game/infrastructure/three/HologramPacket.ts';
 const MAZE_SOURCE = 'src/game/infrastructure/three/MazeGeometry.ts';
@@ -38,18 +38,18 @@ export const ASSET_CATALOG: readonly AssetPreviewEntry[] = [
   player('move-left', 'Moving left'),
   player('move-right', 'Moving right'),
   player('eating', 'Star absorption', EAT_EFFECT_DURATION_MS, false, 90),
-  player('powered', 'Ghost hunter'),
-  player('power-warning', 'Power ending', GHOST_SCARED_WARNING_DURATION_MS),
-  player('ghost-eating', 'Ghost absorption', GHOST_EAT_DURATION_MS, false, 180),
+  player('powered', 'Enemy hunter'),
+  player('power-warning', 'Power ending', ENEMY_SCARED_WARNING_DURATION_MS),
+  player('enemy-eating', 'Enemy absorption', ENEMY_EAT_DURATION_MS, false, 180),
   player('death', 'Death and recovery', PACKET_DEATH_ANIMATION.durationMs + PACKET_DEATH_RECOVERY.durationMs, false, 260),
   player('recovery', 'Recovery blinking', PACKET_DEATH_RECOVERY.durationMs, false, 180),
   player('portal', 'Portal blinking', PACKET_PORTAL_BLINK.durationMs, false, 240),
-  ...GHOST_IDENTITIES.flatMap((key): AssetPreviewEntry[] => (['normal', 'scared', 'warning', 'eaten', 'returning'] as const).map((state): AssetPreviewEntry => ({
-    id: `ghost-${key}-${state}`, category: 'Ghosts', name: key[0].toUpperCase() + key.slice(1),
+  ...ENEMY_IDENTITIES.flatMap((key): AssetPreviewEntry[] => (['normal', 'scared', 'warning', 'eaten', 'returning'] as const).map((state): AssetPreviewEntry => ({
+    id: `enemy-${key}-${state}`, category: 'Enemies', name: key[0].toUpperCase() + key.slice(1),
     state: { normal: 'Normal', scared: 'Scared', warning: 'Scared warning', eaten: 'Eaten', returning: 'Return to jail' }[state],
-    source: state === 'returning' ? 'src/game/infrastructure/three/ReturnGhostPresentation.ts' : `public/assets/models/enemies/${key}.glb`,
-    durationMs: state === 'warning' ? GHOST_SCARED_WARNING_DURATION_MS
-      : state === 'eaten' ? GHOST_EAT_DURATION_MS : state === 'returning' ? 2000 : 6000,
+    source: state === 'returning' ? 'src/game/infrastructure/three/ReturnEnemyPresentation.ts' : `public/assets/models/enemies/${key}.glb`,
+    durationMs: state === 'warning' ? ENEMY_SCARED_WARNING_DURATION_MS
+      : state === 'eaten' ? ENEMY_EAT_DURATION_MS : state === 'returning' ? 2000 : 6000,
     loop: state === 'normal' || state === 'scared',
     thumbnailMs: state === 'warning' ? 0 : state === 'eaten' ? 180 : 750,
   }))),
@@ -61,11 +61,14 @@ export const ASSET_CATALOG: readonly AssetPreviewEntry[] = [
       ENEMY_CONFIG.spam.splitIntervalMs * (ENEMY_CONFIG.spam.maxCount - 1) + ENEMY_CONFIG.spam.splitEffectDurationMs / 2],
     ['lag', 'lag', 'Lingering slow zones', 6000, true, 3500],
   ] as const).map(([key, state, name, durationMs, loop, thumbnailMs]): AssetPreviewEntry => ({
-    id: `ghost-${key}-${state}`, category: 'Ghosts', name: key[0].toUpperCase() + key.slice(1),
+    id: `enemy-${key}-${state}`, category: 'Enemies', name: key[0].toUpperCase() + key.slice(1),
     state: name, source: `public/assets/models/enemies/${key}.glb`, durationMs, loop, thumbnailMs,
   })),
   staticEntry('point-base', 'Points', 'Regular silver star', 'src/game/infrastructure/three/point-star.json'),
-  staticEntry('point-power', 'Points', 'Power silver star', 'src/game/infrastructure/three/point-star.json'),
+  {
+    id: 'point-power', category: 'Points', name: 'Power silver star', state: 'Rotate and hover',
+    source: 'src/game/infrastructure/three/power-star.json', durationMs: 6000, loop: true, thumbnailMs: 750,
+  },
   ...(['base', 'power'] as const).map((kind): AssetPreviewEntry => ({
     id: `effect-${kind}`, category: 'Points', name: kind === 'base' ? 'Regular star absorption' : 'Power star absorption',
     state: 'Absorption and rim pulse', source: 'src/game/infrastructure/three/PickupPresentation.ts',

@@ -89,21 +89,21 @@ describe('maze.json contract', () => {
     expect(spawnLayer?.type).toBe('objectgroup');
   });
 
-  it('contains packet and ghost-home spawn objects with required numeric properties', () => {
+  it('contains packet and enemy-home spawn objects with required numeric properties', () => {
     const map = readMap();
     const spawnLayer = map.layers.find((layer) => layer.name === 'Spawns');
 
     expect(spawnLayer?.type).toBe('objectgroup');
     const objects = spawnLayer?.objects ?? [];
     const packetSpawn = objects.find((object) => object.type === 'packet');
-    const ghostHome = objects.find((object) => object.type === 'ghost-home');
+    const enemyHome = objects.find((object) => object.type === 'enemy-home');
 
     expect(typeof getPropertyValue(packetSpawn?.properties, 'gridX')).toBe('number');
     expect(typeof getPropertyValue(packetSpawn?.properties, 'gridY')).toBe('number');
-    expect(typeof getPropertyValue(ghostHome?.properties, 'startX')).toBe('number');
-    expect(typeof getPropertyValue(ghostHome?.properties, 'endX')).toBe('number');
-    expect(typeof getPropertyValue(ghostHome?.properties, 'gridY')).toBe('number');
-    expect(getPropertyValue(ghostHome?.properties, 'ghostCount')).toBe(5);
+    expect(typeof getPropertyValue(enemyHome?.properties, 'startX')).toBe('number');
+    expect(typeof getPropertyValue(enemyHome?.properties, 'endX')).toBe('number');
+    expect(typeof getPropertyValue(enemyHome?.properties, 'gridY')).toBe('number');
+    expect(getPropertyValue(enemyHome?.properties, 'enemyCount')).toBe(5);
   });
 
   it('contains portal spawn objects that define production teleport anchors', () => {

@@ -128,7 +128,7 @@ export class MazeScene {
 
   private addPen(footprint: MazeFootprint): void {
     const pen = new Group();
-    pen.name = 'ghost-pen';
+    pen.name = 'enemy-pen';
     const bars = new Mesh(this.own(buildMazeWallGeometryFromFootprint(footprint)), this.createWallMaterial('#061428'));
     bars.name = 'pen-bars';
     const edges = this.createOutlineStrips(

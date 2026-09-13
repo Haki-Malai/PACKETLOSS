@@ -1,5 +1,6 @@
-import { InstancedMesh, Matrix4, Scene, Vector3 } from 'three';
+import { InstancedMesh, Matrix4, Mesh, Quaternion, Scene, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
+import { MovementRules } from '../game/domain/services/MovementRules';
 import {
   createCollisionTile, createMapFixture, createRenderHarness, createWorld,
 } from './fixtures/renderFixtures';
@@ -17,6 +18,18 @@ function renderedPoints(scene: Scene): Array<{ x: number; y: number }> {
     }
   }
   return points;
+}
+
+function createPowerPointHarness() {
+  const { map, collisionGrid } = createMapFixture([[createCollisionTile(), createCollisionTile()]]);
+  map.collectibleObjects = [{ type: 'pellet', x: 8, y: 8 }, { type: 'power-pellet', x: 24, y: 8 }];
+  return createRenderHarness({ world: createWorld(map, collisionGrid, { x: 0, y: 0 }) });
+}
+
+function firstPointMatrix(mesh: InstancedMesh): Matrix4 {
+  const matrix = new Matrix4();
+  mesh.getMatrixAt(0, matrix);
+  return matrix;
 }
 
 describe('RenderSystem point rendering regression', () => {
@@ -47,6 +60,78 @@ describe('RenderSystem point rendering regression', () => {
 
     expect(renderedPoints(scene)).toEqual(initial.filter((point) => point.x !== center.x || point.y !== center.y));
     expect(scene.getObjectByName('pellet-effect')).toBeDefined();
+    renderSystem.destroy();
+  });
+
+  it('interpolates power-star rotation and hover, freezes when paused, and leaves regular point buffers untouched', () => {
+    const { world, renderSystem, scene } = createPowerPointHarness();
+    const base = scene.getObjectByName('pellets-base') as InstancedMesh;
+    const power = scene.getObjectByName('pellets-power') as InstancedMesh;
+    renderSystem.render();
+    expect(power.geometry).not.toBe(base.geometry);
+    const initial = firstPointMatrix(power);
+    const regular = firstPointMatrix(base);
+    const regularVersion = base.instanceMatrix.version;
+    const initialBounds = power.boundingSphere!.clone();
+    renderSystem.capturePreviousState();
+    renderSystem.update(900);
+    renderSystem.render(0);
+    expect(firstPointMatrix(power).equals(initial)).toBe(true);
+    renderSystem.render(0.5);
+    const middle = firstPointMatrix(power);
+    renderSystem.render(1);
+    const end = firstPointMatrix(power);
+    const rotation = (matrix: Matrix4) => new Quaternion().setFromRotationMatrix(new Matrix4().extractRotation(matrix));
+    expect(rotation(initial).angleTo(rotation(middle))).toBeGreaterThan(0);
+    expect(rotation(initial).angleTo(rotation(middle))).toBeLessThan(rotation(initial).angleTo(rotation(end)));
+    expect(new Vector3().setFromMatrixPosition(middle).y).not.toBe(new Vector3().setFromMatrixPosition(initial).y);
+    expect(new Vector3().setFromMatrixPosition(end).y).not.toBe(new Vector3().setFromMatrixPosition(middle).y);
+    expect(power.boundingSphere!.equals(initialBounds)).toBe(false);
+    expect(firstPointMatrix(base).equals(regular)).toBe(true);
+    expect(base.instanceMatrix.version).toBe(regularVersion);
+
+    world.isMoving = false;
+    renderSystem.update(1000);
+    for (const alpha of [0, 0.5, 1]) {
+      renderSystem.render(alpha);
+      expect(firstPointMatrix(power).equals(end)).toBe(true);
+    }
+    world.isMoving = true;
+    renderSystem.capturePreviousState();
+    renderSystem.update(300);
+    renderSystem.render(0);
+    expect(firstPointMatrix(power).equals(end)).toBe(true);
+    renderSystem.render(1);
+    expect(firstPointMatrix(power).equals(end)).toBe(false);
+    expect(base.instanceMatrix.version).toBe(regularVersion);
+    renderSystem.destroy();
+  });
+
+  it('starts absorbing a power star from its animated pose and keeps its source phase stable between rendered frames', () => {
+    const { world, renderSystem, collectibles, scene } = createPowerPointHarness();
+    const power = scene.getObjectByName('pellets-power') as InstancedMesh;
+    renderSystem.capturePreviousState();
+    renderSystem.update(1200);
+    renderSystem.render();
+    const standing = firstPointMatrix(power);
+    new MovementRules(world.tileSize).setEntityTile(world.packet, { x: 1, y: 0 });
+    collectibles.update(0);
+    renderSystem.render();
+    const absorbed = scene.getObjectByName('pellet-effect') as Mesh;
+    absorbed.updateMatrix();
+    for (const [index, value] of standing.elements.entries()) expect(absorbed.matrix.elements[index]).toBeCloseTo(value, 6);
+    expect(absorbed.geometry).toBe(power.geometry);
+    expect(power.count).toBe(0);
+
+    renderSystem.capturePreviousState();
+    renderSystem.update(60);
+    collectibles.update(60);
+    renderSystem.render(0);
+    const orientation = absorbed.quaternion.clone();
+    for (const alpha of [0.5, 1]) {
+      renderSystem.render(alpha);
+      expect(absorbed.quaternion.equals(orientation)).toBe(true);
+    }
     renderSystem.destroy();
   });
 });

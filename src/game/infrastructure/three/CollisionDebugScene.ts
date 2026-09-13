@@ -56,7 +56,7 @@ export class CollisionDebugScene {
     this.fills.computeBoundingSphere();
     this.group.add(this.fills);
 
-    const capacity = (world.ghosts.length + 2) * 24;
+    const capacity = (world.enemies.length + 2) * 24;
     this.markers.setAttribute('position', new BufferAttribute(new Float32Array(capacity), 3));
     this.markers.setAttribute('color', new BufferAttribute(new Float32Array(capacity), 3));
     const markers = new LineSegments(this.markers, this.linesMaterial);
@@ -86,8 +86,8 @@ export class CollisionDebugScene {
       }
     };
     mark(this.world.packet.tile, '#ffdd00');
-    this.world.ghosts.forEach((ghost) => {
-      if (ghost.active) mark(ghost.tile, '#00ff66');
+    this.world.enemies.forEach((enemy) => {
+      if (enemy.active) mark(enemy.tile, '#00ff66');
     });
     if (this.world.hoveredDebugTile) mark(this.world.hoveredDebugTile, '#33ccff');
     position.needsUpdate = true;

@@ -4,22 +4,22 @@ import {
 } from 'three';
 import { Camera3D } from '../../engine/camera3d';
 import { clamp, lerp } from '../../engine/math';
-import { ENEMY_CONFIG, GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_ANIMATION, PACKET_PORTAL_BLINK } from '../../config/constants';
-import { GhostEntity } from '../domain/entities/GhostEntity';
+import { ENEMY_CONFIG, ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_ANIMATION, PACKET_PORTAL_BLINK } from '../../config/constants';
+import { EnemyEntity } from '../domain/entities/EnemyEntity';
 import { WorldState } from '../domain/world/WorldState';
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { ArcadeAssets } from '../infrastructure/three/ArcadeAssets';
 import { CollisionDebugScene } from '../infrastructure/three/CollisionDebugScene';
 import { EnemyEffects } from '../infrastructure/three/EnemyEffects';
-import { GhostEatPresentation } from '../infrastructure/three/GhostEatPresentation';
+import { EnemyEatPresentation } from '../infrastructure/three/EnemyEatPresentation';
 import { MazeScene } from '../infrastructure/three/MazeScene';
 import { createEatEffectMesh, sampleEatEffect, setPointTransform } from '../infrastructure/three/PickupPresentation';
 import { addGameplayLighting } from '../infrastructure/three/ScenePresentation';
 import { samplePickupPulse } from '../shared/pickupEffects';
-import { GHOST_EAT_DURATION_MS } from '../shared/ghostEating';
+import { ENEMY_EAT_DURATION_MS } from '../shared/enemyEating';
 import { CollectibleKind, CollectibleSystem, EatEffect } from './CollectibleSystem';
 import { EntityPresentation } from './EntityPresentation';
-import { resolveGhostAppearance } from './resolveGhostAppearance';
+import { resolveEnemyAppearance } from './resolveEnemyAppearance';
 
 export class RenderSystem {
   readonly scene = new Scene();
@@ -30,13 +30,14 @@ export class RenderSystem {
   private readonly packetShadow: Mesh;
   private readonly pickupTarget: Object3D;
   private readonly cancelledPickups = new WeakSet<EatEffect>();
-  private readonly ghosts = new Map<GhostEntity, Group>();
-  private readonly ghostEating = new Map<GhostEntity, GhostEatPresentation>();
-  private readonly cancelledGhostEating = new Set<GhostEntity>();
+  private readonly enemies = new Map<EnemyEntity, Group>();
+  private readonly enemyEating = new Map<EnemyEntity, EnemyEatPresentation>();
+  private readonly cancelledEnemyEating = new Set<EnemyEntity>();
   private readonly points = new Map<CollectibleKind, InstancedMesh>();
   private readonly effects = new Map<EatEffect, Mesh<BufferGeometry, MeshBasicMaterial>>();
   private readonly enemyEffects = new EnemyEffects();
   private readonly pointMatrix = new Matrix4();
+  private readonly powerPoints: Array<{ x: number; y: number }> = [];
   private lastPointCount = -1;
   private animationTime = 0;
   private previousAnimationTime = 0;
@@ -45,7 +46,7 @@ export class RenderSystem {
   private motionAmount = 0;
   private previousMotionAmount = 0;
   private previousDeathRemainingMs = 0;
-  private previousGhostEatRemainingMs = 0;
+  private previousEnemyEatRemainingMs = 0;
   private destroyed = false;
 
   constructor(
@@ -67,13 +68,13 @@ export class RenderSystem {
     this.packetShadow = this.assets.createContactShadow(world.packet.displayWidth);
     this.packet.add(this.packetShadow);
     this.scene.add(this.packet);
-    for (const ghost of world.ghosts) {
-      const model = this.assets.createGhost(ghost.key);
-      model.name = 'ghost-' + ghost.key;
-      model.visible = ghost.active;
-      model.getObjectByName('character-model')!.scale.setScalar(ghost.isCopy ? ENEMY_CONFIG.spam.copyScale : 1);
-      model.add(this.assets.createContactShadow(ghost.displayWidth));
-      this.ghosts.set(ghost, model);
+    for (const enemy of world.enemies) {
+      const model = this.assets.createEnemy(enemy.key);
+      model.name = 'enemy-' + enemy.key;
+      model.visible = enemy.active;
+      model.getObjectByName('character-model')!.scale.setScalar(enemy.isCopy ? ENEMY_CONFIG.spam.copyScale : 1);
+      model.add(this.assets.createContactShadow(enemy.displayWidth));
+      this.enemies.set(enemy, model);
       this.scene.add(model);
     }
 
@@ -81,7 +82,8 @@ export class RenderSystem {
     for (const kind of ['base', 'power'] as const) {
       const count = initialPoints.filter((point) => point.kind === kind).length;
       const material = kind === 'power' ? this.assets.powerPelletMaterial : this.assets.pelletMaterial;
-      const points = new InstancedMesh(this.assets.pelletGeometry, material, count);
+      const geometry = kind === 'power' ? this.assets.powerPelletGeometry : this.assets.pelletGeometry;
+      const points = new InstancedMesh(geometry, material, count);
       points.name = 'pellets-' + kind;
       this.points.set(kind, points);
       this.scene.add(points);
@@ -94,7 +96,7 @@ export class RenderSystem {
     this.previousAnimationTime = this.animationTime;
     this.previousMotionAmount = this.motionAmount;
     this.previousDeathRemainingMs = this.world.packet.deathAnimationRemainingMs;
-    this.previousGhostEatRemainingMs = this.world.packet.ghostEatRemainingMs;
+    this.previousEnemyEatRemainingMs = this.world.packet.enemyEatRemainingMs;
   }
 
   update(deltaMs: number): void {
@@ -104,8 +106,8 @@ export class RenderSystem {
     if (previous === this.world.packet || this.world.packet.deathAnimationRemainingMs > 0) {
       // Collection runs later in this tick, so fresh destination stars survive a reset.
       for (const effect of this.collectibles.getEatEffects()) this.cancelledPickups.add(effect);
-      for (const ghost of this.world.ghosts) {
-        if (ghost.eatenElapsedMs !== null && ghost.eatenElapsedMs > 0) this.cancelledGhostEating.add(ghost);
+      for (const enemy of this.world.enemies) {
+        if (enemy.eatenElapsedMs !== null && enemy.eatenElapsedMs > 0) this.cancelledEnemyEating.add(enemy);
       }
       this.motionX = this.motionY = 0;
       this.motionAmount = this.previousMotionAmount = 0;
@@ -144,40 +146,41 @@ export class RenderSystem {
     const deathProgress = this.world.outcome === 'lost' ? 1
       : remaining > 0 ? 1 - presentedRemaining / PACKET_DEATH_ANIMATION.durationMs : null;
     this.assets.setPacketDeathProgress(this.packet, deathProgress);
-    const edibleGhosts = this.world.ghosts.filter((ghost) => ghost.active && !ghost.state.dead && ghost.state.scared);
-    const powerRemaining = Math.max(0, ...edibleGhosts.map((ghost) => this.world.ghostScaredTimers.get(ghost) ?? Infinity));
-    this.assets.setPacketPower(this.packet, edibleGhosts.length > 0,
-      powerRemaining > 0 && powerRemaining <= GHOST_SCARED_WARNING_DURATION_MS);
-    const eatRemaining = this.world.packet.ghostEatRemainingMs;
-    const presentedEatRemaining = eatRemaining > 0 && this.previousGhostEatRemainingMs > 0
-      ? lerp(this.previousGhostEatRemainingMs, eatRemaining, animationAlpha) : eatRemaining;
-    this.assets.setPacketGhostEatProgress(this.packet,
-      deathProgress === null && eatRemaining > 0 ? 1 - presentedEatRemaining / GHOST_EAT_DURATION_MS : null);
+    const edibleEnemies = this.world.enemies.filter((enemy) => enemy.active && !enemy.state.dead && enemy.state.scared);
+    const powerRemaining = Math.max(0, ...edibleEnemies.map((enemy) => this.world.enemyScaredTimers.get(enemy) ?? Infinity));
+    this.assets.setPacketPower(this.packet, edibleEnemies.length > 0,
+      powerRemaining > 0 && powerRemaining <= ENEMY_SCARED_WARNING_DURATION_MS);
+    const eatRemaining = this.world.packet.enemyEatRemainingMs;
+    const presentedEatRemaining = eatRemaining > 0 && this.previousEnemyEatRemainingMs > 0
+      ? lerp(this.previousEnemyEatRemainingMs, eatRemaining, animationAlpha) : eatRemaining;
+    this.assets.setPacketEnemyEatProgress(this.packet,
+      deathProgress === null && eatRemaining > 0 ? 1 - presentedEatRemaining / ENEMY_EAT_DURATION_MS : null);
     this.packetShadow.visible = deathProgress === null || deathProgress < 0.94;
     const position = this.presentation.getPosition(this.world.packet, alpha);
     this.packet.position.set(position.x, 0, position.y);
     this.packet.rotation.y = -(this.world.packet.angle * Math.PI) / 180;
     this.packet.visible = this.isPacketVisible();
 
-    this.ghosts.forEach((model, ghost) => {
-      model.visible = ghost.active;
-      if (!ghost.active) {
-        this.assets.setGhostAppearance(model, ghost.key, false, 0);
-        this.assets.setGhostReturnProgress(model, null, true);
+    this.enemies.forEach((model, enemy) => {
+      model.visible = enemy.active;
+      if (!enemy.active) {
+        this.assets.setEnemyAppearance(model, enemy.key, false, 0);
+        this.assets.setEnemyReturnProgress(model, null, true);
         return;
       }
-      const position = this.presentation.getPosition(ghost, alpha);
+      const position = this.presentation.getPosition(enemy, alpha);
       model.position.set(position.x, 0, position.y);
-      const collapsing = ghost.state.dead && ghost.eatenElapsedMs !== null && ghost.eatenElapsedMs < GHOST_EAT_DURATION_MS;
-      this.assets.setGhostAppearance(model, collapsing ? 'scared' : resolveGhostAppearance(this.world, ghost), collapsing || ghost.state.scared);
-      this.assets.setGhostReturnProgress(model,
-        ghost.state.dead ? Math.min(1, (ghost.eatenElapsedMs ?? GHOST_EAT_DURATION_MS) / GHOST_EAT_DURATION_MS) : null);
+      const collapsing = enemy.state.dead && enemy.eatenElapsedMs !== null && enemy.eatenElapsedMs < ENEMY_EAT_DURATION_MS;
+      this.assets.setEnemyAppearance(model, collapsing ? 'scared' : resolveEnemyAppearance(this.world, enemy), collapsing || enemy.state.scared);
+      this.assets.setEnemyReturnProgress(model,
+        enemy.state.dead ? Math.min(1, (enemy.eatenElapsedMs ?? ENEMY_EAT_DURATION_MS) / ENEMY_EAT_DURATION_MS) : null);
     });
-    this.assets.sampleAnimation(lerp(this.previousAnimationTime, this.animationTime, animationAlpha));
+    const presentationTime = lerp(this.previousAnimationTime, this.animationTime, animationAlpha);
+    this.assets.sampleAnimation(presentationTime);
     this.assets.facePacket(this.packet, this.camera.camera);
-    this.syncPoints();
+    this.syncPoints(presentationTime);
     this.syncEffects();
-    this.syncGhostEating();
+    this.syncEnemyEating();
     this.enemyEffects.sync(this.world.enemyEffects, this.world.lagZones);
     this.debug.sync();
     this.renderer.render(this.scene, this.camera.camera);
@@ -191,31 +194,41 @@ export class RenderSystem {
     this.points.forEach((mesh) => mesh.dispose());
     this.effects.forEach((mesh) => mesh.material.dispose());
     this.effects.clear();
-    this.ghostEating.forEach((effect) => effect.dispose());
-    this.ghostEating.clear();
-    this.cancelledGhostEating.clear();
+    this.enemyEating.forEach((effect) => effect.dispose());
+    this.enemyEating.clear();
+    this.cancelledEnemyEating.clear();
     this.enemyEffects.dispose();
     this.assets.dispose();
     this.scene.clear();
     this.renderer.dispose();
   }
 
-  private syncPoints(): void {
+  private syncPoints(timeSeconds = 0): void {
     const pointCount = this.collectibles.getPointCount();
-    if (pointCount === this.lastPointCount) return;
-    this.lastPointCount = pointCount;
-    const counts = { base: 0, power: 0 };
-    for (const point of this.collectibles.getPoints()) {
-      const mesh = this.points.get(point.kind)!;
-      setPointTransform(this.pointMatrix, point.kind, point.x, point.y);
-      mesh.setMatrixAt(counts[point.kind], this.pointMatrix);
-      counts[point.kind] += 1;
+    const power = this.points.get('power')!;
+    if (pointCount !== this.lastPointCount) {
+      this.lastPointCount = pointCount;
+      this.powerPoints.length = 0;
+      const base = this.points.get('base')!;
+      base.count = 0;
+      for (const point of this.collectibles.getPoints()) {
+        if (point.kind === 'power') {
+          this.powerPoints.push(point);
+        } else {
+          setPointTransform(this.pointMatrix, point.kind, point.x, point.y);
+          base.setMatrixAt(base.count++, this.pointMatrix);
+        }
+      }
+      base.instanceMatrix.needsUpdate = true;
+      base.computeBoundingSphere();
+      power.count = this.powerPoints.length;
     }
-    this.points.forEach((mesh, kind) => {
-      mesh.count = counts[kind];
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.computeBoundingSphere();
+    this.powerPoints.forEach((point, index) => {
+      setPointTransform(this.pointMatrix, 'power', point.x, point.y, timeSeconds);
+      power.setMatrixAt(index, this.pointMatrix);
     });
+    power.instanceMatrix.needsUpdate = true;
+    power.computeBoundingSphere();
   }
 
   private syncEffects(): void {
@@ -234,39 +247,40 @@ export class RenderSystem {
         continue;
       }
       if (!mesh) {
-        mesh = createEatEffectMesh(this.assets.pelletGeometry, effect.x, effect.y);
+        const geometry = effect.kind === 'power' ? this.assets.powerPelletGeometry : this.assets.pelletGeometry;
+        mesh = createEatEffectMesh(geometry, effect.x, effect.y);
         this.effects.set(effect, mesh);
         this.scene.add(mesh);
       }
-      sampleEatEffect(mesh, effect, this.pickupTarget);
+      sampleEatEffect(mesh, effect, this.pickupTarget, this.animationTime - effect.elapsedMs / 1000);
     }
   }
 
-  private syncGhostEating(): void {
-    for (const [ghost, model] of this.ghosts) {
-      const elapsed = ghost.eatenElapsedMs;
-      const active = ghost.active && ghost.state.dead && elapsed !== null && elapsed < GHOST_EAT_DURATION_MS;
-      let effect = this.ghostEating.get(ghost);
+  private syncEnemyEating(): void {
+    for (const [enemy, model] of this.enemies) {
+      const elapsed = enemy.eatenElapsedMs;
+      const active = enemy.active && enemy.state.dead && elapsed !== null && elapsed < ENEMY_EAT_DURATION_MS;
+      let effect = this.enemyEating.get(enemy);
       if (!active) {
         if (effect) {
           this.scene.remove(effect.group);
           effect.dispose();
-          this.ghostEating.delete(ghost);
+          this.enemyEating.delete(enemy);
         }
-        this.cancelledGhostEating.delete(ghost);
+        this.cancelledEnemyEating.delete(enemy);
         continue;
       }
-      if (this.world.packet.deathAnimationRemainingMs > 0) this.cancelledGhostEating.add(ghost);
-      if (this.cancelledGhostEating.has(ghost)) {
+      if (this.world.packet.deathAnimationRemainingMs > 0) this.cancelledEnemyEating.add(enemy);
+      if (this.cancelledEnemyEating.has(enemy)) {
         if (effect) effect.group.visible = false;
         continue;
       }
       if (!effect) {
-        effect = new GhostEatPresentation();
-        this.ghostEating.set(ghost, effect);
+        effect = new EnemyEatPresentation();
+        this.enemyEating.set(enemy, effect);
         this.scene.add(effect.group);
       }
-      effect.sample(model, this.pickupTarget, elapsed / GHOST_EAT_DURATION_MS);
+      effect.sample(model, this.pickupTarget, elapsed / ENEMY_EAT_DURATION_MS);
     }
   }
 

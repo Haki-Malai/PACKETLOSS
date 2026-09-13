@@ -2,7 +2,7 @@ import { SeededRandom } from '../../shared/random/SeededRandom';
 import { DIRECTION_VECTORS, DIRECTIONS } from '../valueObjects/Direction';
 import { TilePosition } from '../valueObjects/TilePosition';
 import { canMove } from './MovementRules';
-import { GhostJailService } from './GhostJailService';
+import { EnemyJailService } from './EnemyJailService';
 import { CollisionGrid } from '../world/CollisionGrid';
 import { WorldMapData } from '../world/WorldState';
 
@@ -254,7 +254,7 @@ function pickPowerPoints(
 
   const distanceSquared = (a: TilePosition, b: TilePosition): number => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
   const entrances = map.tiles.flat().filter((tile) => tile.collision.portal || tile.collision.penGate);
-  const jail = new GhostJailService().resolveGhostJailBounds(map, startTile);
+  const jail = new EnemyJailService().resolveEnemyJailBounds(map, startTile);
   const safeTiles = basePoints.filter((tile) => distanceSquared(tile, startTile) >= 9 &&
     (tile.x < jail.minX - 2 || tile.x > jail.maxX + 2 || Math.abs(tile.y - jail.y) > 2) &&
     entrances.every((entrance) => distanceSquared(tile, entrance) > 4));

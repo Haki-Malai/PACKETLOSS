@@ -1,7 +1,7 @@
 import { BoxGeometry, Group, MathUtils, Mesh, MeshBasicMaterial, SphereGeometry } from 'three';
 
 /** A defeated enemy's small, wide-eyed bug; all motion uses the presentation clock. */
-export class ReturnGhostPresentation {
+export class ReturnEnemyPresentation {
   readonly group = new Group();
   private readonly feet: Mesh[] = [];
   private readonly pupils: Mesh[] = [];

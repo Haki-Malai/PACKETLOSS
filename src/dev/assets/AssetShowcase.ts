@@ -22,7 +22,7 @@ export function mountAssetShowcase(root: HTMLElement): () => void {
           <label class="asset-search"><span>Search assets</span>
             <input type="search" placeholder="Player, scared, wall…" data-control="search"></label>
           <label class="asset-category"><span>Category</span><select data-control="category">
-            <option value="">All assets</option><option>Player</option><option>Ghosts</option>
+            <option value="">All assets</option><option>Player</option><option>Enemies</option>
             <option>Points</option><option>Walls</option><option>Other</option>
           </select></label>
         </div>

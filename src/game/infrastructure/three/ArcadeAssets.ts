@@ -17,15 +17,16 @@ import {
   Texture,
 } from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
-import type { GhostKey } from '../../domain/entities/GhostEntity';
+import type { EnemyKey } from '../../domain/entities/EnemyEntity';
 import { HologramPacket } from './HologramPacket';
-import { ReturnGhostPresentation } from './ReturnGhostPresentation';
+import { ReturnEnemyPresentation } from './ReturnEnemyPresentation';
 import { StateTransition } from './StateTransition';
 import pointStarGeometry from './point-star.json';
+import powerStarGeometry from './power-star.json';
 
-type GhostAppearance = GhostKey | 'scared';
+type EnemyAppearance = EnemyKey | 'scared';
 type CharacterModel = Pick<GLTF, 'scene' | 'animations'>;
-export type CharacterModels = Record<GhostKey, CharacterModel>;
+export type CharacterModels = Record<EnemyKey, CharacterModel>;
 
 interface Resources {
   geometries: Set<BufferGeometry>;
@@ -36,7 +37,7 @@ interface Resources {
 interface CharacterInstance {
   mixer: AnimationMixer;
   collapse: Group;
-  returning: ReturnGhostPresentation;
+  returning: ReturnEnemyPresentation;
   returnProgress: number | null;
   colors: Array<{ material: MeshStandardMaterial; accent: boolean }>;
   expressions: Array<{ influences: number[]; index: number }>;
@@ -48,26 +49,28 @@ interface CharacterInstance {
   restoration: StateTransition;
 }
 
-const GHOST_COLORS: Record<GhostAppearance, number> = {
+const ENEMY_COLORS: Record<EnemyAppearance, number> = {
   firewall: 0xff4d45,
   virus: 0xff9c2f,
   ping: 0x68ff72,
   spam: 0xb87cff,
   lag: 0xffe24d,
-  scared: 0x465de5,
+  scared: 0x999999,
 };
-const SCARED_COLOR = new Color(GHOST_COLORS.scared);
+const SCARED_COLOR = new Color(ENEMY_COLORS.scared);
 
 /** Shared, simulation-driven models. Every model's root sits on the maze ground. */
 export class ArcadeAssets {
   readonly pelletGeometry = new BufferGeometryLoader().parse(pointStarGeometry);
+  readonly powerPelletGeometry = new BufferGeometryLoader().parse(powerStarGeometry);
   readonly pelletMaterial = new MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.9,
   });
   readonly powerPelletMaterial = new MeshStandardMaterial({
     vertexColors: true,
-    roughness: 0.9,
+    roughness: 0.45,
+    metalness: 0.2,
   });
 
   private readonly shadowGeometry = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
@@ -80,7 +83,7 @@ export class ArcadeAssets {
     toneMapped: false,
   });
   private readonly resources: Resources = {
-    geometries: new Set([this.pelletGeometry, this.shadowGeometry]),
+    geometries: new Set([this.pelletGeometry, this.powerPelletGeometry, this.shadowGeometry]),
     materials: new Set([this.pelletMaterial, this.powerPelletMaterial, this.shadowMaterial]),
     textures: new Set([this.shadowTexture]),
   };
@@ -147,8 +150,8 @@ export class ArcadeAssets {
     this.packets.get(group)?.setPower(powered, warning, amount);
   }
 
-  setPacketGhostEatProgress(group: Group, progress: number | null): void {
-    this.packets.get(group)?.setGhostEatProgress(progress);
+  setPacketEnemyEatProgress(group: Group, progress: number | null): void {
+    this.packets.get(group)?.setEnemyEatProgress(progress);
   }
 
   setPacketMotion(group: Group, x: number, y: number, amount: number): void {
@@ -159,14 +162,14 @@ export class ArcadeAssets {
     this.packets.get(group)?.faceCamera(camera);
   }
 
-  createGhost(key: GhostKey): Group {
+  createEnemy(key: EnemyKey): Group {
     const group = this.createCharacter(key);
     group.name = key;
-    this.setGhostAppearance(group, key);
+    this.setEnemyAppearance(group, key);
     return group;
   }
 
-  setGhostAppearance(group: Group, key: GhostAppearance, scared = key === 'scared', amount?: number): void {
+  setEnemyAppearance(group: Group, key: EnemyAppearance, scared = key === 'scared', amount?: number): void {
     const character = this.characters.get(group);
     if (!character) return;
     character.scared = scared;
@@ -175,7 +178,7 @@ export class ArcadeAssets {
     if (scared) character.scaredTint = key === 'scared';
   }
 
-  setGhostReturnProgress(group: Group, progress: number | null, immediate = false): void {
+  setEnemyReturnProgress(group: Group, progress: number | null, immediate = false): void {
     const character = this.characters.get(group);
     if (!character) return;
     character.returnProgress = progress === null ? null : MathUtils.clamp(progress, 0, 1);
@@ -233,16 +236,16 @@ export class ArcadeAssets {
     const model = new Group();
     model.name = 'character-model';
     const collapse = new Group();
-    collapse.name = 'ghost-collapse';
+    collapse.name = 'enemy-collapse';
     collapse.add(scene);
-    const returning = new ReturnGhostPresentation(GHOST_COLORS[key]);
+    const returning = new ReturnEnemyPresentation(ENEMY_COLORS[key]);
     model.add(collapse, returning.group);
     root.add(model);
     collectResources(returning.group, this.resources);
     const character: CharacterInstance = {
       mixer: new AnimationMixer(scene), collapse, returning, returnProgress: null,
       colors: [], expressions: [], scared: false, scaredTint: true,
-      baseColor: new Color(GHOST_COLORS[key]), fear: new StateTransition(0.24), restoration: new StateTransition(0.28),
+      baseColor: new Color(ENEMY_COLORS[key]), fear: new StateTransition(0.24), restoration: new StateTransition(0.28),
     };
     scene.traverse((object) => {
       if (!(object instanceof Mesh)) return;

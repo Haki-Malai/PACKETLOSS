@@ -1,4 +1,4 @@
-import { GhostEntity } from '../entities/GhostEntity';
+import { EnemyEntity } from '../entities/EnemyEntity';
 import { PacketEntity } from '../entities/PacketEntity';
 import { MovementProgress } from '../valueObjects/MovementProgress';
 import { TilePosition } from '../valueObjects/TilePosition';
@@ -52,10 +52,10 @@ export interface WorldMapData {
   spawnObjects: WorldObject[];
   collectibleObjects?: WorldObject[];
   packetSpawn?: WorldObject;
-  ghostHome?: WorldObject;
+  enemyHome?: WorldObject;
 }
 
-export type AnimationKey = 'scaredIdle' | `${GhostEntity['key']}Idle`;
+export type AnimationKey = 'scaredIdle' | `${EnemyEntity['key']}Idle`;
 
 export interface LagZone {
   readonly tile: Readonly<TilePosition>;
@@ -83,7 +83,7 @@ export interface AnimationPlayback {
   forward: 1 | -1;
 }
 
-export interface GhostScaredWarningVisualState {
+export interface EnemyScaredWarningVisualState {
   elapsedMs: number;
   nextToggleAtMs: number;
   showBaseColor: boolean;
@@ -96,7 +96,7 @@ export interface PacketAnimationPlayback {
   active: boolean;
 }
 
-export interface GhostJailBounds {
+export interface EnemyJailBounds {
   minX: number;
   maxX: number;
   y: number;
@@ -120,16 +120,16 @@ export class WorldState {
   readonly collisionGrid: CollisionGrid;
   readonly packetSpawnTile: TilePosition;
   packet: PacketEntity;
-  ghosts: GhostEntity[];
+  enemies: EnemyEntity[];
   lagZones: LagZone[] = [];
   enemyEffects: EnemyEffect[] = [];
-  ghostScaredTimers = new Map<GhostEntity, number>();
-  ghostScaredWarnings = new Map<GhostEntity, GhostScaredWarningVisualState>();
-  ghostJailBounds: GhostJailBounds;
-  readonly ghostJailReturnTile: TilePosition;
-  ghostEatChainCount = 0;
-  ghostsExitingJail = new Set<GhostEntity>();
-  ghostAnimations = new Map<GhostEntity, AnimationPlayback>();
+  enemyScaredTimers = new Map<EnemyEntity, number>();
+  enemyScaredWarnings = new Map<EnemyEntity, EnemyScaredWarningVisualState>();
+  enemyJailBounds: EnemyJailBounds;
+  readonly enemyJailReturnTile: TilePosition;
+  enemyEatChainCount = 0;
+  enemiesExitingJail = new Set<EnemyEntity>();
+  enemyAnimations = new Map<EnemyEntity, AnimationPlayback>();
   packetAnimation: PacketAnimationPlayback = {
     frame: 0,
     elapsedMs: 0,
@@ -150,19 +150,19 @@ export class WorldState {
     collisionGrid: CollisionGrid;
     packetSpawnTile: TilePosition;
     packet: PacketEntity;
-    ghosts: GhostEntity[];
-    ghostJailBounds: GhostJailBounds;
+    enemies: EnemyEntity[];
+    enemyJailBounds: EnemyJailBounds;
   }) {
     this.map = params.map;
     this.tileSize = params.tileSize;
     this.collisionGrid = params.collisionGrid;
     this.packetSpawnTile = { ...params.packetSpawnTile };
     this.packet = params.packet;
-    this.ghosts = params.ghosts;
-    this.ghostJailBounds = params.ghostJailBounds;
-    this.ghostJailReturnTile = {
-      x: params.ghostJailBounds.minX + Math.floor((params.ghostJailBounds.maxX - params.ghostJailBounds.minX) / 2),
-      y: params.ghostJailBounds.y,
+    this.enemies = params.enemies;
+    this.enemyJailBounds = params.enemyJailBounds;
+    this.enemyJailReturnTile = {
+      x: params.enemyJailBounds.minX + Math.floor((params.enemyJailBounds.maxX - params.enemyJailBounds.minX) / 2),
+      y: params.enemyJailBounds.y,
     };
   }
 
