@@ -4,30 +4,18 @@ import { setActiveGhostsScaredWindow } from '../domain/services/GhostScaredState
 import { buildPointLayout } from '../domain/services/PointLayoutService';
 import { TilePosition } from '../domain/valueObjects/TilePosition';
 import { WorldState } from '../domain/world/WorldState';
+import { createEatEffect, type CollectibleKind, type EatEffect } from '../shared/pickupEffects';
 
-const BASE_POINT_SIZE = COLLECTIBLE_CONFIG[0].size;
-const POWER_POINT_SIZE = COLLECTIBLE_CONFIG[1].size;
-const EAT_EFFECT_DURATION_MS = 96;
-const EAT_EFFECT_SCALE_MULTIPLIER = 1.5;
 const POINT_CONSUME_MOVEMENT_EPSILON = 0.001;
 const POINT_CONSUME_POSITION_EPSILON = 0.01;
 
-export type CollectibleKind = 'base' | 'power';
+export type { CollectibleKind, EatEffect } from '../shared/pickupEffects';
 
 export interface CollectiblePoint {
   tile: TilePosition;
   x: number;
   y: number;
   kind: CollectibleKind;
-}
-
-export interface EatEffect {
-  x: number;
-  y: number;
-  elapsedMs: number;
-  durationMs: number;
-  sizeStart: number;
-  sizeEnd: number;
 }
 
 function tileKey(tile: TilePosition): string {
@@ -81,6 +69,7 @@ export class CollectibleSystem {
   }
 
   private consumePointAtPacketTile(): void {
+    if (this.world.packet.deathAnimationRemainingMs > 0) return;
     const key = tileKey(this.world.packet.tile);
     const point = this.pointsByTile.get(key);
     if (!point || !this.isPacketCenteredOnPoint(point)) {
@@ -96,15 +85,7 @@ export class CollectibleSystem {
     }
     this.triggerPacketEatAnimation();
 
-    const baseSize = point.kind === 'power' ? POWER_POINT_SIZE : BASE_POINT_SIZE;
-    this.eatEffects.push({
-      x: point.x,
-      y: point.y,
-      elapsedMs: 0,
-      durationMs: EAT_EFFECT_DURATION_MS,
-      sizeStart: baseSize,
-      sizeEnd: baseSize * EAT_EFFECT_SCALE_MULTIPLIER,
-    });
+    this.eatEffects.push(createEatEffect(point.kind, point.x, point.y));
   }
 
   private triggerPacketEatAnimation(): void {

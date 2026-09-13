@@ -1,7 +1,8 @@
-import { BufferGeometry, Group, Mesh, MeshStandardMaterial } from 'three';
-import { describe, expect, it } from 'vitest';
+import { BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Quaternion, Vector3 } from 'three';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GhostEntity } from '../game/domain/entities/GhostEntity';
 import { MovementRules } from '../game/domain/services/MovementRules';
+import { HologramPacket } from '../game/infrastructure/three/HologramPacket';
 import { createCollisionTile, createMapFixture, createRenderHarness, createWorld } from './fixtures/renderFixtures';
 
 function createEntityHarness() {
@@ -25,21 +26,23 @@ function body(model: Group): Mesh<BufferGeometry, MeshStandardMaterial> {
 }
 
 describe('RenderSystem entity presentation', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('switches warning-phase ghosts between scared blue and their base color', () => {
     const { world, ghost, ghostModel, renderSystem } = createEntityHarness();
     renderSystem.render();
-    const baseMaterial = body(ghostModel).material;
+    const baseColor = body(ghostModel).material.color.getHex();
     ghost.state.scared = true;
     world.ghostScaredTimers.set(ghost, 600);
     world.ghostScaredWarnings.set(ghost, { elapsedMs: 600, nextToggleAtMs: 660, showBaseColor: false });
     renderSystem.render();
     const scaredMaterial = body(ghostModel).material;
-    expect(scaredMaterial).not.toBe(baseMaterial);
+    expect(scaredMaterial.color.getHex()).not.toBe(baseColor);
     expect(scaredMaterial.color.b).toBeGreaterThan(scaredMaterial.color.r);
 
     world.ghostScaredWarnings.set(ghost, { elapsedMs: 700, nextToggleAtMs: 760, showBaseColor: true });
     renderSystem.render();
-    expect(body(ghostModel).material).toBe(baseMaterial);
+    expect(body(ghostModel).material.color.getHex()).toBe(baseColor);
     expect(ghost.state.scared).toBe(true);
     renderSystem.destroy();
   });
@@ -98,22 +101,115 @@ describe('RenderSystem entity presentation', () => {
     renderSystem.destroy();
   });
 
-  it('uses gameplay mouth frames and direction without advancing animation during rendering', () => {
-    const { world, packetModel, renderSystem } = createEntityHarness();
+  it('interpolates animation and freezes the hologram and ghost clips on pause without changing gameplay roots', () => {
+    const { world, packetModel, ghostModel, camera, renderSystem } = createEntityHarness();
+    const hologram = packetModel.getObjectByName('hologram-model')!;
+    const binary = packetModel.getObjectByName('binary-000') as Mesh<BufferGeometry, MeshBasicMaterial>;
     renderSystem.render();
-    const closedMouth = body(packetModel).geometry;
+    const initialPose = hologram.position.clone();
+    renderSystem.capturePreviousState();
+    renderSystem.update(3000);
     world.packetAnimation.frame = 3;
     world.packet.angle = -90;
-    renderSystem.render();
+    renderSystem.render(0.5);
 
-    expect(body(packetModel).geometry).not.toBe(closedMouth);
+    expect(body(ghostModel).position.y).toBeCloseTo(4.25);
+    expect(hologram.position.equals(initialPose)).toBe(false);
     expect(packetModel.rotation.y).toBeCloseTo(Math.PI / 2);
-    const openMouth = body(packetModel).geometry;
+    const facing = new Vector3(0, 0, 1).applyQuaternion(hologram.getWorldQuaternion(new Quaternion()));
+    const towardViewer = new Vector3(0, 0, 1).applyQuaternion(camera.camera.getWorldQuaternion(new Quaternion()));
+    expect(facing.dot(towardViewer)).toBeCloseTo(1);
+    expect(packetModel.position.y).toBe(0);
+    expect(packetModel.getObjectByName('contact-shadow')?.position.y).toBeCloseTo(0.035);
     world.isMoving = false;
     renderSystem.render();
+    const pausedHeight = hologram.position.y;
+    const pausedOpacity = binary.material.opacity;
+    renderSystem.update(10000);
     renderSystem.render();
-    expect(body(packetModel).geometry).toBe(openMouth);
+    expect(hologram.position.y).toBe(pausedHeight);
+    expect(binary.material.opacity).toBe(pausedOpacity);
     expect(world.packetAnimation.frame).toBe(3);
+
+    world.isMoving = true;
+    renderSystem.capturePreviousState();
+    renderSystem.update(1500);
+    renderSystem.render();
+    expect(body(ghostModel).position.y).toBeCloseTo(4.25);
+    expect(hologram.position.y).not.toBe(pausedHeight);
+    renderSystem.destroy();
+  });
+
+  it('directs the trail from actual displacement despite buffered heading and reverses it immediately', () => {
+    const motion = vi.spyOn(HologramPacket.prototype, 'setMotion');
+    const { world, renderSystem } = createEntityHarness();
+    world.packet.angle = 180;
+    renderSystem.capturePreviousState();
+    world.packet.x += 4;
+    renderSystem.update(16);
+    renderSystem.render(0.5);
+    expect(motion).toHaveBeenLastCalledWith(1, 0, 0.5);
+
+    renderSystem.capturePreviousState();
+    world.packet.x -= 4;
+    renderSystem.update(16);
+    renderSystem.render(0.25);
+    expect(motion).toHaveBeenLastCalledWith(-1, 0, 1);
+
+    renderSystem.capturePreviousState();
+    world.packet.y -= 4;
+    renderSystem.update(16);
+    renderSystem.render();
+    expect(motion).toHaveBeenLastCalledWith(0, -1, 1);
+
+    renderSystem.capturePreviousState();
+    world.packet.y += 4;
+    renderSystem.update(16);
+    renderSystem.render();
+    expect(motion).toHaveBeenLastCalledWith(0, 1, 1);
+    renderSystem.destroy();
+  });
+
+  it('fades stopped motion over 120 ms, freezes the fade while paused, and clears it on position resets', () => {
+    const motion = vi.spyOn(HologramPacket.prototype, 'setMotion');
+    const { world, renderSystem } = createEntityHarness();
+    renderSystem.update(16);
+    renderSystem.render();
+    expect(motion).toHaveBeenLastCalledWith(0, 0, 0);
+
+    renderSystem.capturePreviousState();
+    world.packet.x += 4;
+    renderSystem.update(16);
+    renderSystem.render();
+    expect(motion).toHaveBeenLastCalledWith(1, 0, 1);
+    renderSystem.capturePreviousState();
+    renderSystem.update(60);
+    renderSystem.render(0.5);
+    expect(motion).toHaveBeenLastCalledWith(1, 0, 0.75);
+
+    world.isMoving = false;
+    renderSystem.update(10000);
+    renderSystem.render(0.2);
+    expect(motion).toHaveBeenLastCalledWith(1, 0, 0.5);
+    world.isMoving = true;
+    renderSystem.capturePreviousState();
+    renderSystem.update(60);
+    renderSystem.render();
+    expect(motion).toHaveBeenLastCalledWith(1, 0, 0);
+
+    const movement = new MovementRules(world.tileSize);
+    for (const destination of [{ x: 3, y: 1 }, world.packetSpawnTile]) {
+      renderSystem.capturePreviousState();
+      world.packet.x += 4;
+      renderSystem.update(16);
+      renderSystem.render();
+      expect(motion).toHaveBeenLastCalledWith(1, 0, 1);
+      renderSystem.capturePreviousState();
+      movement.setEntityTile(world.packet, destination);
+      renderSystem.update(16);
+      renderSystem.render(0);
+      expect(motion).toHaveBeenLastCalledWith(0, 0, 0);
+    }
     renderSystem.destroy();
   });
 });

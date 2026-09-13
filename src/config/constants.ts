@@ -21,6 +21,10 @@ export const PACKET_DEATH_RECOVERY = {
   blinkEndIntervalMs: 220,
 } as const;
 
+export const PACKET_DEATH_ANIMATION = {
+  durationMs: 900,
+} as const;
+
 export const CAMERA = {
   zoom: 5,
   followLerp: { x: 0.09, y: 0.09 },

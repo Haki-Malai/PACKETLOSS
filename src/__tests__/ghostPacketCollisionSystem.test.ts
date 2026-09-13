@@ -1,10 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  PACKET_DEATH_ANIMATION,
   PACKET_DEATH_RECOVERY,
   PACKET_PORTAL_BLINK,
 } from '../config/constants';
 import { getGameState, resetGameState } from '../state/gameState';
 import { GhostEntity } from '../game/domain/entities/GhostEntity';
+import { PacketEntity } from '../game/domain/entities/PacketEntity';
+import { MovementRules } from '../game/domain/services/MovementRules';
+import { PortalService } from '../game/domain/services/PortalService';
+import { WorldState } from '../game/domain/world/WorldState';
+import { CollectibleSystem } from '../game/systems/CollectibleSystem';
+import { GhostPacketCollisionSystem } from '../game/systems/GhostPacketCollisionSystem';
+import { PacketMovementSystem } from '../game/systems/PacketMovementSystem';
+import { createCollisionTile, createMapFixture } from './fixtures/pointLayoutFixtures';
 import { MechanicsDomainHarness } from './helpers/mechanicsDomainHarness';
 
 function expectGhostTileUnchanged(ghost: GhostEntity, tile: { x: number; y: number }): void {
@@ -16,37 +25,62 @@ describe('GhostPacketCollisionSystem', () => {
     resetGameState(0, 3);
   });
 
-  it('decrements one life and respawns packet without moving the colliding ghost', () => {
-    const harness = new MechanicsDomainHarness({ seed: 4101, fixture: 'default-map', ghostCount: 1, autoStartSystems: false });
+  it('holds Packet at contact for 900 ms, then respawns with recovery while suppressing movement and collection', () => {
+    const { map, collisionGrid } = createMapFixture([[createCollisionTile(), createCollisionTile(), createCollisionTile()]]);
+    map.collectibleObjects = [{ type: 'pellet', x: 8, y: 8 }, { type: 'power-pellet', x: 24, y: 8 }];
+    const packet = new PacketEntity({ x: 0, y: 0 }, 10, 10);
+    const ghost = new GhostEntity({
+      key: 'blinky', tile: { x: 1, y: 0 }, direction: 'left', speed: 1, displayWidth: 11, displayHeight: 11,
+    });
+    const movement = new MovementRules(16);
+    movement.setEntityTile(packet, packet.tile);
+    movement.setEntityTile(ghost, ghost.tile);
+    ghost.state.free = true;
+    const world = new WorldState({
+      map, collisionGrid, tileSize: 16, packet, packetSpawnTile: { x: 0, y: 0 }, ghosts: [ghost],
+      ghostJailBounds: { minX: 2, maxX: 2, y: 0 },
+    });
+    const collisions = new GhostPacketCollisionSystem(world, movement);
+    const packetMovement = new PacketMovementSystem(world, movement, new PortalService(collisionGrid, []));
+    const collectibles = new CollectibleSystem(world);
+    collectibles.update(0);
+    expect(collectibles.getEatEffects()).toHaveLength(1);
+    movement.setEntityTile(packet, { x: 1, y: 0 });
+    packet.direction.current = 'left';
+    packet.direction.next = 'up';
+    const contactTile = packet.tile;
 
-    try {
-      const ghost = harness.world.ghosts[0];
-      if (!ghost) {
-        throw new Error('expected one ghost');
-      }
+    collisions.update();
+    expect(getGameState().lives).toBe(2);
+    expect(packet.deathAnimationRemainingMs).toBe(PACKET_DEATH_ANIMATION.durationMs);
+    expect(packet.deathRecoveryRemainingMs).toBe(0);
+    packetMovement.update(899);
+    collectibles.update(96);
+    collisions.update(899);
+    expect(packet.tile).toBe(contactTile);
+    expect([packet.x, packet.y]).toEqual([24, 8]);
+    expect(packet.direction).toEqual({ current: 'left', next: 'up' });
+    expect(packet.deathAnimationRemainingMs).toBe(1);
+    expect(getGameState()).toEqual({ lives: 2, score: 10 });
+    expect(collectibles.getPointCount()).toBe(1);
+    expect(collectibles.getEatEffects()).toHaveLength(0);
+    expect(ghost.state.scared).toBe(false);
 
-      harness.movementRules.setEntityTile(harness.world.packet, { x: 20, y: 20 });
-      harness.world.packet.direction.current = 'up';
-      harness.world.packet.direction.next = 'left';
-
-      harness.movementRules.setEntityTile(ghost, { x: 20, y: 20 });
-      ghost.state.free = true;
-      ghost.state.scared = false;
-
-      const ghostTileBefore = { ...ghost.tile };
-
-      harness.ghostPacketCollisionSystem.update();
-
-      expect(getGameState().lives).toBe(2);
-      expect(harness.world.packet.tile).toEqual(harness.world.packetSpawnTile);
-      expect(harness.world.packet.direction.current).toBe('right');
-      expect(harness.world.packet.direction.next).toBe('right');
-      expect(harness.world.packet.deathRecoveryRemainingMs).toBe(PACKET_DEATH_RECOVERY.durationMs);
-      expect(harness.world.packet.deathRecoveryVisible).toBe(true);
-      expectGhostTileUnchanged(ghost, ghostTileBefore);
-    } finally {
-      harness.destroy();
-    }
+    ghost.state.scared = true;
+    collisions.update();
+    expectGhostTileUnchanged(ghost, { x: 1, y: 0 });
+    expect(getGameState().score).toBe(10);
+    collisions.update(1);
+    expect(packet.deathAnimationRemainingMs).toBe(0);
+    expect(packet.tile).toEqual(world.packetSpawnTile);
+    expect(packet.tile).not.toBe(contactTile);
+    expect([packet.x, packet.y]).toEqual([8, 8]);
+    expect(packet.direction).toEqual({ current: 'right', next: 'right' });
+    expect(packet.portalBlinkRemainingMs).toBe(0);
+    expect(packet.deathRecoveryRemainingMs).toBe(PACKET_DEATH_RECOVERY.durationMs);
+    expect(packet.deathRecoveryVisible).toBe(true);
+    expectGhostTileUnchanged(ghost, { x: 1, y: 0 });
+    expect(getGameState()).toEqual({ lives: 2, score: 10 });
   });
 
   it('applies life loss when adjacent-tile bodies overlap in world space', () => {
@@ -74,7 +108,9 @@ describe('GhostPacketCollisionSystem', () => {
       harness.ghostPacketCollisionSystem.update();
 
       expect(getGameState().lives).toBe(2);
-      expect(harness.world.packet.tile).toEqual(harness.world.packetSpawnTile);
+      expect(harness.world.packet.tile).toEqual({ x: 20, y: 20 });
+      expect(harness.world.packet.x).toBe(331);
+      expect(harness.world.packet.deathAnimationRemainingMs).toBe(PACKET_DEATH_ANIMATION.durationMs);
     } finally {
       harness.destroy();
     }
@@ -136,7 +172,8 @@ describe('GhostPacketCollisionSystem', () => {
       harness.ghostPacketCollisionSystem.update();
       expect(getGameState().lives).toBe(0);
 
-      harness.world.packet.deathRecoveryRemainingMs = 0;
+      harness.ghostPacketCollisionSystem.update(PACKET_DEATH_ANIMATION.durationMs);
+      harness.packetSystem.update(PACKET_DEATH_RECOVERY.durationMs);
       harness.ghostPacketCollisionSystem.update();
       expect(getGameState().lives).toBe(0);
     } finally {
@@ -160,6 +197,7 @@ describe('GhostPacketCollisionSystem', () => {
       harness.ghostPacketCollisionSystem.update();
       expect(getGameState().lives).toBe(2);
 
+      harness.ghostPacketCollisionSystem.update(PACKET_DEATH_ANIMATION.durationMs);
       harness.movementRules.setEntityTile(harness.world.packet, { x: 13, y: 13 });
       harness.ghostPacketCollisionSystem.update();
       expect(getGameState().lives).toBe(2);

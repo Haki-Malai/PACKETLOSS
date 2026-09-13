@@ -34,6 +34,7 @@ export class PacketEntity implements RenderableEntity {
   tile: TilePosition;
   portalBlinkRemainingMs = 0;
   portalBlinkElapsedMs = 0;
+  deathAnimationRemainingMs = 0;
   deathRecoveryRemainingMs = 0;
   deathRecoveryElapsedMs = 0;
   deathRecoveryNextToggleAtMs = 0;

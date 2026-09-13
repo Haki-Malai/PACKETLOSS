@@ -2,7 +2,7 @@ import {
   BoxGeometry, BufferGeometry, Color, EdgesGeometry, Group, InstancedMesh,
   Material, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Vector3,
 } from 'three';
-import { WorldState, WorldTile } from '../../domain/world/WorldState';
+import type { WorldMapData, WorldTile } from '../../domain/world/WorldState';
 import {
   buildMazePenFootprint,
   buildMazeWallEdgeGeometry,
@@ -11,17 +11,18 @@ import {
 } from './MazeGeometry';
 import type { MazeFootprint } from './MazeGeometry';
 import { buildPacketSignGeometry } from './PacketSignGeometry';
+import { createMazeFloorMaterial } from './ScenePresentation';
 
 export class MazeScene {
   readonly group = new Group();
   private readonly resources = new Set<BufferGeometry | Material | InstancedMesh>();
 
-  constructor(world: WorldState) {
+  constructor(world: { map: WorldMapData }) {
     this.group.name = 'maze';
     const { map } = world;
     const floorGeometry = this.own(new PlaneGeometry(map.tileWidth, map.tileHeight));
     floorGeometry.rotateX(-Math.PI / 2);
-    const floorMaterial = this.own(new MeshStandardMaterial({ color: '#050912', roughness: 0.86 }));
+    const floorMaterial = this.own(createMazeFloorMaterial());
     const tiles = map.tiles.flat().filter((tile) => tile.gid !== null);
     const floor = this.own(new InstancedMesh(floorGeometry, floorMaterial, tiles.length));
     floor.name = 'floor';
@@ -52,7 +53,7 @@ export class MazeScene {
       this.addPen(penFootprint);
     }
 
-    this.addSigns(world, tiles);
+    this.addSigns(map, tiles);
   }
 
   dispose(): void {
@@ -97,7 +98,7 @@ export class MazeScene {
     return lines;
   }
 
-  private addSigns(world: WorldState, tiles: WorldTile[]): void {
+  private addSigns(map: WorldMapData, tiles: WorldTile[]): void {
     const signTiles = tiles.filter((tile) => tile.localId !== null && tile.localId >= 17 && tile.localId <= 21)
       .sort((a, b) => a.y - b.y || a.x - b.x);
     if (signTiles.length === 0) return;
@@ -110,8 +111,8 @@ export class MazeScene {
     }
     const material = this.createWallMaterial('#241b0b');
     for (const run of runs) {
-      const width = run.length * world.map.tileWidth;
-      const height = world.map.tileHeight;
+      const width = run.length * map.tileWidth;
+      const height = map.tileHeight;
       const geometry = this.own(buildPacketSignGeometry(width - 2, height - 2));
       const lettering = new Mesh(geometry, material);
       lettering.name = 'sign-lettering';
@@ -119,7 +120,7 @@ export class MazeScene {
       edges.name = 'sign-edges';
       const placement = new Group();
       placement.name = 'sign-artwork';
-      placement.position.set((run[0].x + run.length / 2) * world.map.tileWidth, 0, (run[0].y + 0.5) * height);
+      placement.position.set((run[0].x + run.length / 2) * map.tileWidth, 0, (run[0].y + 0.5) * height);
       placement.add(lettering, edges);
       this.group.add(placement);
     }
