@@ -1,4 +1,4 @@
-import { SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
+import { ENEMY_CONFIG, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { GhostEntity, GhostKey } from '../../game/domain/entities/GhostEntity';
 import { PacketEntity } from '../../game/domain/entities/PacketEntity';
 import { GhostDecisionService } from '../../game/domain/services/GhostDecisionService';
@@ -11,6 +11,7 @@ import { WorldState } from '../../game/domain/world/WorldState';
 import { TimerSchedulerAdapter } from '../../game/infrastructure/adapters/TimerSchedulerAdapter';
 import { SeededRandom } from '../../game/shared/random/SeededRandom';
 import { AnimationSystem } from '../../game/systems/AnimationSystem';
+import { EnemyAbilitySystem } from '../../game/systems/EnemyAbilitySystem';
 import { GhostMovementSystem } from '../../game/systems/GhostMovementSystem';
 import { GhostPacketCollisionSystem } from '../../game/systems/GhostPacketCollisionSystem';
 import { GhostReleaseSystem } from '../../game/systems/GhostReleaseSystem';
@@ -18,7 +19,7 @@ import { PacketMovementSystem } from '../../game/systems/PacketMovementSystem';
 import { createHarnessMap, HarnessFixture } from './mechanicsDomainMapFactory';
 
 const DEFAULT_TICK_MS = 1000 / 60;
-const GHOST_KEYS: GhostKey[] = ['inky', 'clyde', 'pinky', 'blinky'];
+const GHOST_KEYS: GhostKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
 
 export interface MechanicsDomainHarnessOptions {
   seed?: number;
@@ -49,6 +50,7 @@ export class MechanicsDomainHarness {
   readonly ghostMovementSystem: GhostMovementSystem;
   readonly ghostPacketCollisionSystem: GhostPacketCollisionSystem;
   readonly animationSystem: AnimationSystem;
+  readonly enemyAbilitySystem: EnemyAbilitySystem;
 
   constructor(options: MechanicsDomainHarnessOptions = {}) {
     const seed = options.seed ?? 1337;
@@ -70,7 +72,7 @@ export class MechanicsDomainHarness {
     const packetTile = this.jailService.resolveSpawnTile(safeMap.packetSpawn, centerTile, safeMap);
     const ghostJailBounds = this.jailService.resolveGhostJailBounds(safeMap, packetTile);
 
-    const ghostCountRaw = options.ghostCount ?? getObjectNumberProperty(safeMap.ghostHome, 'ghostCount') ?? 4;
+    const ghostCountRaw = options.ghostCount ?? getObjectNumberProperty(safeMap.ghostHome, 'ghostCount') ?? 5;
     const ghostCount = Math.max(0, Math.round(ghostCountRaw));
 
     const packet = new PacketEntity(packetTile, SPRITE_SIZE.packet, SPRITE_SIZE.packet);
@@ -89,7 +91,7 @@ export class MechanicsDomainHarness {
         key: GHOST_KEYS[index % GHOST_KEYS.length],
         tile: spawnTile,
         direction: rng.next() < 0.5 ? 'right' : 'left',
-        speed: SPEED.ghost,
+        speed: ENEMY_CONFIG[GHOST_KEYS[index % GHOST_KEYS.length]].speed,
         displayWidth: SPRITE_SIZE.ghost,
         displayHeight: SPRITE_SIZE.ghost,
       });
@@ -113,6 +115,7 @@ export class MechanicsDomainHarness {
     this.decisions = new GhostDecisionService();
 
     this.packetSystem = new PacketMovementSystem(this.world, this.movementRules, this.portalService);
+    this.enemyAbilitySystem = new EnemyAbilitySystem(this.world, this.movementRules, this.portalService, rng);
     this.ghostReleaseSystem = new GhostReleaseSystem(this.world, this.movementRules, this.jailService, this.scheduler, rng);
     this.ghostMovementSystem = new GhostMovementSystem(
       this.world,
@@ -143,6 +146,7 @@ export class MechanicsDomainHarness {
     if (this.world.isMoving) {
       this.world.nextTick();
       this.scheduler.update(deltaMs);
+      this.enemyAbilitySystem.update(deltaMs);
       this.packetSystem.update(deltaMs);
       this.ghostReleaseSystem.update();
       this.ghostMovementSystem.update();

@@ -52,7 +52,7 @@ function createSceneHarness() {
   packet.x = 8;
   packet.y = 24;
   const ghost = new GhostEntity({
-    key: 'blinky', tile: { x: 2, y: 1 }, direction: 'left', speed: 1, displayWidth: 11, displayHeight: 11,
+    key: 'firewall', tile: { x: 2, y: 1 }, direction: 'left', speed: 1, displayWidth: 11, displayHeight: 11,
   });
   ghost.x = 40;
   ghost.y = 24;
@@ -112,11 +112,11 @@ describe('Three.js scene lifecycle', () => {
     collectibles.update(16);
     for (let frame = 0; frame < 4; frame += 1) {
       world.packetAnimation.frame = frame;
-      world.ghostAnimations.set(ghost, { key: 'blinkyIdle', frame, elapsedMs: 0, forward: 1 });
+      world.ghostAnimations.set(ghost, { key: 'firewallIdle', frame, elapsedMs: 0, forward: 1 });
       system.render();
       captureResources();
     }
-    for (const key of ['inky', 'clyde', 'pinky', 'blinky'] as const) {
+    for (const key of ['virus', 'lag', 'spam', 'firewall'] as const) {
       ghost.key = key;
       system.render();
       captureResources();
@@ -128,7 +128,7 @@ describe('Three.js scene lifecycle', () => {
     const effect = system.scene.getObjectByName('pellet-effect') as Mesh<BufferGeometry, MeshBasicMaterial>;
     expect(effect).toBeDefined();
     expect(system.scene.getObjectByName('sign-artwork')).toBeDefined();
-    collectibles.update(100);
+    collectibles.update(collectibles.getEatEffects()[0].durationMs);
     system.render();
     expect(system.scene.getObjectByName('pellet-effect')).toBeUndefined();
     expect(calls.get(effect.material)?.()).toBe(1);
@@ -157,7 +157,7 @@ describe('Three.js scene lifecycle', () => {
     world.ghostAnimations.set(ghost, { key: 'scaredIdle', frame: 3, elapsedMs: 40, forward: 1 });
     system.render();
     const packet = system.scene.getObjectByName('packet')!;
-    const ghostModel = system.scene.getObjectByName('ghost-blinky')!;
+    const ghostModel = system.scene.getObjectByName('ghost-firewall')!;
     const packetBody = packet.getObjectByName('hologram-model')!;
     const ghostBody = ghostModel.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
     const effect = system.scene.getObjectByName('pellet-effect') as Mesh<BufferGeometry, MeshBasicMaterial>;

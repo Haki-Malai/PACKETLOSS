@@ -30,7 +30,7 @@ describe('GhostPacketCollisionSystem', () => {
     map.collectibleObjects = [{ type: 'pellet', x: 8, y: 8 }, { type: 'power-pellet', x: 24, y: 8 }];
     const packet = new PacketEntity({ x: 0, y: 0 }, 10, 10);
     const ghost = new GhostEntity({
-      key: 'blinky', tile: { x: 1, y: 0 }, direction: 'left', speed: 1, displayWidth: 11, displayHeight: 11,
+      key: 'firewall', tile: { x: 1, y: 0 }, direction: 'left', speed: 1, displayWidth: 11, displayHeight: 11,
     });
     const movement = new MovementRules(16);
     movement.setEntityTile(packet, packet.tile);
@@ -55,7 +55,7 @@ describe('GhostPacketCollisionSystem', () => {
     expect(packet.deathAnimationRemainingMs).toBe(PACKET_DEATH_ANIMATION.durationMs);
     expect(packet.deathRecoveryRemainingMs).toBe(0);
     packetMovement.update(899);
-    collectibles.update(96);
+    collectibles.update(collectibles.getEatEffects()[0].durationMs);
     collisions.update(899);
     expect(packet.tile).toBe(contactTile);
     expect([packet.x, packet.y]).toEqual([24, 8]);
@@ -116,7 +116,7 @@ describe('GhostPacketCollisionSystem', () => {
     }
   });
 
-  it('applies ghost-hit outcome when ghost is scared and re-enters normal jail release flow', () => {
+  it('keeps an eaten ghost at contact, then walks home before re-entering normal jail release flow', () => {
     const harness = new MechanicsDomainHarness({ seed: 4102, fixture: 'default-map', ghostCount: 1, autoStartSystems: false });
 
     try {
@@ -134,12 +134,14 @@ describe('GhostPacketCollisionSystem', () => {
 
       expect(getGameState().lives).toBe(3);
       expect(getGameState().score).toBe(200);
-      expect(ghost.tile).toEqual(harness.world.ghostJailReturnTile);
+      expect(ghost.tile).toEqual({ x: 18, y: 18 });
       expect(ghost.state.free).toBe(false);
       expect(ghost.state.scared).toBe(false);
-      expect(ghost.state.soonFree).toBe(true);
+      expect(ghost.state.soonFree).toBe(false);
+      expect(ghost.state.dead).toBe(true);
 
       harness.ghostReleaseSystem.update();
+      expect(ghost.tile).toEqual({ x: 18, y: 18 });
       harness.movementRules.setEntityTile(harness.world.packet, { x: 1, y: 1 });
       let sawExitingPhase = false;
       for (let tick = 0; tick < 900 && !ghost.state.free; tick += 1) {
@@ -252,7 +254,8 @@ describe('GhostPacketCollisionSystem', () => {
 
       expect(getGameState().lives).toBe(3);
       expect(getGameState().score).toBe(200);
-      expect(ghost.tile).toEqual(harness.world.ghostJailReturnTile);
+      expect(ghost.tile).toEqual(collisionTile);
+      expect(ghost.state.dead).toBe(true);
       expect(ghost.state.free).toBe(false);
       expect(ghost.state.scared).toBe(false);
     } finally {

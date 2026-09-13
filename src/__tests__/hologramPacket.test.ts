@@ -127,6 +127,8 @@ describe('HologramPacket', () => {
 
   it('disposes owned geometry, materials and shared glow textures once without disposing borrowed root children', () => {
     const packet = new HologramPacket();
+    packet.setPower(true);
+    packet.sample(0);
     const resources = new Set<BufferGeometry | Material | Texture>();
     packet.group.traverse((object) => {
       if (!(object instanceof Mesh)) return;
@@ -147,5 +149,100 @@ describe('HologramPacket', () => {
     expect(disposeBorrowed).not.toHaveBeenCalled();
     borrowed.geometry.dispose();
     borrowed.material.dispose();
+  });
+
+  it('eases the hunter form in and out without a pose jump when power reverses or the clock pauses', () => {
+    const packet = new HologramPacket();
+    const rig = packet.group.getObjectByName('hunter-rig')!;
+    const eye = packet.group.getObjectByName('eye-left') as Mesh<BufferGeometry, MeshBasicMaterial>;
+    const rim = packet.group.getObjectByName('rim-horizontal-1-1') as Mesh<BufferGeometry, MeshBasicMaterial>;
+    const normalEye = eye.geometry;
+    const normalRim = rim.material.color.clone();
+    packet.setPower(true);
+    packet.sample(1);
+    expect(rig.visible).toBe(false);
+    expect(eye.morphTargetInfluences![0]).toBe(0);
+    expect(rim.material.color.equals(normalRim)).toBe(true);
+
+    packet.sample(1.16);
+    expect(rig.visible).toBe(true);
+    expect(eye.geometry).toBe(normalEye);
+    expect(eye.morphTargetInfluences![0]).toBeCloseTo(0.5);
+    const halfColor = rim.material.color.clone();
+    const halfScale = rig.scale.clone();
+    packet.setPower(true);
+    packet.sample(1.16);
+    expect(rim.material.color.equals(halfColor)).toBe(true);
+    expect(rig.scale.equals(halfScale)).toBe(true);
+
+    packet.setPower(false);
+    packet.sample(1.16);
+    expect(rig.scale.equals(halfScale)).toBe(true);
+    packet.sample(1.32);
+    expect(eye.morphTargetInfluences![0]).toBeGreaterThan(0);
+    expect(eye.morphTargetInfluences![0]).toBeLessThan(0.5);
+    packet.sample(1.5);
+    expect(rig.visible).toBe(false);
+    expect(eye.morphTargetInfluences![0]).toBe(0);
+    expect(rim.material.color.equals(normalRim)).toBe(true);
+
+    packet.setPower(true);
+    packet.sample(2);
+    packet.sample(2.34);
+    expect(eye.morphTargetInfluences![0]).toBe(1);
+    expect(rim.material.color.getHex()).toBe(0xffc34d);
+    expect(rig.scale.toArray()).toEqual([1, 1, 1]);
+    packet.dispose();
+  });
+
+  it('samples the intake independently without moving the body and immediately clears the hunter form on death', () => {
+    const packet = new HologramPacket();
+    const rig = packet.group.getObjectByName('hunter-rig')!;
+    const jaw = packet.group.getObjectByName('intake-jaw-top')!;
+    const eye = packet.group.getObjectByName('eye-left') as Mesh<BufferGeometry, MeshBasicMaterial>;
+    const rim = packet.group.getObjectByName('rim-horizontal-1-1') as Mesh<BufferGeometry, MeshBasicMaterial>;
+    const gaze = packet.group.getObjectByName('eye-gaze')!;
+    packet.sample(1);
+    const normalEye = eye.geometry;
+    const normalRim = rim.material.color.clone();
+    const normalGaze = gaze.position.clone();
+    const normalBody = packet.model.position.clone();
+    const normalScale = packet.model.scale.clone();
+    expect(rig.visible).toBe(false);
+
+    packet.setPower(true, false, 1);
+    packet.sample(1);
+    expect(rig.visible).toBe(true);
+    expect(eye.geometry).toBe(normalEye);
+    expect(eye.morphTargetInfluences![0]).toBe(1);
+    expect(rim.material.color.equals(normalRim)).toBe(false);
+    const restingJaw = jaw.position.y;
+    packet.setGhostEatProgress(0.4);
+    packet.sample(1);
+    const openJaw = jaw.position.y;
+    expect(openJaw).toBeGreaterThan(restingJaw);
+    expect(packet.model.position.equals(normalBody)).toBe(true);
+    expect(packet.model.scale.equals(normalScale)).toBe(true);
+    packet.setGhostEatProgress(1);
+    packet.sample(1);
+    expect(jaw.position.y).toBe(restingJaw);
+    packet.setPower(false);
+    packet.setGhostEatProgress(0.4);
+    packet.sample(1);
+    expect(jaw.position.y).toBe(openJaw);
+    expect(rig.visible).toBe(true);
+
+    packet.setDeathProgress(0.5);
+    packet.sample(1);
+    expect(rig.visible).toBe(false);
+    packet.setDeathProgress(null);
+    packet.setGhostEatProgress(null);
+    packet.sample(1);
+    expect(rig.visible).toBe(false);
+    expect(eye.geometry).toBe(normalEye);
+    expect(eye.morphTargetInfluences![0]).toBe(0);
+    expect(rim.material.color.equals(normalRim)).toBe(true);
+    expect(gaze.position.equals(normalGaze)).toBe(true);
+    packet.dispose();
   });
 });

@@ -16,6 +16,7 @@ describe('PacketMovementSystem portal blink', () => {
     const canAdvanceOutwardMock = vi.fn(() => false);
 
     const world = {
+      lagZones: [],
       packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
@@ -76,6 +77,7 @@ describe('PacketMovementSystem portal blink', () => {
 
   it('advances death recovery blink state and clears it on expiry', () => {
     const world = {
+      lagZones: [],
       packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
@@ -132,6 +134,7 @@ describe('PacketMovementSystem portal blink', () => {
     const advanceEntityMock = vi.fn();
 
     const world = {
+      lagZones: [],
       packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
@@ -181,6 +184,7 @@ describe('PacketMovementSystem portal blink', () => {
 
   it('keeps current direction when buffered portal turn is unavailable', () => {
     const world = {
+      lagZones: [],
       packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
@@ -222,6 +226,7 @@ describe('PacketMovementSystem portal blink', () => {
 
   it('treats legal buffered turns as normal movement, not portal overrides', () => {
     const world = {
+      lagZones: [],
       packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },

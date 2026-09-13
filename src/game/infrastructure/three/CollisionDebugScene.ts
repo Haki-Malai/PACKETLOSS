@@ -86,7 +86,9 @@ export class CollisionDebugScene {
       }
     };
     mark(this.world.packet.tile, '#ffdd00');
-    this.world.ghosts.forEach((ghost) => mark(ghost.tile, '#00ff66'));
+    this.world.ghosts.forEach((ghost) => {
+      if (ghost.active) mark(ghost.tile, '#00ff66');
+    });
     if (this.world.hoveredDebugTile) mark(this.world.hoveredDebugTile, '#33ccff');
     position.needsUpdate = true;
     colors.needsUpdate = true;

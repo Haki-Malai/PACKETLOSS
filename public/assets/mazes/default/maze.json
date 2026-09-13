@@ -109,7 +109,7 @@
             {
               "name": "ghostCount",
               "type": "int",
-              "value": 4
+              "value": 5
             },
             {
               "name": "startX",

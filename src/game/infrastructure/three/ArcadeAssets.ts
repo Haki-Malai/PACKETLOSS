@@ -3,10 +3,12 @@ import {
   BufferGeometry,
   BufferGeometryLoader,
   Camera,
+  Color,
   DataTexture,
   Group,
   LinearFilter,
   Material,
+  MathUtils,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -17,11 +19,13 @@ import {
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import type { GhostKey } from '../../domain/entities/GhostEntity';
 import { HologramPacket } from './HologramPacket';
+import { ReturnGhostPresentation } from './ReturnGhostPresentation';
+import { StateTransition } from './StateTransition';
 import pointStarGeometry from './point-star.json';
 
 type GhostAppearance = GhostKey | 'scared';
 type CharacterModel = Pick<GLTF, 'scene' | 'animations'>;
-export type CharacterModels = Record<'block' | 'virus', CharacterModel>;
+export type CharacterModels = Record<GhostKey, CharacterModel>;
 
 interface Resources {
   geometries: Set<BufferGeometry>;
@@ -31,17 +35,28 @@ interface Resources {
 
 interface CharacterInstance {
   mixer: AnimationMixer;
+  collapse: Group;
+  returning: ReturnGhostPresentation;
+  returnProgress: number | null;
   colors: Array<{ material: MeshStandardMaterial; accent: boolean }>;
-  appearance?: GhostAppearance;
+  expressions: Array<{ influences: number[]; index: number }>;
+  scared: boolean;
+  scaredTint: boolean;
+  fearAmount?: number;
+  baseColor: Color;
+  fear: StateTransition;
+  restoration: StateTransition;
 }
 
 const GHOST_COLORS: Record<GhostAppearance, number> = {
-  inky: 0x45ddeb,
-  clyde: 0xffa344,
-  pinky: 0xff91bd,
-  blinky: 0xfa4b60,
+  firewall: 0xff4d45,
+  virus: 0xff9c2f,
+  ping: 0x68ff72,
+  spam: 0xb87cff,
+  lag: 0xffe24d,
   scared: 0x465de5,
 };
+const SCARED_COLOR = new Color(GHOST_COLORS.scared);
 
 /** Shared, simulation-driven models. Every model's root sits on the maze ground. */
 export class ArcadeAssets {
@@ -80,12 +95,12 @@ export class ArcadeAssets {
   static async load(signal?: AbortSignal): Promise<ArcadeAssets> {
     signal?.throwIfAborted();
     const loader = new GLTFLoader();
-    const keys = ['block', 'virus'] as const;
+    const keys = ['firewall', 'virus', 'ping', 'spam', 'lag'] as const;
     const results = await Promise.allSettled(keys.map(async (key) => {
       try {
         // The local inspector is a nested URL; resolve dev assets from Vite's root.
         const baseUrl = import.meta.env.DEV ? '/' : import.meta.env.BASE_URL;
-        const url = `${baseUrl}assets/models/${key}.glb`;
+        const url = `${baseUrl}assets/models/enemies/${key}.glb`;
         const response = await fetch(url, { signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const model = await loader.parseAsync(await response.arrayBuffer(), '');
@@ -108,7 +123,10 @@ export class ArcadeAssets {
       signal?.throwIfAborted();
       throw failed?.reason;
     }
-    return new ArcadeAssets({ block: models.get('block')!, virus: models.get('virus')! });
+    return new ArcadeAssets({
+      firewall: models.get('firewall')!, virus: models.get('virus')!, ping: models.get('ping')!,
+      spam: models.get('spam')!, lag: models.get('lag')!,
+    });
   }
 
   createPacket(): Group {
@@ -125,6 +143,14 @@ export class ArcadeAssets {
     this.packets.get(group)?.setDeathProgress(progress);
   }
 
+  setPacketPower(group: Group, powered: boolean, warning = false, amount?: number): void {
+    this.packets.get(group)?.setPower(powered, warning, amount);
+  }
+
+  setPacketGhostEatProgress(group: Group, progress: number | null): void {
+    this.packets.get(group)?.setGhostEatProgress(progress);
+  }
+
   setPacketMotion(group: Group, x: number, y: number, amount: number): void {
     this.packets.get(group)?.setMotion(x, y, amount);
   }
@@ -134,26 +160,49 @@ export class ArcadeAssets {
   }
 
   createGhost(key: GhostKey): Group {
-    const group = this.createCharacter(key === 'blinky' || key === 'clyde' ? 'block' : 'virus');
+    const group = this.createCharacter(key);
     group.name = key;
     this.setGhostAppearance(group, key);
     return group;
   }
 
-  setGhostAppearance(group: Group, key: GhostAppearance): void {
+  setGhostAppearance(group: Group, key: GhostAppearance, scared = key === 'scared', amount?: number): void {
     const character = this.characters.get(group);
-    if (!character || character.appearance === key) return;
-    character.appearance = key;
-    for (const { material, accent } of character.colors) {
-      material.color.setHex(GHOST_COLORS[key]);
-      if (accent) material.emissive.setHex(GHOST_COLORS[key]);
-    }
+    if (!character) return;
+    character.scared = scared;
+    character.fearAmount = amount;
+    // Warning flashes retain their crisp cadence without restarting the eye transition.
+    if (scared) character.scaredTint = key === 'scared';
+  }
+
+  setGhostReturnProgress(group: Group, progress: number | null, immediate = false): void {
+    const character = this.characters.get(group);
+    if (!character) return;
+    character.returnProgress = progress === null ? null : MathUtils.clamp(progress, 0, 1);
+    if (immediate) character.restoration.reset(character.returnProgress ?? 0);
   }
 
   sampleAnimation(timeSeconds: number): void {
     if (this.disposed) return;
     for (const packet of this.packets.values()) packet.sample(timeSeconds);
-    for (const character of this.characters.values()) character.mixer.setTime(timeSeconds);
+    for (const character of this.characters.values()) {
+      character.mixer.setTime(timeSeconds);
+      // The edible expression wins over idle weight tracks, including when seeking backward.
+      const fear = character.fear.sample(character.scared ? 1 : 0, timeSeconds, character.fearAmount);
+      this.applyExpression(character, fear);
+      const tint = character.scaredTint ? fear : 0;
+      for (const { material, accent } of character.colors) {
+        material.color.copy(character.baseColor).lerp(SCARED_COLOR, tint);
+        if (accent) material.emissive.copy(material.color);
+      }
+      const progress = character.returnProgress === null
+        ? character.restoration.sample(0, timeSeconds)
+        : character.restoration.reset(character.returnProgress);
+      character.collapse.visible = progress < 1;
+      character.collapse.scale.setScalar(1 - MathUtils.smootherstep(progress, 0, 1));
+      character.collapse.rotation.y = MathUtils.smootherstep(progress, 0, 1) * Math.PI * 3;
+      character.returning.sample(timeSeconds, progress);
+    }
   }
 
   createContactShadow(diameter: number): Mesh<PlaneGeometry, MeshBasicMaterial> {
@@ -183,12 +232,25 @@ export class ArcadeAssets {
     const root = new Group();
     const model = new Group();
     model.name = 'character-model';
-    model.add(scene);
+    const collapse = new Group();
+    collapse.name = 'ghost-collapse';
+    collapse.add(scene);
+    const returning = new ReturnGhostPresentation(GHOST_COLORS[key]);
+    model.add(collapse, returning.group);
     root.add(model);
-    const character: CharacterInstance = { mixer: new AnimationMixer(scene), colors: [] };
+    collectResources(returning.group, this.resources);
+    const character: CharacterInstance = {
+      mixer: new AnimationMixer(scene), collapse, returning, returnProgress: null,
+      colors: [], expressions: [], scared: false, scaredTint: true,
+      baseColor: new Color(GHOST_COLORS[key]), fear: new StateTransition(0.24), restoration: new StateTransition(0.28),
+    };
     scene.traverse((object) => {
       if (!(object instanceof Mesh)) return;
       const mesh = object as Mesh<BufferGeometry, Material | Material[]>;
+      const scaredIndex = mesh.morphTargetDictionary?.scared;
+      if (scaredIndex !== undefined && mesh.morphTargetInfluences) {
+        character.expressions.push({ influences: mesh.morphTargetInfluences, index: scaredIndex });
+      }
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       const clones = materials.map((material) => {
         const clone = material.clone();
@@ -201,8 +263,19 @@ export class ArcadeAssets {
       mesh.material = Array.isArray(mesh.material) ? clones : clones[0];
     });
     for (const clip of source.animations) character.mixer.clipAction(clip).play();
+    this.applyExpression(character, 0);
+    for (const { material, accent } of character.colors) {
+      material.color.copy(character.baseColor);
+      if (accent) material.emissive.copy(character.baseColor);
+    }
     this.characters.set(root, character);
     return root;
+  }
+
+  private applyExpression(character: CharacterInstance, amount: number): void {
+    for (const { influences, index } of character.expressions) {
+      influences[index] = amount;
+    }
   }
 }
 

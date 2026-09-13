@@ -35,6 +35,7 @@ export class PacketEntity implements RenderableEntity {
   portalBlinkRemainingMs = 0;
   portalBlinkElapsedMs = 0;
   deathAnimationRemainingMs = 0;
+  ghostEatRemainingMs = 0;
   deathRecoveryRemainingMs = 0;
   deathRecoveryElapsedMs = 0;
   deathRecoveryNextToggleAtMs = 0;

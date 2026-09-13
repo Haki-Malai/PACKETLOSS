@@ -1,6 +1,6 @@
 import { Camera3D } from '../../engine/camera3d';
 import { clamp } from '../../engine/math';
-import { INITIAL_LIVES, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
+import { ENEMY_CONFIG, INITIAL_LIVES, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { resetGameState } from '../../state/gameState';
 import { GhostEntity, GhostKey } from '../domain/entities/GhostEntity';
 import { PacketEntity } from '../domain/entities/PacketEntity';
@@ -21,6 +21,7 @@ import { AnimationSystem } from '../systems/AnimationSystem';
 import { CameraSystem } from '../systems/CameraSystem';
 import { CollectibleSystem } from '../systems/CollectibleSystem';
 import { DebugOverlaySystem } from '../systems/DebugOverlaySystem';
+import { EnemyAbilitySystem } from '../systems/EnemyAbilitySystem';
 import { GhostMovementSystem } from '../systems/GhostMovementSystem';
 import { GhostPacketCollisionSystem } from '../systems/GhostPacketCollisionSystem';
 import { GhostReleaseSystem } from '../systems/GhostReleaseSystem';
@@ -32,7 +33,7 @@ import { RenderSystem } from '../systems/RenderSystem';
 import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
 import { ComposedGame, RuntimeControl } from './contracts';
 
-const GHOST_KEYS: GhostKey[] = ['inky', 'clyde', 'pinky', 'blinky'];
+const GHOST_KEYS: GhostKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
 
 export interface GameCompositionOptions {
   mountId?: string;
@@ -80,8 +81,8 @@ export class GameCompositionRoot {
       const packetTile = jailService.resolveSpawnTile(map.packetSpawn, centerTile, map);
       const ghostJailBounds = jailService.resolveGhostJailBounds(map, packetTile);
 
-      const ghostCountRaw = getObjectNumberProperty(map.ghostHome, 'ghostCount') ?? 4;
-      const ghostCount = Math.max(0, Math.round(ghostCountRaw));
+      const ghostCountRaw = getObjectNumberProperty(map.ghostHome, 'ghostCount') ?? GHOST_KEYS.length;
+      const ghostCount = clamp(Math.round(ghostCountRaw), 0, GHOST_KEYS.length);
 
       const packet = new PacketEntity(packetTile, SPRITE_SIZE.packet, SPRITE_SIZE.packet);
       movementRules.setEntityTile(packet, packetTile);
@@ -96,17 +97,32 @@ export class GameCompositionRoot {
           y: spawnY,
         };
 
+        const key = GHOST_KEYS[i];
         const ghost = new GhostEntity({
-          key: GHOST_KEYS[i % GHOST_KEYS.length],
+          key,
           tile: spawnTile,
           direction: rng.next() < 0.5 ? 'right' : 'left',
-          speed: SPEED.ghost,
+          speed: ENEMY_CONFIG[key].speed,
           displayWidth: SPRITE_SIZE.ghost,
           displayHeight: SPRITE_SIZE.ghost,
         });
 
         movementRules.setEntityTile(ghost, spawnTile);
         ghosts.push(ghost);
+      }
+      // Reserve a bounded copy pool; inactive slots never enter jail release or collisions.
+      for (let i = 1; i < ENEMY_CONFIG.spam.maxCount; i += 1) {
+        const copy = new GhostEntity({
+          key: 'spam',
+          isCopy: true,
+          tile: packetTile,
+          direction: 'right',
+          speed: ENEMY_CONFIG.spam.speed,
+          displayWidth: SPRITE_SIZE.ghost * ENEMY_CONFIG.spam.copyScale,
+          displayHeight: SPRITE_SIZE.ghost * ENEMY_CONFIG.spam.copyScale,
+        });
+        movementRules.setEntityTile(copy, packetTile);
+        ghosts.push(copy);
       }
 
       resetGameState(0, INITIAL_LIVES);
@@ -130,6 +146,7 @@ export class GameCompositionRoot {
       const ghostDecisions = new GhostDecisionService();
 
       const inputSystem = new InputSystem(input, world, runtimeControl);
+      const enemyAbilitySystem = new EnemyAbilitySystem(world, movementRules, portalService, rng);
       const packetSystem = new PacketMovementSystem(world, movementRules, portalService);
       const ghostReleaseSystem = new GhostReleaseSystem(world, movementRules, jailService, scheduler, rng);
       const ghostMovementSystem = new GhostMovementSystem(world, movementRules, ghostDecisions, portalService, rng);
@@ -144,6 +161,7 @@ export class GameCompositionRoot {
 
       const updateSystems = [
         inputSystem,
+        enemyAbilitySystem,
         packetSystem,
         ghostReleaseSystem,
         ghostMovementSystem,

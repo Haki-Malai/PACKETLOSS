@@ -18,21 +18,21 @@ interface AnimationDefinition {
 
 const ANIMATIONS: Record<AnimationKey, AnimationDefinition> = {
   scaredIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
-  inkyIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
-  clydeIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
-  pinkyIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
-  blinkyIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
+  firewallIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
+  virusIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
+  pingIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
+  spamIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
+  lagIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
 };
 
 export const PACKET_CHOMP_SEQUENCE = [0, 1, 2, 3, 2, 1] as const;
 const PACKET_IDLE_FRAME = PACKET_CHOMP_SEQUENCE[0];
 export const PACKET_CHOMP_FRAME_RATE = 20;
-const SCARED_GHOST_SPEED = 0.5;
 
 export class AnimationSystem {
   constructor(
     private readonly world: WorldState,
-    private readonly defaultGhostSpeed: number,
+    _defaultGhostSpeed: number,
     private readonly animations: Record<AnimationKey, AnimationDefinition> = ANIMATIONS,
   ) {}
 
@@ -40,6 +40,7 @@ export class AnimationSystem {
     this.world.packetAnimation = this.createPacketAnimationPlayback();
 
     this.world.ghosts.forEach((ghost) => {
+      if (!ghost.active) return;
       this.world.ghostAnimations.set(ghost, this.createAnimationPlayback(`${ghost.key}Idle` as AnimationKey));
     });
   }
@@ -48,6 +49,7 @@ export class AnimationSystem {
     this.updatePacketAnimationState(deltaMs);
 
     this.world.ghosts.forEach((ghost) => {
+      if (!ghost.active) return;
       this.updateGhostAnimationState(ghost, deltaMs);
     });
   }
@@ -83,22 +85,16 @@ export class AnimationSystem {
 
   private updateGhostAnimationState(ghost: GhostEntity, deltaMs: number): void {
     this.updateGhostScaredTimer(ghost, deltaMs);
+    if (!this.world.ghostAnimations.has(ghost)) {
+      this.world.ghostAnimations.set(ghost, this.createAnimationPlayback(`${ghost.key}Idle` as AnimationKey));
+    }
 
     if (ghost.state.scared && ghost.state.animation !== 'scared') {
       ghost.state.animation = 'scared';
-      ghost.speed = SCARED_GHOST_SPEED;
       this.world.ghostAnimations.set(ghost, this.createAnimationPlayback('scaredIdle'));
     } else if (!ghost.state.scared && ghost.state.animation === 'scared') {
       ghost.state.animation = 'default';
       this.world.ghostAnimations.set(ghost, this.createAnimationPlayback(`${ghost.key}Idle` as AnimationKey));
-
-      if (this.canRestoreGhostSpeed(ghost)) {
-        ghost.speed = this.defaultGhostSpeed;
-      }
-    }
-
-    if (!ghost.state.scared && ghost.speed !== this.defaultGhostSpeed && this.canRestoreGhostSpeed(ghost)) {
-      ghost.speed = this.defaultGhostSpeed;
     }
 
     const playback = this.world.ghostAnimations.get(ghost);
@@ -212,11 +208,4 @@ export class AnimationSystem {
     };
   }
 
-  private canRestoreGhostSpeed(ghost: GhostEntity): boolean {
-    if (!ghost.state.free) {
-      return true;
-    }
-
-    return ghost.moved.x === 0 && ghost.moved.y === 0;
-  }
 }

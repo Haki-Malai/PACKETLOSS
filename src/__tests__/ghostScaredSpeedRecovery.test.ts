@@ -51,7 +51,7 @@ function createMapFixture(collisionRows: CollisionTile[][]): { map: WorldMapData
 }
 
 describe('ghost scared speed recovery', () => {
-  it('defers free-ghost speed restore until tile-center realignment and keeps blocked wall non-penetration', () => {
+  it('restores gameplay speed without skipping the next center or penetrating a blocked wall', () => {
     const collisionRows: CollisionTile[][] = [
       [wallTile(), wallTile(), wallTile(), wallTile(), wallTile()],
       [wallTile(), openTile(), openTile({ right: true }), wallTile({ left: true }), wallTile()],
@@ -64,7 +64,7 @@ describe('ghost scared speed recovery', () => {
     movementRules.setEntityTile(packet, { x: 1, y: 1 });
 
     const ghost = new GhostEntity({
-      key: 'inky',
+      key: 'spam',
       tile: { x: 1, y: 1 },
       direction: 'right',
       speed: SPEED.ghost,
@@ -97,7 +97,6 @@ describe('ghost scared speed recovery', () => {
     animationSystem.start();
     setGhostScaredWindow(world, ghost, 1);
     animationSystem.update(0);
-    expect(ghost.speed).toBe(0.5);
 
     ghostMovement.update();
     animationSystem.update(STEP_MS);
@@ -106,22 +105,27 @@ describe('ghost scared speed recovery', () => {
     expect(ghost.moved.x).toBe(0.5);
     expect(ghost.speed).toBe(0.5);
 
-    let reachedRestorePoint = false;
+    ghostMovement.update();
+    expect(ghost.speed).toBe(SPEED.ghost);
+    expect(ghost.moved.x).toBe(1.5);
+
+    let reachedNextCenter = false;
     let maxGhostTileX = ghost.tile.x;
     for (let i = 0; i < 80; i += 1) {
       ghostMovement.update();
       animationSystem.update(STEP_MS);
       maxGhostTileX = Math.max(maxGhostTileX, ghost.tile.x);
 
-      if (ghost.speed === SPEED.ghost) {
-        expect(ghost.moved.x).toBe(0);
+      if (ghost.tile.x === 2 && ghost.moved.x === 0) {
         expect(ghost.moved.y).toBe(0);
-        reachedRestorePoint = true;
+        reachedNextCenter = true;
         break;
       }
     }
 
-    expect(reachedRestorePoint).toBe(true);
+    expect(reachedNextCenter).toBe(true);
+    ghostMovement.update();
+    expect(ghost.direction).toBe('left');
     expect(maxGhostTileX).toBeLessThanOrEqual(2);
     expect(ghost.tile.x).not.toBe(3);
   });

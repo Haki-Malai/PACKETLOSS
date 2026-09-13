@@ -55,7 +55,26 @@ export interface WorldMapData {
   ghostHome?: WorldObject;
 }
 
-export type AnimationKey = 'scaredIdle' | 'inkyIdle' | 'clydeIdle' | 'pinkyIdle' | 'blinkyIdle';
+export type AnimationKey = 'scaredIdle' | `${GhostEntity['key']}Idle`;
+
+export interface LagZone {
+  readonly tile: Readonly<TilePosition>;
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly ageMs: number;
+  readonly durationMs: number;
+}
+
+export interface EnemyEffect {
+  readonly kind: 'ping' | 'split';
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly ageMs: number;
+  readonly durationMs: number;
+  readonly target?: { readonly x: number; readonly y: number };
+}
 
 export interface AnimationPlayback {
   key: AnimationKey;
@@ -102,6 +121,8 @@ export class WorldState {
   readonly packetSpawnTile: TilePosition;
   packet: PacketEntity;
   ghosts: GhostEntity[];
+  lagZones: LagZone[] = [];
+  enemyEffects: EnemyEffect[] = [];
   ghostScaredTimers = new Map<GhostEntity, number>();
   ghostScaredWarnings = new Map<GhostEntity, GhostScaredWarningVisualState>();
   ghostJailBounds: GhostJailBounds;

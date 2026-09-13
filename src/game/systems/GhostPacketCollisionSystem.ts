@@ -11,6 +11,7 @@ import { GhostCollisionCandidate, findFirstCollision } from '../domain/services/
 import { clearGhostScaredWindow } from '../domain/services/GhostScaredStateService';
 import { MovementRules } from '../domain/services/MovementRules';
 import { WorldState } from '../domain/world/WorldState';
+import { GHOST_EAT_DURATION_MS } from '../shared/ghostEating';
 
 const PACKET_RESPAWN_DIRECTION = 'right';
 
@@ -18,13 +19,15 @@ export class GhostPacketCollisionSystem {
   constructor(
     private readonly world: WorldState,
     private readonly movementRules: MovementRules,
-    private readonly defaultGhostSpeed: number = SPEED.ghost,
+    _defaultGhostSpeed: number = SPEED.ghost,
   ) {}
 
   update(deltaMs = 0): void {
+    if (!this.world.isMoving) return;
+    const elapsed = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
+    this.world.packet.ghostEatRemainingMs = Math.max(0, this.world.packet.ghostEatRemainingMs - elapsed);
     this.resetGhostEatChainIfNoScaredGhosts();
     if (this.world.packet.deathAnimationRemainingMs > 0) {
-      const elapsed = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
       this.world.packet.deathAnimationRemainingMs = Math.max(0, this.world.packet.deathAnimationRemainingMs - elapsed);
       if (this.world.packet.deathAnimationRemainingMs === 0) this.respawnPacket();
       return;
@@ -34,7 +37,7 @@ export class GhostPacketCollisionSystem {
     }
 
     const collisionActiveGhosts = this.world.ghosts.filter((ghost) => {
-      return ghost.active && ghost.state.free && !this.world.ghostsExitingJail.has(ghost);
+      return ghost.active && ghost.state.free && !ghost.state.dead && !this.world.ghostsExitingJail.has(ghost);
     });
 
     const collision = findFirstCollision({
@@ -63,6 +66,7 @@ export class GhostPacketCollisionSystem {
 
   private applyPacketHitOutcome(): void {
     loseLife();
+    this.world.packet.ghostEatRemainingMs = 0;
     this.world.packet.deathAnimationRemainingMs = PACKET_DEATH_ANIMATION.durationMs;
   }
 
@@ -85,12 +89,13 @@ export class GhostPacketCollisionSystem {
 
     this.world.ghostsExitingJail.delete(ghost);
     clearGhostScaredWindow(this.world, ghost);
-    this.movementRules.setEntityTile(ghost, this.world.ghostJailReturnTile);
+    ghost.speed = ghost.baseSpeed;
     ghost.state.free = false;
-    ghost.state.soonFree = true;
-    ghost.state.dead = false;
+    ghost.state.soonFree = false;
+    ghost.state.dead = true;
     ghost.state.animation = 'default';
-    ghost.speed = this.defaultGhostSpeed;
+    ghost.eatenElapsedMs = 0;
+    this.world.packet.ghostEatRemainingMs = GHOST_EAT_DURATION_MS;
   }
 
   private isPacketInDeathRecovery(): boolean {
@@ -102,7 +107,7 @@ export class GhostPacketCollisionSystem {
   }
 
   private resetGhostEatChainIfNoScaredGhosts(): void {
-    const hasScaredGhost = this.world.ghosts.some((ghost) => ghost.state.scared);
+    const hasScaredGhost = this.world.ghosts.some((ghost) => ghost.active && ghost.state.scared);
     if (!hasScaredGhost) {
       this.world.ghostEatChainCount = 0;
     }

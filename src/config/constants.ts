@@ -10,6 +10,28 @@ export const SPEED = {
   ghost: 1,
 } as const;
 
+export const ENEMY_CONFIG = {
+  firewall: { speed: 1 },
+  virus: { speed: 1 },
+  ping: { speed: 1, intervalMs: 3000, rangeTiles: 8, pulseDurationMs: 600 },
+  spam: {
+    speed: 1,
+    splitIntervalMs: 4000,
+    retryMs: 1000,
+    maxCount: 4,
+    copyScale: 0.8,
+    splitEffectDurationMs: 450,
+  },
+  lag: {
+    speed: 0.5,
+    dropIntervalMs: 1000,
+    zoneDurationMs: 4000,
+    radiusTiles: 0.5,
+    slowMultiplier: 0.5,
+    maxZones: 4,
+  },
+} as const;
+
 export const PACKET_PORTAL_BLINK = {
   durationMs: 1500,
   intervalMs: 120,
