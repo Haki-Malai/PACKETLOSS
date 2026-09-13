@@ -5,7 +5,7 @@ import { CollisionBody } from '../game/domain/valueObjects/CollisionBody';
 
 function makeGhost(tile: { x: number; y: number }): GhostEntity {
   return new GhostEntity({
-    key: 'inky',
+    key: 'virus',
     tile,
     direction: 'left',
     speed: 1,

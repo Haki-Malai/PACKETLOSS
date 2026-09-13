@@ -22,7 +22,7 @@ describe('Character model loading', () => {
     vi.unstubAllGlobals();
   });
 
-  it('loads only the enemy GLBs and keeps five animated characters within the tile and triangle budget', async () => {
+  it('loads five enemy templates and keeps the full copy pool within the character triangle budget', async () => {
     const fetchModel = vi.fn(async (url: string) => {
       const path = new URL(url, 'https://game.invalid').pathname;
       const file = await readFile(new URL(`../../public${path}`, import.meta.url));
@@ -33,17 +33,25 @@ describe('Character model loading', () => {
     const assets = await ArcadeAssets.load();
     const loaded = await Promise.all(parse.mock.results.map((result) => result.value as Promise<GLTF>));
     expect(fetchModel.mock.calls.map(([url]) => url)).toEqual([
-      '/assets/models/block.glb', '/assets/models/virus.glb',
+      '/assets/models/enemies/firewall.glb', '/assets/models/enemies/virus.glb',
+      '/assets/models/enemies/ping.glb', '/assets/models/enemies/spam.glb', '/assets/models/enemies/lag.glb',
     ]);
     for (const model of loaded) {
-      expect(model.animations.length).toBeGreaterThan(0);
+      expect(model.animations).toHaveLength(1);
       for (const clip of model.animations) {
+        expect(clip.name).toBe('idle');
         expect(clip.duration).toBeCloseTo(6);
         expect(clip.tracks.length).toBeGreaterThan(0);
       }
     }
     const packet = assets.createPacket();
-    const characters = [packet, ...(['blinky', 'clyde', 'inky', 'pinky'] as const).map((key) => assets.createGhost(key))];
+    const enemies = (['firewall', 'virus', 'ping', 'spam', 'lag'] as const).map((key) => assets.createGhost(key));
+    const copies = Array.from({ length: 3 }, () => {
+      const copy = assets.createGhost('spam');
+      copy.scale.setScalar(0.8);
+      return copy;
+    });
+    const characters = [packet, ...enemies, ...copies];
     let triangles = 0;
     for (const character of characters) {
       character.traverse((object) => {
@@ -64,31 +72,44 @@ describe('Character model loading', () => {
         expect(bounds.max.z).toBeLessThanOrEqual(8);
       }
     }
-    for (const [character, bodyName, radius] of [
-      [characters[1], 'body-block', 5.5], [characters[3], 'body-virus', 5.5],
-    ] as const) {
-      const bounds = new Box3().setFromObject(character.getObjectByName(bodyName)!, true);
-      expect(bounds.min.x).toBeGreaterThanOrEqual(-radius - 0.0001);
-      expect(bounds.max.x).toBeLessThanOrEqual(radius + 0.0001);
-      expect(bounds.min.z).toBeGreaterThanOrEqual(-radius - 0.0001);
-      expect(bounds.max.z).toBeLessThanOrEqual(radius + 0.0001);
+    let sourceTriangles = 0;
+    for (const model of loaded) {
+      model.scene.traverse((object) => {
+        if (!(object instanceof Mesh)) return;
+        const geometry = (object as Mesh<BufferGeometry>).geometry;
+        sourceTriangles += (geometry.index?.count ?? geometry.attributes.position.count) / 3;
+      });
+    }
+    expect(sourceTriangles).toBeLessThanOrEqual(24000);
+    for (let frame = 0; frame <= 24; frame += 1) {
+      assets.sampleAnimation(frame / 4);
+      for (const enemy of enemies) {
+        const bounds = new Box3().setFromObject(enemy, true);
+        expect(bounds.min.x).toBeGreaterThanOrEqual(-5.5001);
+        expect(bounds.max.x).toBeLessThanOrEqual(5.5001);
+        expect(bounds.min.z).toBeGreaterThanOrEqual(-5.5001);
+        expect(bounds.max.z).toBeLessThanOrEqual(5.5001);
+      }
     }
     assets.dispose();
   });
 
   it('releases completed models, including a late parser result, when a sibling fails', async () => {
     const models = createCharacterModels();
-    const disposals = resourceSpies(models.virus.scene);
+    const disposals = [models.virus, models.ping, models.spam, models.lag].flatMap((model) => resourceSpies(model.scene));
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(new Uint8Array(4)))));
     let finishParse!: (_model: GLTF) => void;
     const lateModel = new Promise<GLTF>((resolve) => { finishParse = resolve; });
     const parse = vi.spyOn(GLTFLoader.prototype, 'parseAsync')
       .mockRejectedValueOnce(new Error('Invalid model'))
+      .mockResolvedValueOnce(models.virus as GLTF)
+      .mockResolvedValueOnce(models.ping as GLTF)
+      .mockResolvedValueOnce(models.spam as GLTF)
       .mockReturnValueOnce(lateModel);
     const loading = ArcadeAssets.load();
-    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(2));
-    finishParse(models.virus as GLTF);
-    await expect(loading).rejects.toThrow('Unable to load character model block.glb: Invalid model');
+    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(5));
+    finishParse(models.lag as GLTF);
+    await expect(loading).rejects.toThrow('Unable to load character model firewall.glb: Invalid model');
     for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
   });
 
@@ -101,13 +122,16 @@ describe('Character model loading', () => {
     let finishParse!: (_model: GLTF) => void;
     const lateModel = new Promise<GLTF>((resolve) => { finishParse = resolve; });
     const parse = vi.spyOn(GLTFLoader.prototype, 'parseAsync')
-      .mockResolvedValueOnce(models.block as GLTF)
+      .mockResolvedValueOnce(models.firewall as GLTF)
+      .mockResolvedValueOnce(models.virus as GLTF)
+      .mockResolvedValueOnce(models.ping as GLTF)
+      .mockResolvedValueOnce(models.spam as GLTF)
       .mockReturnValueOnce(lateModel);
     const loading = ArcadeAssets.load(abort.signal);
-    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(2));
-    expect(fetchModel).toHaveBeenCalledWith('/assets/models/block.glb', { signal: abort.signal });
+    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(5));
+    expect(fetchModel).toHaveBeenCalledWith('/assets/models/enemies/firewall.glb', { signal: abort.signal });
     abort.abort();
-    finishParse(models.virus as GLTF);
+    finishParse(models.lag as GLTF);
     await expect(loading).rejects.toMatchObject({ name: 'AbortError' });
     for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
   });

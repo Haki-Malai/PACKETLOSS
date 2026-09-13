@@ -14,7 +14,7 @@ function createCollectibles(kind: 'pellet' | 'power-pellet' = 'pellet') {
   const packet = new PacketEntity({ x: 0, y: 0 }, 10, 10);
   const movement = new MovementRules(16);
   movement.setEntityTile(packet, packet.tile);
-  const ghosts = (['inky', 'blinky'] as const).map((key) => new GhostEntity({
+  const ghosts = (['virus', 'firewall'] as const).map((key) => new GhostEntity({
     key, tile: { x: 2, y: 0 }, direction: 'left', speed: 1, displayWidth: 11, displayHeight: 11,
   }));
   const world = new WorldState({

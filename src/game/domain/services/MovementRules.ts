@@ -140,8 +140,12 @@ export function applyBufferedDirection(
 
 export function advanceEntity(entity: MovableEntity, direction: Direction, speed: number, tileSize: number): void {
   const delta = DIRECTION_VECTORS[direction];
-  entity.moved.x += delta.dx * speed;
-  entity.moved.y += delta.dy * speed;
+  const offset = delta.dx !== 0 ? entity.moved.x * delta.dx : entity.moved.y * delta.dy;
+  const distanceToCenter = offset < 0 ? -offset : tileSize - offset;
+  // Discard any remainder at a center so speed changes cannot skip turns or pickups.
+  const distance = Math.min(speed, distanceToCenter);
+  entity.moved.x += delta.dx * distance;
+  entity.moved.y += delta.dy * distance;
 
   while (entity.moved.x >= tileSize) {
     entity.tile.x += 1;

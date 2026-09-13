@@ -65,6 +65,14 @@ export class PortalService {
     return !this.isDestinationFullyBlocking(context.portalLink, collisionGrid);
   }
 
+  getTransition(tile: TilePosition, direction: Direction, collisionGrid: CollisionGrid): TilePosition | null {
+    const link = this.portalPairs.get(tileKey(tile));
+    if (!link || link.outwardDirection !== direction || this.isDestinationFullyBlocking(link, collisionGrid)) {
+      return null;
+    }
+    return { ...link.destination };
+  }
+
   tryTeleport(entity: PortalTrackedEntity, collisionGrid: CollisionGrid, tick: number, tileSize = 16): boolean {
     if (this.lastTeleportTick.get(entity) === tick) {
       return false;

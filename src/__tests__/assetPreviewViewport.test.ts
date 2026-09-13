@@ -145,8 +145,9 @@ describe('AssetPreviewViewport presentation', () => {
     viewport.select(ASSET_CATALOG.find((entry) => entry.id === 'effect-base')!);
     viewport.render(20);
     const scene = boundary.render.mock.lastCall![0];
-    const owned = ['preview-floor', 'tile-guide', 'pellet-effect'].map((name) => scene.getObjectByName(name) as Mesh<BufferGeometry, Material> | LineSegments<BufferGeometry, Material>);
+    const owned = ['preview-floor', 'tile-guide'].map((name) => scene.getObjectByName(name) as Mesh<BufferGeometry, Material> | LineSegments<BufferGeometry, Material>);
     const resources = new Set(owned.flatMap((object) => [object.geometry, object.material]));
+    resources.add((scene.getObjectByName('pellet-effect') as Mesh<BufferGeometry, Material>).material);
     const disposals = [...resources].map((resource) => vi.spyOn(resource, 'dispose'));
     expect(addEventListener).toHaveBeenCalledWith('wheel', expect.any(Function), { passive: false });
 

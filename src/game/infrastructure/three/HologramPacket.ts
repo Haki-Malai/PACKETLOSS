@@ -1,9 +1,10 @@
 import {
   AdditiveBlending, BoxGeometry, BufferGeometry, Camera, Color, DataTexture, Float32BufferAttribute,
-  Group, LinearFilter, Material, MathUtils, Mesh, MeshBasicMaterial, MeshStandardMaterial,
+  Group, LinearFilter, Material, MathUtils, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D,
   PlaneGeometry, Quaternion, Vector3,
 } from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { StateTransition } from './StateTransition';
 
 interface FloatingPiece {
   mesh: Mesh<BufferGeometry, MeshBasicMaterial>;
@@ -18,6 +19,10 @@ interface FloatingPiece {
 }
 
 const CYAN = 0x00aeff;
+const GOLD = 0xffc34d;
+const GOLD_COLOR = new Color(GOLD);
+const PICKUP_RIM_COLOR = new Color(0xb8f9ff);
+const HUNTER_RIM_COLOR = new Color(0xfff1ba);
 
 /** A shaded solid body with readable floating details, sampled only from the game clock. */
 export class HologramPacket {
@@ -28,11 +33,18 @@ export class HologramPacket {
   private readonly plane = this.ownGeometry(new PlaneGeometry(1, 1));
   private readonly cube = this.ownGeometry(new BoxGeometry(1, 1, 1));
   private readonly glyphs = [this.ownGeometry(createDigitGeometry(false)), this.ownGeometry(createDigitGeometry(true))];
+  private readonly hunterEyes = [-1, 1].map((side) => this.ownGeometry(createHunterEyeGeometry(side)));
   private readonly halo = createHaloTexture();
   private readonly body = new Group();
   private readonly gaze = new Group();
   private readonly eyes: FloatingPiece[] = [];
-  private readonly eyeEdges: Mesh<PlaneGeometry, MeshBasicMaterial>[] = [];
+  private readonly eyeEdges: Mesh<BufferGeometry, MeshBasicMaterial>[] = [];
+  private readonly eyeSockets: Mesh<BufferGeometry, MeshStandardMaterial>[] = [];
+  private readonly hunterRig = new Group();
+  private readonly intake = new Group();
+  private readonly intakeJaws: Mesh<PlaneGeometry, MeshBasicMaterial>[] = [];
+  private readonly intakeCavity: Mesh<PlaneGeometry, MeshBasicMaterial>;
+  private readonly pickupRims = new Set<MeshBasicMaterial>();
   private readonly digits: FloatingPiece[] = [];
   private readonly pixels: Mesh<BufferGeometry, MeshBasicMaterial>[] = [];
   private readonly streaks: FloatingPiece[] = [];
@@ -48,9 +60,16 @@ export class HologramPacket {
   private readonly viewMotion = new Vector3();
   private readonly inverseRoot = new Quaternion();
   private readonly cameraRotation = new Quaternion();
+  private readonly powerTransition = new StateTransition(0.32);
+  private readonly powerColor = new Color(CYAN);
+  private readonly pickupColor = new Color();
   private frame = 0;
   private trailOpacity = 0;
   private deathProgress: number | null = null;
+  private powered = false;
+  private powerWarning = false;
+  private powerAmount: number | undefined;
+  private ghostEatProgress: number | null = null;
   private disposed = false;
 
   constructor() {
@@ -60,6 +79,10 @@ export class HologramPacket {
     this.body.name = 'hologram-body';
     this.body.scale.x = 1.2;
     this.model.add(this.body);
+    const pickupTarget = new Object3D();
+    pickupTarget.name = 'pickup-target';
+    pickupTarget.position.y = 2.15;
+    this.body.add(pickupTarget);
     // Fixed, closely matched tones keep scene lighting from darkening the side walls.
     const topMaterial = this.material('core-top', 0x030b11);
     const sideMaterial = this.material('core-side', 0x030a10);
@@ -138,12 +161,38 @@ export class HologramPacket {
       socket.name = `eye-socket-${sideName}`;
       socket.position.set(x, 0.04, 2.13);
       socket.scale.set(1.02, 2.14, 0.2);
+      this.eyeSockets.push(socket);
       const glow = this.glow(`glow-eye-${sideName}`, x, 0.04, 2.24, 1.8, 3.1, 0.35);
-      const edge = this.rect(`eye-edge-${sideName}`, x, 0.04, 2.25, 0.72, 1.83, CYAN, 1);
+      const edge: Mesh<BufferGeometry, MeshBasicMaterial> = this.rect(`eye-edge-${sideName}`, x, 0.04, 2.25, 0.72, 1.83, CYAN, 1);
+      edge.geometry = this.hunterEyes[i];
+      edge.updateMorphTargets();
       this.eyeEdges.push(edge);
-      const mesh = this.rect(`eye-${sideName}`, x, 0.04, 2.27, 0.56, 1.67, 0xe9fdff, 1);
+      const mesh: Mesh<BufferGeometry, MeshBasicMaterial> = this.rect(`eye-${sideName}`, x, 0.04, 2.27, 0.56, 1.67, 0xe9fdff, 1);
+      mesh.geometry = this.hunterEyes[i];
+      mesh.updateMorphTargets();
       this.gaze.add(socket, glow, edge, mesh);
       this.eyes.push({ mesh, glow, x, y: 0.04, width: 0.56, height: 1.67, phase: 0, period: 1 });
+    }
+
+    this.hunterRig.name = 'hunter-rig';
+    this.hunterRig.visible = false;
+    face.add(this.hunterRig);
+    for (const side of [-1, 1]) {
+      const prong = this.rect(`hunter-prong-${side}`, side * 3, 1.4, 2.22, 0.24, 1.5, GOLD, 1);
+      prong.rotation.z = -side * 0.32;
+      this.hunterRig.add(prong);
+    }
+    this.intake.name = 'ghost-intake';
+    this.intake.position.z = 2.3;
+    this.hunterRig.add(this.intake);
+    this.intakeCavity = new Mesh(this.plane, this.material('intake-cavity', 0x000205));
+    this.intakeCavity.name = 'intake-cavity';
+    this.intakeCavity.scale.set(1.72, 0.1, 1);
+    this.intake.add(this.intakeCavity);
+    for (const [index, side] of [-1, 1].entries()) {
+      const jaw = this.rect(index === 0 ? 'intake-jaw-bottom' : 'intake-jaw-top', 0, side * 0.12, 0.02, 1.9, 0.14, GOLD, 1);
+      this.intake.add(jaw);
+      this.intakeJaws.push(jaw);
     }
 
     const positions = [
@@ -219,7 +268,10 @@ export class HologramPacket {
       if (!(object instanceof Mesh)) return;
       const mesh = object as Mesh<BufferGeometry, Material | Material[]>;
       const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const material of materials) this.clipGlitchBands(material, -1);
+      for (const material of materials) {
+        this.clipGlitchBands(material, -1);
+        if (material instanceof MeshBasicMaterial && /^(side-)?rim-/.test(material.name)) this.pickupRims.add(material);
+      }
     });
     this.sample(0);
   }
@@ -227,21 +279,52 @@ export class HologramPacket {
   sample(timeSeconds: number): void {
     if (this.disposed) return;
     const time = Math.max(0, timeSeconds);
+    const pickup = this.deathProgress === null ? this.frame / 3 : 0;
+    const hunter = this.deathProgress === null
+      ? this.powerTransition.sample(Number(this.powered || this.ghostEatProgress !== null), time, this.powerAmount)
+      : this.powerTransition.reset();
+    const accent = this.powerColor.setHex(CYAN).lerp(GOLD_COLOR, hunter);
+    const warning = this.powerWarning ? MathUtils.lerp(1, 0.6 + Math.sin(time * 16) * 0.4, hunter) : 1;
+    this.pickupColor.copy(PICKUP_RIM_COLOR).lerp(HUNTER_RIM_COLOR, hunter);
     this.model.position.x = 0;
     this.model.position.y = 6.15 + Math.sin(time * 1.7) * 0.16;
-    this.model.scale.setScalar(1.15 * (1 + Math.sin(time * 2.2) * 0.008 + this.frame * 0.0015));
+    this.model.scale.setScalar(1.15 * (1 + Math.sin(time * 2.2) * 0.008));
     this.body.scale.set(1.2, 1, 1);
+    for (const material of this.pickupRims) {
+      material.color.copy(accent).lerp(this.pickupColor, pickup);
+      material.opacity = (0.85 + pickup * 0.15) * warning;
+    }
     this.body.visible = true;
     this.glitchActive.value = 0;
     // The upper face's local Y axis points toward negative world Z.
     this.gaze.position.set(this.motion.x * this.trailOpacity * 0.65, -this.motion.z * this.trailOpacity * 0.8, 0);
+    this.gaze.position.y = MathUtils.lerp(this.gaze.position.y, 1.05 - this.motion.z * this.trailOpacity * 0.18, hunter);
     const blinkPhase = time % 5.8;
     const blink = blinkPhase > 5.3 && blinkPhase < 5.56 ? 1 - Math.sin((blinkPhase - 5.3) / 0.26 * Math.PI) : 1;
-    for (const edge of this.eyeEdges) edge.scale.y = 1.83 * blink;
+    for (const [index, edge] of this.eyeEdges.entries()) {
+      if (edge.morphTargetInfluences) edge.morphTargetInfluences[0] = hunter;
+      edge.scale.set(MathUtils.lerp(0.72, 0.98, hunter), MathUtils.lerp(1.83, 1.18, hunter) * blink, 1);
+      edge.material.color.copy(accent);
+      this.eyeSockets[index].scale.y = MathUtils.lerp(2.14, 1.35, hunter);
+    }
     for (const eye of this.eyes) {
-      eye.mesh.scale.y = eye.height * blink;
+      if (eye.mesh.morphTargetInfluences) eye.mesh.morphTargetInfluences[0] = hunter;
+      eye.mesh.scale.set(MathUtils.lerp(eye.width, 0.82, hunter), MathUtils.lerp(eye.height, 1, hunter) * blink, 1);
       eye.mesh.material.opacity = 0.96 + Math.sin(time * 2.8) * 0.04;
-      if (eye.glow) eye.glow.material.opacity = (0.35 + Math.sin(time * 2.8) * 0.04) * blink;
+      if (eye.glow) {
+        eye.glow.scale.y = MathUtils.lerp(3.1, 1.9, hunter);
+        eye.glow.material.color.copy(accent);
+        eye.glow.material.opacity = (0.35 + Math.sin(time * 2.8) * 0.04) * blink;
+      }
+    }
+    this.hunterRig.visible = hunter > 0;
+    this.hunterRig.scale.set(MathUtils.lerp(0.55, 1, hunter), hunter, 1);
+    const eating = this.deathProgress === null ? this.ghostEatProgress : null;
+    const opening = eating === null ? 0 : MathUtils.smoothstep(eating, 0, 0.25) * (1 - MathUtils.smoothstep(eating, 0.75, 0.95));
+    this.intakeCavity.scale.y = 0.1 + opening * 0.6;
+    for (const [index, jaw] of this.intakeJaws.entries()) {
+      jaw.position.y = (index === 0 ? -1 : 1) * (0.12 + opening * 0.3);
+      jaw.material.color.setHex(GOLD).lerp(HUNTER_RIM_COLOR, eating === null ? 0 : MathUtils.smoothstep(eating, 0.65, 0.85));
     }
     for (const [i, digit] of this.digits.entries()) {
       const switchTime = time + (this.deathProgress ?? 0) * 8;
@@ -255,11 +338,13 @@ export class HologramPacket {
       digit.mesh.position.y = digit.y + (digit.surface ? 0 : (phase - 0.5) * 0.5);
       digit.mesh.position.z = digit.surface ? 2.145 : 1.5 + Math.sin(time * 0.7 + i * 1.4) * 0.35;
       digit.mesh.material.opacity = digit.surface ? 0.45 + opacity * 0.45 : opacity * (i % 2 === 0 ? 1 : 0.9);
+      digit.mesh.material.color.setHex(!digit.surface && i % 5 === 0 ? 0x40dcff : CYAN).lerp(GOLD_COLOR, hunter);
       digit.mesh.visible = digit.surface === true || opacity > 0.015;
     }
     for (const [i, pixel] of this.pixels.entries()) {
       const step = Math.floor(time / (0.7 + noise(i + 650) * 1.1));
       pixel.material.opacity = 0.2 + noise(step * 23 + i * 43 + 700) * 0.6;
+      pixel.material.color.copy(accent);
     }
     this.trail.visible = this.trailOpacity > 0.01;
     for (const streak of this.streaks) {
@@ -269,6 +354,7 @@ export class HologramPacket {
       streak.mesh.position.y = streak.y;
       streak.mesh.scale.x = streak.width * (1 - phase * 0.3);
       streak.mesh.material.opacity = envelope * this.trailOpacity * 0.75;
+      streak.mesh.material.color.copy(accent);
       streak.mesh.visible = envelope > 0.02;
     }
     this.deathEffect.visible = this.deathProgress !== null;
@@ -297,6 +383,17 @@ export class HologramPacket {
 
   setDeathProgress(progress: number | null): void {
     this.deathProgress = progress === null ? null : MathUtils.clamp(progress, 0, 1);
+    if (this.deathProgress !== null) this.powerTransition.reset();
+  }
+
+  setPower(powered: boolean, warning = false, amount?: number): void {
+    this.powered = powered;
+    this.powerWarning = warning;
+    this.powerAmount = amount;
+  }
+
+  setGhostEatProgress(progress: number | null): void {
+    this.ghostEatProgress = progress === null ? null : MathUtils.clamp(progress, 0, 1);
   }
 
   setFrame(frame: number): void {
@@ -451,5 +548,26 @@ function createDigitGeometry(one: boolean): BufferGeometry {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));
   geometry.setAttribute('normal', new Float32BufferAttribute(normals, 3));
+  return geometry;
+}
+
+function createHunterEyeGeometry(side: number): BufferGeometry {
+  const outer = side * 0.5;
+  const inner = -outer;
+  const vertices = [outer, 0.5, 0, outer, -0.5, 0, inner, 0.18, 0, inner, 0.18, 0, outer, -0.5, 0, inner, -0.5, 0];
+  // Mirror the wedge while keeping its visible face toward the camera.
+  if (side > 0) {
+    for (let triangle = 0; triangle < 2; triangle += 1) {
+      const offset = triangle * 9;
+      for (let axis = 0; axis < 3; axis += 1) {
+        [vertices[offset + 3 + axis], vertices[offset + 6 + axis]] = [vertices[offset + 6 + axis], vertices[offset + 3 + axis]];
+      }
+    }
+  }
+  const geometry = new BufferGeometry();
+  const rectangle = vertices.map((value, index) => index % 3 === 1 && value > 0 ? 0.5 : value);
+  geometry.setAttribute('position', new Float32BufferAttribute(rectangle, 3));
+  geometry.morphAttributes.position = [new Float32BufferAttribute(vertices, 3)];
+  geometry.computeVertexNormals();
   return geometry;
 }

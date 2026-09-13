@@ -51,10 +51,12 @@ export class GhostReleaseSystem {
 
   update(): void {
     this.world.ghosts.forEach((ghost) => {
-      if (!ghost.active) {
+      if (!ghost.active || ghost.state.dead) {
         this.cleanupGhostReleaseState(ghost);
+        ghost.resetAbilities();
         return;
       }
+      ghost.speed = ghost.baseSpeed * (ghost.state.scared ? 0.5 : 1);
 
       if (this.shouldQueueRelease(ghost)) {
         this.queueGhostRelease(ghost);
@@ -71,7 +73,7 @@ export class GhostReleaseSystem {
           this.world.ghostJailBounds,
           this.movementRules,
           this.rng,
-          GHOST_JAIL_MOVE_SPEED,
+          Math.min(GHOST_JAIL_MOVE_SPEED, ghost.speed),
         );
         this.movementRules.syncEntityPosition(ghost);
       }
@@ -85,7 +87,7 @@ export class GhostReleaseSystem {
   }
 
   queueGhostRelease(ghost: GhostEntity, delayMs: number = GHOST_JAIL_RELEASE_DELAY_MS): void {
-    if (!ghost.active || ghost.state.free) {
+    if (!ghost.active || ghost.state.dead || ghost.state.free) {
       return;
     }
 
@@ -108,7 +110,7 @@ export class GhostReleaseSystem {
   }
 
   private releaseGhost(ghost: GhostEntity, _ghostIndex: number): void {
-    if (!ghost.active || ghost.state.free || !ghost.state.soonFree) {
+    if (!ghost.active || ghost.state.dead || ghost.state.free || !ghost.state.soonFree) {
       return;
     }
 
@@ -330,6 +332,7 @@ export class GhostReleaseSystem {
     ghost.direction = 'up';
     ghost.state.free = true;
     ghost.state.soonFree = false;
+    ghost.resetAbilities();
   }
 
   private cleanupGhostReleaseState(ghost: GhostEntity): void {
