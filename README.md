@@ -2,7 +2,7 @@
 
 PACKETLOSS is a maze arcade game for the browser, built with TypeScript, Vite, and Three.js. Requires WebGL 2.
 
-Collect pellets, avoid ghosts, and use power pellets to turn the chase around. The game includes ghost pen/release behavior, lives and respawn recovery, linked portals, a following camera, and desktop/mobile controls. Maps are made in Tiled.
+Collect pellets, avoid enemies, and use power pellets to turn the chase around. The game includes enemy pen/release behavior, lives and respawn recovery, linked portals, a following camera, and desktop/mobile controls. Start from the title screen, clear the maze or retry after losing all lives, and keep scores in a device-local profile. Maps are made in Tiled.
 
 ## Documentation
 
@@ -13,7 +13,11 @@ Collect pellets, avoid ghosts, and use power pellets to turn the chase around. T
 ## Controls
 
 - Move: arrow keys or WASD; swipe on mobile.
-- Pause/resume: Space, click, or tap. Leaving the window pauses an active game; returning resumes it unless it was manually paused.
+- Pause: Space, Escape, the HUD pause button, or a click/tap on the game canvas. Resume through the pause menu or Space/Escape; clicking its backdrop does not resume.
+- Navigate menus with Tab and Enter/Space; Escape returns from a submenu. Restarting or leaving an unfinished run requires confirmation.
+- Leaving the window pauses an active game; returning resumes only a focus-caused pause with no explicit menu interaction.
+
+Settings include menu motion and fullscreen where supported. Sound is a disabled placeholder for future support. Profile & records stores an optional nickname, top scores, and recent completed runs on this device; there are no accounts, online leaderboards, or saved unfinished runs.
 
 ## Development
 
@@ -34,7 +38,7 @@ After editing its Tiled map, run `pnpm map:demo:convert` to regenerate the demo 
 
 ## Project layout
 
-- `src/main.ts` starts the game.
+- `src/main.ts` opens the title/menu shell; starting a run initializes the game.
 - `src/engine/` contains the loop, camera, input, timers, and tweens.
 - `src/game/` contains gameplay logic, runtime wiring, map loading, Three.js presentation, and UI integration.
 - `public/assets/` contains fonts and maze data.

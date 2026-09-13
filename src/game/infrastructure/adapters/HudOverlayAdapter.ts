@@ -7,74 +7,50 @@ export class HudOverlayAdapter {
   private readonly onScoreChanged: (_score: number) => void;
   private readonly onLivesChanged: (_lives: number) => void;
 
-  constructor(private readonly mount: HTMLElement) {
+  constructor(private readonly mount: HTMLElement, onPause?: () => void) {
     this.mount.querySelector('[data-game-hud]')?.remove();
 
     this.container = document.createElement('div');
-    this.container.className =
-      'pointer-events-none absolute inset-x-0 bottom-0 z-50 flex items-center justify-between gap-4 bg-black/90 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-100 sm:text-sm';
-    this.container.style.position = 'fixed';
-    this.container.style.left = '0';
-    this.container.style.right = '0';
-    this.container.style.bottom = '0';
-    this.container.style.zIndex = '9998';
-    this.container.style.pointerEvents = 'none';
-    this.container.style.display = 'flex';
-    this.container.style.alignItems = 'center';
-    this.container.style.justifyContent = 'space-between';
-    this.container.style.gap = '1rem';
-    this.container.style.padding = '10px 16px';
-    this.container.style.background = 'rgba(0, 0, 0, 0.9)';
-    this.container.style.borderTop = '1px solid rgba(255, 255, 255, 0.18)';
-    this.container.style.color = '#f4f4f5';
-    this.container.style.fontSize = '14px';
-    this.container.style.fontWeight = '600';
-    this.container.style.letterSpacing = '0.12em';
-    this.container.style.textTransform = 'uppercase';
-    this.container.style.fontFamily = '"Orbitron", ui-sans-serif, system-ui, sans-serif';
+    this.container.className = 'packet-hud';
     this.container.setAttribute('data-game-hud', 'true');
 
     const scoreSection = document.createElement('div');
-    scoreSection.className = 'flex min-w-0 items-center gap-2';
-    scoreSection.style.display = 'flex';
-    scoreSection.style.alignItems = 'center';
-    scoreSection.style.gap = '0.5rem';
+    scoreSection.className = 'packet-hud-section';
     scoreSection.setAttribute('data-hud-score', 'true');
 
     const scoreLabel = document.createElement('span');
-    scoreLabel.className = 'text-zinc-400';
-    scoreLabel.style.color = '#a1a1aa';
+    scoreLabel.className = 'packet-hud-label';
     scoreLabel.textContent = 'Score';
 
     this.scoreText = document.createElement('span');
-    this.scoreText.className = 'tabular-nums text-zinc-100';
-    this.scoreText.style.color = '#f4f4f5';
-    this.scoreText.style.fontVariantNumeric = 'tabular-nums';
+    this.scoreText.className = 'packet-hud-score';
     this.scoreText.setAttribute('data-hud-score-value', 'true');
 
     scoreSection.append(scoreLabel, this.scoreText);
 
     const livesSection = document.createElement('div');
-    livesSection.className = 'flex items-center justify-end gap-2';
-    livesSection.style.display = 'flex';
-    livesSection.style.alignItems = 'center';
-    livesSection.style.justifyContent = 'flex-end';
-    livesSection.style.gap = '0.5rem';
+    livesSection.className = 'packet-hud-section';
     livesSection.setAttribute('data-hud-lives', 'true');
 
     const livesLabel = document.createElement('span');
-    livesLabel.className = 'text-zinc-400';
-    livesLabel.style.color = '#a1a1aa';
+    livesLabel.className = 'packet-hud-label';
     livesLabel.textContent = 'Lives';
 
     this.livesCountText = document.createElement('span');
-    this.livesCountText.className = 'tabular-nums text-zinc-300';
-    this.livesCountText.style.color = '#d4d4d8';
-    this.livesCountText.style.fontVariantNumeric = 'tabular-nums';
+    this.livesCountText.className = 'packet-hud-lives';
     this.livesCountText.setAttribute('data-hud-lives-value', 'true');
 
     livesSection.append(livesLabel, this.livesCountText);
     this.container.append(scoreSection, livesSection);
+    if (onPause) {
+      const pause = document.createElement('button');
+      pause.type = 'button';
+      pause.className = 'packet-button packet-hud-pause';
+      pause.textContent = 'Pause';
+      pause.setAttribute('data-hud-pause', 'true');
+      pause.addEventListener('click', onPause);
+      this.container.append(pause);
+    }
 
     const state = getGameState();
     this.setScore(state.score);

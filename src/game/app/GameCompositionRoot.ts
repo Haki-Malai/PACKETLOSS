@@ -28,7 +28,6 @@ import { EnemyReleaseSystem } from '../systems/EnemyReleaseSystem';
 import { HudSystem } from '../systems/HudSystem';
 import { InputSystem } from '../systems/InputSystem';
 import { PacketMovementSystem } from '../systems/PacketMovementSystem';
-import { PauseOverlaySystem } from '../systems/PauseOverlaySystem';
 import { RenderSystem } from '../systems/RenderSystem';
 import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
 import { ComposedGame, RuntimeControl } from './contracts';
@@ -154,8 +153,7 @@ export class GameCompositionRoot {
       const animationSystem = new AnimationSystem(world, SPEED.enemy);
       const cameraSystem = new CameraSystem(world, camera, renderer, canvas);
       const collectibleSystem = new CollectibleSystem(world);
-      const hudSystem = new HudSystem(mount);
-      const pauseOverlaySystem = new PauseOverlaySystem(world, mount);
+      const hudSystem = new HudSystem(mount, () => runtimeControl.pause());
       const debugSystem = new DebugOverlaySystem(world, camera);
       renderSystem = new RenderSystem(world, renderer, camera, collectibleSystem, assets);
 
@@ -171,7 +169,6 @@ export class GameCompositionRoot {
         cameraSystem,
         collectibleSystem,
         hudSystem,
-        pauseOverlaySystem,
         debugSystem,
       ];
 
