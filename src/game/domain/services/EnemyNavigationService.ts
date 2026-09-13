@@ -3,7 +3,7 @@ import { TilePosition } from '../valueObjects/TilePosition';
 import { CollisionGrid } from '../world/CollisionGrid';
 import { canMove } from './MovementRules';
 import { PortalService } from './PortalService';
-import { GhostJailBounds } from '../world/WorldState';
+import { EnemyJailBounds } from '../world/WorldState';
 
 export const NAVIGATION_DIRECTIONS: readonly Direction[] = ['up', 'right', 'down', 'left'];
 
@@ -29,7 +29,7 @@ export class EnemyNavigationService {
     private readonly tileSize: number,
     private readonly portals: PortalService,
     private readonly mode: 'normal' | 'returning' = 'normal',
-    private readonly jailBounds?: GhostJailBounds,
+    private readonly jailBounds?: EnemyJailBounds,
   ) {}
 
   getSteps(tile: TilePosition): NavigationStep[] {
@@ -42,7 +42,7 @@ export class EnemyNavigationService {
       if (portal) {
         steps.push({ tile: { ...tile }, direction, destination: portal, cost: 0.5 });
       } else if (this.isJailReturnEdge(tile, destination) ||
-        canMove(direction, 0, 0, collision, this.tileSize, this.mode === 'returning' ? 'ghostRelease' : 'ghost')) {
+        canMove(direction, 0, 0, collision, this.tileSize, this.mode === 'returning' ? 'enemyRelease' : 'enemy')) {
         steps.push({ tile: { ...tile }, direction, destination, cost: 1 });
       }
     }

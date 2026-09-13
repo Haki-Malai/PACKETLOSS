@@ -1,8 +1,8 @@
 import { ENEMY_CONFIG, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
-import { GhostEntity, GhostKey } from '../../game/domain/entities/GhostEntity';
+import { EnemyEntity, EnemyKey } from '../../game/domain/entities/EnemyEntity';
 import { PacketEntity } from '../../game/domain/entities/PacketEntity';
-import { GhostDecisionService } from '../../game/domain/services/GhostDecisionService';
-import { GhostJailService, getObjectNumberProperty } from '../../game/domain/services/GhostJailService';
+import { EnemyDecisionService } from '../../game/domain/services/EnemyDecisionService';
+import { EnemyJailService, getObjectNumberProperty } from '../../game/domain/services/EnemyJailService';
 import { MovementRules } from '../../game/domain/services/MovementRules';
 import { PortalService } from '../../game/domain/services/PortalService';
 import { TilePosition } from '../../game/domain/valueObjects/TilePosition';
@@ -12,19 +12,19 @@ import { TimerSchedulerAdapter } from '../../game/infrastructure/adapters/TimerS
 import { SeededRandom } from '../../game/shared/random/SeededRandom';
 import { AnimationSystem } from '../../game/systems/AnimationSystem';
 import { EnemyAbilitySystem } from '../../game/systems/EnemyAbilitySystem';
-import { GhostMovementSystem } from '../../game/systems/GhostMovementSystem';
-import { GhostPacketCollisionSystem } from '../../game/systems/GhostPacketCollisionSystem';
-import { GhostReleaseSystem } from '../../game/systems/GhostReleaseSystem';
+import { EnemyMovementSystem } from '../../game/systems/EnemyMovementSystem';
+import { EnemyPacketCollisionSystem } from '../../game/systems/EnemyPacketCollisionSystem';
+import { EnemyReleaseSystem } from '../../game/systems/EnemyReleaseSystem';
 import { PacketMovementSystem } from '../../game/systems/PacketMovementSystem';
 import { createHarnessMap, HarnessFixture } from './mechanicsDomainMapFactory';
 
 const DEFAULT_TICK_MS = 1000 / 60;
-const GHOST_KEYS: GhostKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
+const ENEMY_KEYS: EnemyKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
 
 export interface MechanicsDomainHarnessOptions {
   seed?: number;
   fixture?: HarnessFixture;
-  ghostCount?: number;
+  enemyCount?: number;
   autoStartSystems?: boolean;
 }
 
@@ -42,13 +42,13 @@ export class MechanicsDomainHarness {
   readonly world: WorldState;
   readonly movementRules: MovementRules;
   readonly scheduler: TimerSchedulerAdapter;
-  readonly jailService: GhostJailService;
+  readonly jailService: EnemyJailService;
   readonly portalService: PortalService;
-  readonly decisions: GhostDecisionService;
+  readonly decisions: EnemyDecisionService;
   readonly packetSystem: PacketMovementSystem;
-  readonly ghostReleaseSystem: GhostReleaseSystem;
-  readonly ghostMovementSystem: GhostMovementSystem;
-  readonly ghostPacketCollisionSystem: GhostPacketCollisionSystem;
+  readonly enemyReleaseSystem: EnemyReleaseSystem;
+  readonly enemyMovementSystem: EnemyMovementSystem;
+  readonly enemyPacketCollisionSystem: EnemyPacketCollisionSystem;
   readonly animationSystem: AnimationSystem;
   readonly enemyAbilitySystem: EnemyAbilitySystem;
 
@@ -62,7 +62,7 @@ export class MechanicsDomainHarness {
 
     const collisionGrid = new CollisionGrid(safeMap.tiles.map((row) => row.map((tile) => ({ ...tile.collision }))));
     this.movementRules = new MovementRules(tileSize);
-    this.jailService = new GhostJailService();
+    this.jailService = new EnemyJailService();
 
     const centerTile: TilePosition = {
       x: Math.floor(safeMap.width / 2),
@@ -70,34 +70,34 @@ export class MechanicsDomainHarness {
     };
 
     const packetTile = this.jailService.resolveSpawnTile(safeMap.packetSpawn, centerTile, safeMap);
-    const ghostJailBounds = this.jailService.resolveGhostJailBounds(safeMap, packetTile);
+    const enemyJailBounds = this.jailService.resolveEnemyJailBounds(safeMap, packetTile);
 
-    const ghostCountRaw = options.ghostCount ?? getObjectNumberProperty(safeMap.ghostHome, 'ghostCount') ?? 5;
-    const ghostCount = Math.max(0, Math.round(ghostCountRaw));
+    const enemyCountRaw = options.enemyCount ?? getObjectNumberProperty(safeMap.enemyHome, 'enemyCount') ?? 5;
+    const enemyCount = Math.max(0, Math.round(enemyCountRaw));
 
     const packet = new PacketEntity(packetTile, SPRITE_SIZE.packet, SPRITE_SIZE.packet);
     this.movementRules.setEntityTile(packet, packetTile);
 
-    const ghosts: GhostEntity[] = [];
-    for (let index = 0; index < ghostCount; index += 1) {
-      const range = ghostJailBounds.maxX - ghostJailBounds.minX + 1;
-      const randomSpawnX = ghostJailBounds.minX + rng.int(Math.max(1, range));
+    const enemies: EnemyEntity[] = [];
+    for (let index = 0; index < enemyCount; index += 1) {
+      const range = enemyJailBounds.maxX - enemyJailBounds.minX + 1;
+      const randomSpawnX = enemyJailBounds.minX + rng.int(Math.max(1, range));
       const spawnTile = {
         x: clamp(randomSpawnX, 0, safeMap.width - 1),
-        y: clamp(ghostJailBounds.y, 0, safeMap.height - 1),
+        y: clamp(enemyJailBounds.y, 0, safeMap.height - 1),
       };
 
-      const ghost = new GhostEntity({
-        key: GHOST_KEYS[index % GHOST_KEYS.length],
+      const enemy = new EnemyEntity({
+        key: ENEMY_KEYS[index % ENEMY_KEYS.length],
         tile: spawnTile,
         direction: rng.next() < 0.5 ? 'right' : 'left',
-        speed: ENEMY_CONFIG[GHOST_KEYS[index % GHOST_KEYS.length]].speed,
-        displayWidth: SPRITE_SIZE.ghost,
-        displayHeight: SPRITE_SIZE.ghost,
+        speed: ENEMY_CONFIG[ENEMY_KEYS[index % ENEMY_KEYS.length]].speed,
+        displayWidth: SPRITE_SIZE.enemy,
+        displayHeight: SPRITE_SIZE.enemy,
       });
 
-      this.movementRules.setEntityTile(ghost, spawnTile);
-      ghosts.push(ghost);
+      this.movementRules.setEntityTile(enemy, spawnTile);
+      enemies.push(enemy);
     }
 
     this.world = new WorldState({
@@ -106,39 +106,39 @@ export class MechanicsDomainHarness {
       collisionGrid,
       packetSpawnTile: packetTile,
       packet,
-      ghosts,
-      ghostJailBounds,
+      enemies,
+      enemyJailBounds,
     });
 
     this.scheduler = new TimerSchedulerAdapter();
     this.portalService = new PortalService(collisionGrid, safeMap.portalPairs ?? []);
-    this.decisions = new GhostDecisionService();
+    this.decisions = new EnemyDecisionService();
 
     this.packetSystem = new PacketMovementSystem(this.world, this.movementRules, this.portalService);
     this.enemyAbilitySystem = new EnemyAbilitySystem(this.world, this.movementRules, this.portalService, rng);
-    this.ghostReleaseSystem = new GhostReleaseSystem(this.world, this.movementRules, this.jailService, this.scheduler, rng);
-    this.ghostMovementSystem = new GhostMovementSystem(
+    this.enemyReleaseSystem = new EnemyReleaseSystem(this.world, this.movementRules, this.jailService, this.scheduler, rng);
+    this.enemyMovementSystem = new EnemyMovementSystem(
       this.world,
       this.movementRules,
       this.decisions,
       this.portalService,
       rng,
     );
-    this.ghostPacketCollisionSystem = new GhostPacketCollisionSystem(
+    this.enemyPacketCollisionSystem = new EnemyPacketCollisionSystem(
       this.world,
       this.movementRules,
-      SPEED.ghost,
+      SPEED.enemy,
     );
-    this.animationSystem = new AnimationSystem(this.world, SPEED.ghost);
+    this.animationSystem = new AnimationSystem(this.world, SPEED.enemy);
 
     if (options.autoStartSystems ?? true) {
-      this.ghostReleaseSystem.start();
+      this.enemyReleaseSystem.start();
       this.animationSystem.start();
     }
   }
 
   destroy(): void {
-    this.ghostReleaseSystem.destroy();
+    this.enemyReleaseSystem.destroy();
     this.scheduler.clear();
   }
 
@@ -148,9 +148,9 @@ export class MechanicsDomainHarness {
       this.scheduler.update(deltaMs);
       this.enemyAbilitySystem.update(deltaMs);
       this.packetSystem.update(deltaMs);
-      this.ghostReleaseSystem.update();
-      this.ghostMovementSystem.update();
-      this.ghostPacketCollisionSystem.update(deltaMs);
+      this.enemyReleaseSystem.update();
+      this.enemyMovementSystem.update();
+      this.enemyPacketCollisionSystem.update(deltaMs);
       this.animationSystem.update(deltaMs);
     }
   }

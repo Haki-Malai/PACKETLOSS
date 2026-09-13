@@ -1,6 +1,6 @@
-import { COLLECTIBLE_CONFIG, GHOST_SCARED_DURATION_MS } from '../../config/constants';
+import { COLLECTIBLE_CONFIG, ENEMY_SCARED_DURATION_MS } from '../../config/constants';
 import { addScore } from '../../state/gameState';
-import { setActiveGhostsScaredWindow } from '../domain/services/GhostScaredStateService';
+import { setActiveEnemiesScaredWindow } from '../domain/services/EnemyScaredStateService';
 import { buildPointLayout } from '../domain/services/PointLayoutService';
 import { TilePosition } from '../domain/valueObjects/TilePosition';
 import { WorldState } from '../domain/world/WorldState';
@@ -81,7 +81,7 @@ export class CollectibleSystem {
     const scoreDelta = point.kind === 'power' ? COLLECTIBLE_CONFIG[1].score : COLLECTIBLE_CONFIG[0].score;
     addScore(scoreDelta);
     if (point.kind === 'power') {
-      this.triggerScaredGhostWindow();
+      this.triggerScaredEnemyWindow();
     }
     this.triggerPacketEatAnimation();
 
@@ -96,9 +96,9 @@ export class CollectibleSystem {
     playback.sequenceIndex = 0;
   }
 
-  private triggerScaredGhostWindow(): void {
-    setActiveGhostsScaredWindow(this.world, GHOST_SCARED_DURATION_MS);
-    this.world.ghostEatChainCount = 0;
+  private triggerScaredEnemyWindow(): void {
+    setActiveEnemiesScaredWindow(this.world, ENEMY_SCARED_DURATION_MS);
+    this.world.enemyEatChainCount = 0;
   }
 
   private isPacketCenteredOnPoint(point: CollectiblePoint): boolean {

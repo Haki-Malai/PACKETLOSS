@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { SPEED, SPRITE_SIZE, TILE_SIZE } from '../config/constants';
-import { GhostEntity } from '../game/domain/entities/GhostEntity';
+import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import { PacketEntity } from '../game/domain/entities/PacketEntity';
-import { GhostDecisionService } from '../game/domain/services/GhostDecisionService';
+import { EnemyDecisionService } from '../game/domain/services/EnemyDecisionService';
 import { MovementRules } from '../game/domain/services/MovementRules';
 import { PortalService } from '../game/domain/services/PortalService';
-import { setGhostScaredWindow } from '../game/domain/services/GhostScaredStateService';
+import { setEnemyScaredWindow } from '../game/domain/services/EnemyScaredStateService';
 import { CollisionGrid, CollisionTile } from '../game/domain/world/CollisionGrid';
 import { WorldMapData, WorldState, WorldTile } from '../game/domain/world/WorldState';
 import { SeededRandom } from '../game/shared/random/SeededRandom';
 import { AnimationSystem } from '../game/systems/AnimationSystem';
-import { GhostMovementSystem } from '../game/systems/GhostMovementSystem';
+import { EnemyMovementSystem } from '../game/systems/EnemyMovementSystem';
 import { openTile, wallTile } from './fixtures/collisionFixtures';
 
 const STEP_MS = 1000 / 60;
@@ -50,7 +50,7 @@ function createMapFixture(collisionRows: CollisionTile[][]): { map: WorldMapData
   };
 }
 
-describe('ghost scared speed recovery', () => {
+describe('enemy scared speed recovery', () => {
   it('restores gameplay speed without skipping the next center or penetrating a blocked wall', () => {
     const collisionRows: CollisionTile[][] = [
       [wallTile(), wallTile(), wallTile(), wallTile(), wallTile()],
@@ -63,17 +63,17 @@ describe('ghost scared speed recovery', () => {
     const packet = new PacketEntity({ x: 1, y: 1 }, SPRITE_SIZE.packet, SPRITE_SIZE.packet);
     movementRules.setEntityTile(packet, { x: 1, y: 1 });
 
-    const ghost = new GhostEntity({
+    const enemy = new EnemyEntity({
       key: 'spam',
       tile: { x: 1, y: 1 },
       direction: 'right',
-      speed: SPEED.ghost,
-      displayWidth: SPRITE_SIZE.ghost,
-      displayHeight: SPRITE_SIZE.ghost,
+      speed: SPEED.enemy,
+      displayWidth: SPRITE_SIZE.enemy,
+      displayHeight: SPRITE_SIZE.enemy,
     });
-    movementRules.setEntityTile(ghost, { x: 1, y: 1 });
-    ghost.state.free = true;
-    ghost.state.soonFree = false;
+    movementRules.setEntityTile(enemy, { x: 1, y: 1 });
+    enemy.state.free = true;
+    enemy.state.soonFree = false;
 
     const world = new WorldState({
       map,
@@ -81,52 +81,52 @@ describe('ghost scared speed recovery', () => {
       collisionGrid,
       packetSpawnTile: { x: 1, y: 1 },
       packet,
-      ghosts: [ghost],
-      ghostJailBounds: { minX: 1, maxX: 3, y: 1 },
+      enemies: [enemy],
+      enemyJailBounds: { minX: 1, maxX: 3, y: 1 },
     });
 
-    const ghostMovement = new GhostMovementSystem(
+    const enemyMovement = new EnemyMovementSystem(
       world,
       movementRules,
-      new GhostDecisionService(),
+      new EnemyDecisionService(),
       new PortalService(collisionGrid, []),
       new SeededRandom(20260302),
     );
-    const animationSystem = new AnimationSystem(world, SPEED.ghost);
+    const animationSystem = new AnimationSystem(world, SPEED.enemy);
 
     animationSystem.start();
-    setGhostScaredWindow(world, ghost, 1);
+    setEnemyScaredWindow(world, enemy, 1);
     animationSystem.update(0);
 
-    ghostMovement.update();
+    enemyMovement.update();
     animationSystem.update(STEP_MS);
 
-    expect(ghost.state.scared).toBe(false);
-    expect(ghost.moved.x).toBe(0.5);
-    expect(ghost.speed).toBe(0.5);
+    expect(enemy.state.scared).toBe(false);
+    expect(enemy.moved.x).toBe(0.5);
+    expect(enemy.speed).toBe(0.5);
 
-    ghostMovement.update();
-    expect(ghost.speed).toBe(SPEED.ghost);
-    expect(ghost.moved.x).toBe(1.5);
+    enemyMovement.update();
+    expect(enemy.speed).toBe(SPEED.enemy);
+    expect(enemy.moved.x).toBe(1.5);
 
     let reachedNextCenter = false;
-    let maxGhostTileX = ghost.tile.x;
+    let maxEnemyTileX = enemy.tile.x;
     for (let i = 0; i < 80; i += 1) {
-      ghostMovement.update();
+      enemyMovement.update();
       animationSystem.update(STEP_MS);
-      maxGhostTileX = Math.max(maxGhostTileX, ghost.tile.x);
+      maxEnemyTileX = Math.max(maxEnemyTileX, enemy.tile.x);
 
-      if (ghost.tile.x === 2 && ghost.moved.x === 0) {
-        expect(ghost.moved.y).toBe(0);
+      if (enemy.tile.x === 2 && enemy.moved.x === 0) {
+        expect(enemy.moved.y).toBe(0);
         reachedNextCenter = true;
         break;
       }
     }
 
     expect(reachedNextCenter).toBe(true);
-    ghostMovement.update();
-    expect(ghost.direction).toBe('left');
-    expect(maxGhostTileX).toBeLessThanOrEqual(2);
-    expect(ghost.tile.x).not.toBe(3);
+    enemyMovement.update();
+    expect(enemy.direction).toBe('left');
+    expect(maxEnemyTileX).toBeLessThanOrEqual(2);
+    expect(enemy.tile.x).not.toBe(3);
   });
 });

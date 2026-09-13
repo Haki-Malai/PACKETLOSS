@@ -1,33 +1,33 @@
 import {
-  GHOST_EAT_CHAIN_SCORES,
+  ENEMY_EAT_CHAIN_SCORES,
   PACKET_DEATH_ANIMATION,
   PACKET_DEATH_RECOVERY,
   SPEED,
 } from '../../config/constants';
 import { addScore, getGameState, loseLife } from '../../state/gameState';
-import { GhostEntity } from '../domain/entities/GhostEntity';
+import { EnemyEntity } from '../domain/entities/EnemyEntity';
 import { CollisionBody } from '../domain/valueObjects/CollisionBody';
-import { GhostCollisionCandidate, findFirstCollision } from '../domain/services/GhostPacketCollisionService';
-import { clearGhostScaredWindow } from '../domain/services/GhostScaredStateService';
+import { EnemyCollisionCandidate, findFirstCollision } from '../domain/services/EnemyPacketCollisionService';
+import { clearEnemyScaredWindow } from '../domain/services/EnemyScaredStateService';
 import { MovementRules } from '../domain/services/MovementRules';
 import { WorldState } from '../domain/world/WorldState';
-import { GHOST_EAT_DURATION_MS } from '../shared/ghostEating';
+import { ENEMY_EAT_DURATION_MS } from '../shared/enemyEating';
 
 const PACKET_RESPAWN_DIRECTION = 'right';
 
-export class GhostPacketCollisionSystem {
+export class EnemyPacketCollisionSystem {
   constructor(
     private readonly world: WorldState,
     private readonly movementRules: MovementRules,
-    _defaultGhostSpeed: number = SPEED.ghost,
+    _defaultEnemySpeed: number = SPEED.enemy,
   ) {}
 
   update(deltaMs = 0): void {
     if (!this.world.isMoving) return;
     if (this.world.outcome) return;
     const elapsed = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
-    this.world.packet.ghostEatRemainingMs = Math.max(0, this.world.packet.ghostEatRemainingMs - elapsed);
-    this.resetGhostEatChainIfNoScaredGhosts();
+    this.world.packet.enemyEatRemainingMs = Math.max(0, this.world.packet.enemyEatRemainingMs - elapsed);
+    this.resetEnemyEatChainIfNoScaredEnemies();
     if (this.world.packet.deathAnimationRemainingMs > 0) {
       this.world.packet.deathAnimationRemainingMs = Math.max(0, this.world.packet.deathAnimationRemainingMs - elapsed);
       if (this.world.packet.deathAnimationRemainingMs === 0) {
@@ -40,13 +40,13 @@ export class GhostPacketCollisionSystem {
       return;
     }
 
-    const collisionActiveGhosts = this.world.ghosts.filter((ghost) => {
-      return ghost.active && ghost.state.free && !ghost.state.dead && !this.world.ghostsExitingJail.has(ghost);
+    const collisionActiveEnemies = this.world.enemies.filter((enemy) => {
+      return enemy.active && enemy.state.free && !enemy.state.dead && !this.world.enemiesExitingJail.has(enemy);
     });
 
     const collision = findFirstCollision({
       packet: this.toCollisionBody(this.world.packet),
-      ghosts: this.buildGhostCandidates(collisionActiveGhosts),
+      enemies: this.buildEnemyCandidates(collisionActiveEnemies),
     });
 
     if (!collision) {
@@ -62,15 +62,15 @@ export class GhostPacketCollisionSystem {
       return;
     }
 
-    this.applyGhostHitOutcome(collision.ghost);
-    this.resetGhostEatChainIfNoScaredGhosts();
+    this.applyEnemyHitOutcome(collision.enemy);
+    this.resetEnemyEatChainIfNoScaredEnemies();
   }
 
   destroy(): void {}
 
   private applyPacketHitOutcome(): void {
     loseLife();
-    this.world.packet.ghostEatRemainingMs = 0;
+    this.world.packet.enemyEatRemainingMs = 0;
     this.world.packet.deathAnimationRemainingMs = PACKET_DEATH_ANIMATION.durationMs;
   }
 
@@ -86,20 +86,20 @@ export class GhostPacketCollisionSystem {
     this.world.packet.deathRecoveryVisible = true;
   }
 
-  private applyGhostHitOutcome(ghost: GhostEntity): void {
-    const chainScoreIndex = Math.min(this.world.ghostEatChainCount, GHOST_EAT_CHAIN_SCORES.length - 1);
-    addScore(GHOST_EAT_CHAIN_SCORES[chainScoreIndex] ?? GHOST_EAT_CHAIN_SCORES[GHOST_EAT_CHAIN_SCORES.length - 1]);
-    this.world.ghostEatChainCount += 1;
+  private applyEnemyHitOutcome(enemy: EnemyEntity): void {
+    const chainScoreIndex = Math.min(this.world.enemyEatChainCount, ENEMY_EAT_CHAIN_SCORES.length - 1);
+    addScore(ENEMY_EAT_CHAIN_SCORES[chainScoreIndex] ?? ENEMY_EAT_CHAIN_SCORES[ENEMY_EAT_CHAIN_SCORES.length - 1]);
+    this.world.enemyEatChainCount += 1;
 
-    this.world.ghostsExitingJail.delete(ghost);
-    clearGhostScaredWindow(this.world, ghost);
-    ghost.speed = ghost.baseSpeed;
-    ghost.state.free = false;
-    ghost.state.soonFree = false;
-    ghost.state.dead = true;
-    ghost.state.animation = 'default';
-    ghost.eatenElapsedMs = 0;
-    this.world.packet.ghostEatRemainingMs = GHOST_EAT_DURATION_MS;
+    this.world.enemiesExitingJail.delete(enemy);
+    clearEnemyScaredWindow(this.world, enemy);
+    enemy.speed = enemy.baseSpeed;
+    enemy.state.free = false;
+    enemy.state.soonFree = false;
+    enemy.state.dead = true;
+    enemy.state.animation = 'default';
+    enemy.eatenElapsedMs = 0;
+    this.world.packet.enemyEatRemainingMs = ENEMY_EAT_DURATION_MS;
   }
 
   private isPacketInDeathRecovery(): boolean {
@@ -110,19 +110,19 @@ export class GhostPacketCollisionSystem {
     return (this.world.packet.portalBlinkRemainingMs ?? 0) > 0;
   }
 
-  private resetGhostEatChainIfNoScaredGhosts(): void {
-    const hasScaredGhost = this.world.ghosts.some((ghost) => ghost.active && ghost.state.scared);
-    if (!hasScaredGhost) {
-      this.world.ghostEatChainCount = 0;
+  private resetEnemyEatChainIfNoScaredEnemies(): void {
+    const hasScaredEnemy = this.world.enemies.some((enemy) => enemy.active && enemy.state.scared);
+    if (!hasScaredEnemy) {
+      this.world.enemyEatChainCount = 0;
     }
   }
 
-  private buildGhostCandidates(ghosts: GhostEntity[]): GhostCollisionCandidate[] {
-    return ghosts.map((ghost) => ({ ghost, body: this.toCollisionBody(ghost) }));
+  private buildEnemyCandidates(enemies: EnemyEntity[]): EnemyCollisionCandidate[] {
+    return enemies.map((enemy) => ({ enemy, body: this.toCollisionBody(enemy) }));
   }
 
   private toCollisionBody(
-    entity: Pick<GhostEntity, 'x' | 'y' | 'displayWidth' | 'displayHeight'>,
+    entity: Pick<EnemyEntity, 'x' | 'y' | 'displayWidth' | 'displayHeight'>,
   ): CollisionBody {
     return {
       x: entity.x,

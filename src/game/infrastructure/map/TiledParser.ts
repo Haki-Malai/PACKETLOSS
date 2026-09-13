@@ -388,6 +388,6 @@ export function parseTiledMap(map: TiledMap): WorldMapData {
     spawnObjects,
     collectibleObjects,
     packetSpawn: spawnObjects.find((object) => object.type === 'packet'),
-    ghostHome: spawnObjects.find((object) => object.type === 'ghost-home'),
+    enemyHome: spawnObjects.find((object) => object.type === 'enemy-home'),
   };
 }

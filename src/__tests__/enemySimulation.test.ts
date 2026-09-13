@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GhostDecisionService, simulateGhostMovement } from '../game/domain/services/GhostDecisionService';
+import { EnemyDecisionService, simulateEnemyMovement } from '../game/domain/services/EnemyDecisionService';
 import { CollisionGrid } from '../game/domain/world/CollisionGrid';
 import { SeededRandom } from '../game/shared/random/SeededRandom';
 import { createCollisionTile } from './fixtures/pointLayoutFixtures';
@@ -10,10 +10,10 @@ function gridFromRows(rows: string[]): CollisionGrid {
   ))));
 }
 
-describe('ghost movement decisions', () => {
+describe('enemy movement decisions', () => {
   it('continues through a corridor and reverses only at the dead end', () => {
     const grid = gridFromRows(['#####', '#...#', '#####']);
-    const decisions = new GhostDecisionService();
+    const decisions = new EnemyDecisionService();
     const rng = new SeededRandom(42);
 
     expect(decisions.chooseDirectionAtCenter('right', grid.getTilesAt({ x: 2, y: 1 }), 16, rng)).toBe('right');
@@ -23,14 +23,14 @@ describe('ghost movement decisions', () => {
 
   it('turns into the open perpendicular corridor when forward movement is blocked', () => {
     const grid = gridFromRows(['#####', '#..##', '##.##', '#####']);
-    const decisions = new GhostDecisionService();
+    const decisions = new EnemyDecisionService();
 
     expect(decisions.chooseDirectionWhenBlocked('right', 0, 0, grid.getTilesAt({ x: 2, y: 1 }), 16, new SeededRandom(42))).toBe('down');
   });
 
-  it.each([12345, 99999])('keeps a moving ghost out of walls and turns only at tile centers with seed %s', (seed) => {
+  it.each([12345, 99999])('keeps a moving enemy out of walls and turns only at tile centers with seed %s', (seed) => {
     const rows = ['#######', '#.....#', '#..#..#', '#..#..#', '#..#..#', '#.....#', '#######'];
-    const snapshots = simulateGhostMovement({
+    const snapshots = simulateEnemyMovement({
       collisionGrid: gridFromRows(rows), steps: 256, rng: new SeededRandom(seed), tileSize: 16, speed: 4,
       startTile: { x: 1, y: 1 }, startDirection: 'right',
     });

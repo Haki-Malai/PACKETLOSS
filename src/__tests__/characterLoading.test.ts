@@ -45,9 +45,9 @@ describe('Character model loading', () => {
       }
     }
     const packet = assets.createPacket();
-    const enemies = (['firewall', 'virus', 'ping', 'spam', 'lag'] as const).map((key) => assets.createGhost(key));
+    const enemies = (['firewall', 'virus', 'ping', 'spam', 'lag'] as const).map((key) => assets.createEnemy(key));
     const copies = Array.from({ length: 3 }, () => {
-      const copy = assets.createGhost('spam');
+      const copy = assets.createEnemy('spam');
       copy.scale.setScalar(0.8);
       return copy;
     });

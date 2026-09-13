@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { GHOST_SCARED_DURATION_MS } from '../config/constants';
-import { GhostEntity } from '../game/domain/entities/GhostEntity';
+import { ENEMY_SCARED_DURATION_MS } from '../config/constants';
+import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import { PacketEntity } from '../game/domain/entities/PacketEntity';
 import { MovementRules } from '../game/domain/services/MovementRules';
 import { WorldState } from '../game/domain/world/WorldState';
@@ -14,12 +14,12 @@ function createCollectibles(kind: 'pellet' | 'power-pellet' = 'pellet') {
   const packet = new PacketEntity({ x: 0, y: 0 }, 10, 10);
   const movement = new MovementRules(16);
   movement.setEntityTile(packet, packet.tile);
-  const ghosts = (['virus', 'firewall'] as const).map((key) => new GhostEntity({
+  const enemies = (['virus', 'firewall'] as const).map((key) => new EnemyEntity({
     key, tile: { x: 2, y: 0 }, direction: 'left', speed: 1, displayWidth: 11, displayHeight: 11,
   }));
   const world = new WorldState({
-    map, collisionGrid, tileSize: 16, packet, packetSpawnTile: packet.tile, ghosts,
-    ghostJailBounds: { minX: 2, maxX: 2, y: 0 },
+    map, collisionGrid, tileSize: 16, packet, packetSpawnTile: packet.tile, enemies,
+    enemyJailBounds: { minX: 2, maxX: 2, y: 0 },
   });
   return { world, movement, collectibles: new CollectibleSystem(world) };
 }
@@ -80,31 +80,31 @@ describe('CollectibleSystem', () => {
     expect(collectibles.getPointCount()).toBe(2);
   });
 
-  it('scares only active ghosts, then refreshes their warning window and resets the bonus chain', () => {
+  it('scares only active enemies, then refreshes their warning window and resets the bonus chain', () => {
     const { world, movement, collectibles } = createCollectibles('power-pellet');
-    const [activeGhost, inactiveGhost] = world.ghosts;
-    inactiveGhost.active = false;
-    world.ghostEatChainCount = 3;
+    const [activeEnemy, inactiveEnemy] = world.enemies;
+    inactiveEnemy.active = false;
+    world.enemyEatChainCount = 3;
 
     collectibles.update(16);
 
     expect(getGameState().score).toBe(50);
-    expect(activeGhost.state.scared).toBe(true);
-    expect(world.ghostScaredTimers.get(activeGhost)).toBe(GHOST_SCARED_DURATION_MS);
-    expect(inactiveGhost.state.scared).toBe(false);
-    expect(world.ghostScaredTimers.has(inactiveGhost)).toBe(false);
-    expect(world.ghostEatChainCount).toBe(0);
+    expect(activeEnemy.state.scared).toBe(true);
+    expect(world.enemyScaredTimers.get(activeEnemy)).toBe(ENEMY_SCARED_DURATION_MS);
+    expect(inactiveEnemy.state.scared).toBe(false);
+    expect(world.enemyScaredTimers.has(inactiveEnemy)).toBe(false);
+    expect(world.enemyEatChainCount).toBe(0);
 
-    world.ghostScaredTimers.set(activeGhost, 200);
-    world.ghostScaredWarnings.set(activeGhost, { elapsedMs: 900, nextToggleAtMs: 1000, showBaseColor: true });
-    world.ghostEatChainCount = 2;
+    world.enemyScaredTimers.set(activeEnemy, 200);
+    world.enemyScaredWarnings.set(activeEnemy, { elapsedMs: 900, nextToggleAtMs: 1000, showBaseColor: true });
+    world.enemyEatChainCount = 2;
     movement.setEntityTile(world.packet, { x: 1, y: 0 });
     collectibles.update(16);
 
     expect(getGameState().score).toBe(100);
-    expect(world.ghostScaredTimers.get(activeGhost)).toBe(GHOST_SCARED_DURATION_MS);
-    expect(world.ghostScaredWarnings.has(activeGhost)).toBe(false);
-    expect(world.ghostEatChainCount).toBe(0);
-    expect(inactiveGhost.state.scared).toBe(false);
+    expect(world.enemyScaredTimers.get(activeEnemy)).toBe(ENEMY_SCARED_DURATION_MS);
+    expect(world.enemyScaredWarnings.has(activeEnemy)).toBe(false);
+    expect(world.enemyEatChainCount).toBe(0);
+    expect(inactiveEnemy.state.scared).toBe(false);
   });
 });

@@ -3,20 +3,20 @@ import { MovementProgress } from '../valueObjects/MovementProgress';
 import { TilePosition } from '../valueObjects/TilePosition';
 import { RenderableEntity } from './PacketEntity';
 
-export type GhostAnimationState = 'default' | 'scared';
+export type EnemyAnimationState = 'default' | 'scared';
 
 export type EnemyArchetype = 'firewall' | 'virus' | 'ping' | 'spam' | 'lag';
-export type GhostKey = EnemyArchetype;
+export type EnemyKey = EnemyArchetype;
 
-export interface GhostState {
+export interface EnemyState {
   free: boolean;
   soonFree: boolean;
   scared: boolean;
   dead: boolean;
-  animation: GhostAnimationState;
+  animation: EnemyAnimationState;
 }
 
-export class GhostEntity implements RenderableEntity {
+export class EnemyEntity implements RenderableEntity {
   x = 0;
   y = 0;
   displayWidth: number;
@@ -27,8 +27,8 @@ export class GhostEntity implements RenderableEntity {
   depth = 2;
   active = true;
   moved: MovementProgress = { x: 0, y: 0 };
-  key: GhostKey;
-  state: GhostState;
+  key: EnemyKey;
+  state: EnemyState;
   direction: Direction;
   speed: number;
   readonly baseSpeed: number;
@@ -40,7 +40,7 @@ export class GhostEntity implements RenderableEntity {
   eatenElapsedMs: number | null = null;
 
   constructor(params: {
-    key: GhostKey;
+    key: EnemyKey;
     tile: TilePosition;
     direction: Direction;
     speed: number;

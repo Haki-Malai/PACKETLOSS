@@ -2,10 +2,10 @@ import { Camera3D } from '../../engine/camera3d';
 import { clamp } from '../../engine/math';
 import { ENEMY_CONFIG, INITIAL_LIVES, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { resetGameState } from '../../state/gameState';
-import { GhostEntity, GhostKey } from '../domain/entities/GhostEntity';
+import { EnemyEntity, EnemyKey } from '../domain/entities/EnemyEntity';
 import { PacketEntity } from '../domain/entities/PacketEntity';
-import { GhostDecisionService } from '../domain/services/GhostDecisionService';
-import { GhostJailService, getObjectNumberProperty } from '../domain/services/GhostJailService';
+import { EnemyDecisionService } from '../domain/services/EnemyDecisionService';
+import { EnemyJailService, getObjectNumberProperty } from '../domain/services/EnemyJailService';
 import { MovementRules } from '../domain/services/MovementRules';
 import { PortalService } from '../domain/services/PortalService';
 import { TilePosition } from '../domain/valueObjects/TilePosition';
@@ -22,9 +22,9 @@ import { CameraSystem } from '../systems/CameraSystem';
 import { CollectibleSystem } from '../systems/CollectibleSystem';
 import { DebugOverlaySystem } from '../systems/DebugOverlaySystem';
 import { EnemyAbilitySystem } from '../systems/EnemyAbilitySystem';
-import { GhostMovementSystem } from '../systems/GhostMovementSystem';
-import { GhostPacketCollisionSystem } from '../systems/GhostPacketCollisionSystem';
-import { GhostReleaseSystem } from '../systems/GhostReleaseSystem';
+import { EnemyMovementSystem } from '../systems/EnemyMovementSystem';
+import { EnemyPacketCollisionSystem } from '../systems/EnemyPacketCollisionSystem';
+import { EnemyReleaseSystem } from '../systems/EnemyReleaseSystem';
 import { HudSystem } from '../systems/HudSystem';
 import { InputSystem } from '../systems/InputSystem';
 import { PacketMovementSystem } from '../systems/PacketMovementSystem';
@@ -33,7 +33,7 @@ import { RenderSystem } from '../systems/RenderSystem';
 import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
 import { ComposedGame, RuntimeControl } from './contracts';
 
-const GHOST_KEYS: GhostKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
+const ENEMY_KEYS: EnemyKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
 
 export interface GameCompositionOptions {
   mountId?: string;
@@ -71,7 +71,7 @@ export class GameCompositionRoot {
 
       const collisionGrid = new CollisionGrid(map.tiles.map((row) => row.map((tile) => ({ ...tile.collision }))));
       const movementRules = new MovementRules(tileSize);
-      const jailService = new GhostJailService();
+      const jailService = new EnemyJailService();
 
       const centerTile: TilePosition = {
         x: Math.floor(map.width / 2),
@@ -79,50 +79,50 @@ export class GameCompositionRoot {
       };
 
       const packetTile = jailService.resolveSpawnTile(map.packetSpawn, centerTile, map);
-      const ghostJailBounds = jailService.resolveGhostJailBounds(map, packetTile);
+      const enemyJailBounds = jailService.resolveEnemyJailBounds(map, packetTile);
 
-      const ghostCountRaw = getObjectNumberProperty(map.ghostHome, 'ghostCount') ?? GHOST_KEYS.length;
-      const ghostCount = clamp(Math.round(ghostCountRaw), 0, GHOST_KEYS.length);
+      const enemyCountRaw = getObjectNumberProperty(map.enemyHome, 'enemyCount') ?? ENEMY_KEYS.length;
+      const enemyCount = clamp(Math.round(enemyCountRaw), 0, ENEMY_KEYS.length);
 
       const packet = new PacketEntity(packetTile, SPRITE_SIZE.packet, SPRITE_SIZE.packet);
       movementRules.setEntityTile(packet, packetTile);
 
-      const ghosts: GhostEntity[] = [];
-      const spawnRange = Math.max(1, ghostJailBounds.maxX - ghostJailBounds.minX + 1);
-      const spawnY = clamp(ghostJailBounds.y, 0, map.height - 1);
-      for (let i = 0; i < ghostCount; i += 1) {
-        const randomSpawnX = ghostJailBounds.minX + rng.int(spawnRange);
+      const enemies: EnemyEntity[] = [];
+      const spawnRange = Math.max(1, enemyJailBounds.maxX - enemyJailBounds.minX + 1);
+      const spawnY = clamp(enemyJailBounds.y, 0, map.height - 1);
+      for (let i = 0; i < enemyCount; i += 1) {
+        const randomSpawnX = enemyJailBounds.minX + rng.int(spawnRange);
         const spawnTile = {
           x: clamp(randomSpawnX, 0, map.width - 1),
           y: spawnY,
         };
 
-        const key = GHOST_KEYS[i];
-        const ghost = new GhostEntity({
+        const key = ENEMY_KEYS[i];
+        const enemy = new EnemyEntity({
           key,
           tile: spawnTile,
           direction: rng.next() < 0.5 ? 'right' : 'left',
           speed: ENEMY_CONFIG[key].speed,
-          displayWidth: SPRITE_SIZE.ghost,
-          displayHeight: SPRITE_SIZE.ghost,
+          displayWidth: SPRITE_SIZE.enemy,
+          displayHeight: SPRITE_SIZE.enemy,
         });
 
-        movementRules.setEntityTile(ghost, spawnTile);
-        ghosts.push(ghost);
+        movementRules.setEntityTile(enemy, spawnTile);
+        enemies.push(enemy);
       }
       // Reserve a bounded copy pool; inactive slots never enter jail release or collisions.
       for (let i = 1; i < ENEMY_CONFIG.spam.maxCount; i += 1) {
-        const copy = new GhostEntity({
+        const copy = new EnemyEntity({
           key: 'spam',
           isCopy: true,
           tile: packetTile,
           direction: 'right',
           speed: ENEMY_CONFIG.spam.speed,
-          displayWidth: SPRITE_SIZE.ghost * ENEMY_CONFIG.spam.copyScale,
-          displayHeight: SPRITE_SIZE.ghost * ENEMY_CONFIG.spam.copyScale,
+          displayWidth: SPRITE_SIZE.enemy * ENEMY_CONFIG.spam.copyScale,
+          displayHeight: SPRITE_SIZE.enemy * ENEMY_CONFIG.spam.copyScale,
         });
         movementRules.setEntityTile(copy, packetTile);
-        ghosts.push(copy);
+        enemies.push(copy);
       }
 
       resetGameState(0, INITIAL_LIVES);
@@ -133,8 +133,8 @@ export class GameCompositionRoot {
         collisionGrid,
         packetSpawnTile: packetTile,
         packet,
-        ghosts,
-        ghostJailBounds,
+        enemies,
+        enemyJailBounds,
       });
 
       const camera = new Camera3D();
@@ -143,15 +143,15 @@ export class GameCompositionRoot {
       const scheduler = new TimerSchedulerAdapter();
 
       const portalService = new PortalService(collisionGrid, map.portalPairs ?? []);
-      const ghostDecisions = new GhostDecisionService();
+      const enemyDecisions = new EnemyDecisionService();
 
       const inputSystem = new InputSystem(input, world, runtimeControl);
       const enemyAbilitySystem = new EnemyAbilitySystem(world, movementRules, portalService, rng);
       const packetSystem = new PacketMovementSystem(world, movementRules, portalService);
-      const ghostReleaseSystem = new GhostReleaseSystem(world, movementRules, jailService, scheduler, rng);
-      const ghostMovementSystem = new GhostMovementSystem(world, movementRules, ghostDecisions, portalService, rng);
-      const ghostPacketCollisionSystem = new GhostPacketCollisionSystem(world, movementRules, SPEED.ghost);
-      const animationSystem = new AnimationSystem(world, SPEED.ghost);
+      const enemyReleaseSystem = new EnemyReleaseSystem(world, movementRules, jailService, scheduler, rng);
+      const enemyMovementSystem = new EnemyMovementSystem(world, movementRules, enemyDecisions, portalService, rng);
+      const enemyPacketCollisionSystem = new EnemyPacketCollisionSystem(world, movementRules, SPEED.enemy);
+      const animationSystem = new AnimationSystem(world, SPEED.enemy);
       const cameraSystem = new CameraSystem(world, camera, renderer, canvas);
       const collectibleSystem = new CollectibleSystem(world);
       const hudSystem = new HudSystem(mount);
@@ -163,9 +163,9 @@ export class GameCompositionRoot {
         inputSystem,
         enemyAbilitySystem,
         packetSystem,
-        ghostReleaseSystem,
-        ghostMovementSystem,
-        ghostPacketCollisionSystem,
+        enemyReleaseSystem,
+        enemyMovementSystem,
+        enemyPacketCollisionSystem,
         animationSystem,
         renderSystem,
         cameraSystem,

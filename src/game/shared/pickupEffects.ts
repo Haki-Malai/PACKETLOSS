@@ -3,6 +3,7 @@ import { COLLECTIBLE_CONFIG } from '../../config/constants';
 export type CollectibleKind = 'base' | 'power';
 
 export interface EatEffect {
+  kind: CollectibleKind;
   x: number;
   y: number;
   elapsedMs: number;
@@ -22,5 +23,5 @@ export function samplePickupPulse(elapsedMs: number): number {
 
 export function createEatEffect(kind: CollectibleKind, x: number, y: number): EatEffect {
   const size = COLLECTIBLE_CONFIG[kind === 'power' ? 1 : 0].size;
-  return { x, y, elapsedMs: 0, durationMs: EAT_EFFECT_DURATION_MS, sizeStart: size, sizeEnd: 0 };
+  return { kind, x, y, elapsedMs: 0, durationMs: EAT_EFFECT_DURATION_MS, sizeStart: size, sizeEnd: 0 };
 }

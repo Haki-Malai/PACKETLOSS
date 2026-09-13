@@ -70,9 +70,9 @@ function makeMapFromCollisionGrid(grid: CollisionGrid, tileSize = TILE_SIZE): Wo
         ],
       },
       {
-        type: 'ghost-home',
+        type: 'enemy-home',
         properties: [
-          { name: 'ghostCount', value: 1 },
+          { name: 'enemyCount', value: 1 },
           { name: 'startX', value: 0 },
           { name: 'endX', value: Math.max(0, width - 1) },
           { name: 'gridY', value: clamp(centerY, 0, Math.max(0, height - 1)) },
@@ -86,10 +86,10 @@ function makeMapFromCollisionGrid(grid: CollisionGrid, tileSize = TILE_SIZE): Wo
         { name: 'gridY', value: centerY },
       ],
     },
-    ghostHome: {
-      type: 'ghost-home',
+    enemyHome: {
+      type: 'enemy-home',
       properties: [
-        { name: 'ghostCount', value: 1 },
+        { name: 'enemyCount', value: 1 },
         { name: 'startX', value: 0 },
         { name: 'endX', value: Math.max(0, width - 1) },
         { name: 'gridY', value: clamp(centerY, 0, Math.max(0, height - 1)) },

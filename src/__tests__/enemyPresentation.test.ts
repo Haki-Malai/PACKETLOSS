@@ -1,6 +1,6 @@
 import { BufferGeometry, LineSegments, Material, Mesh } from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { GhostEntity } from '../game/domain/entities/GhostEntity';
+import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import type { EnemyEffect, LagZone } from '../game/domain/world/WorldState';
 import { EnemyEffects } from '../game/infrastructure/three/EnemyEffects';
 import { createCollisionTile, createMapFixture, createRenderHarness, createWorld } from './fixtures/renderFixtures';
@@ -9,12 +9,12 @@ describe('enemy presentation', () => {
   it('shows a pooled copy at its activation tile and removes its model and debug marker on deactivation', () => {
     const { map, collisionGrid } = createMapFixture([[createCollisionTile(), createCollisionTile(), createCollisionTile()]]);
     const world = createWorld(map, collisionGrid, { x: 0, y: 0 });
-    const original = new GhostEntity({ key: 'spam', tile: { x: 0, y: 0 }, direction: 'right', speed: 1, displayWidth: 11, displayHeight: 11 });
-    const copy = new GhostEntity({ key: 'spam', tile: { x: 0, y: 0 }, direction: 'right', speed: 1, displayWidth: 8.8, displayHeight: 8.8, isCopy: true });
-    world.ghosts.push(original, copy);
+    const original = new EnemyEntity({ key: 'spam', tile: { x: 0, y: 0 }, direction: 'right', speed: 1, displayWidth: 11, displayHeight: 11 });
+    const copy = new EnemyEntity({ key: 'spam', tile: { x: 0, y: 0 }, direction: 'right', speed: 1, displayWidth: 8.8, displayHeight: 8.8, isCopy: true });
+    world.enemies.push(original, copy);
     world.collisionDebugEnabled = true;
     const { renderSystem, scene } = createRenderHarness({ world });
-    const [originalModel, copyModel] = scene.children.filter((object) => object.name === 'ghost-spam');
+    const [originalModel, copyModel] = scene.children.filter((object) => object.name === 'enemy-spam');
     const markers = scene.getObjectByName('debug-markers') as LineSegments;
     renderSystem.render();
     expect(copyModel.visible).toBe(false);

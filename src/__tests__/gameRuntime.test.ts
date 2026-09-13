@@ -2,12 +2,12 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { GameRuntime } from '../game/app/GameRuntime';
 import { ComposedGame, RuntimeState } from '../game/app/contracts';
 import { GameCompositionRoot } from '../game/app/GameCompositionRoot';
-import { GhostEntity } from '../game/domain/entities/GhostEntity';
+import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import { PacketEntity } from '../game/domain/entities/PacketEntity';
 import { MovementRules } from '../game/domain/services/MovementRules';
 import { WorldState } from '../game/domain/world/WorldState';
 import { CollectibleSystem } from '../game/systems/CollectibleSystem';
-import { GhostPacketCollisionSystem } from '../game/systems/GhostPacketCollisionSystem';
+import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
 import { getGameState, resetGameState } from '../state/gameState';
 import { createCollisionTile, createMapFixture } from './fixtures/pointLayoutFixtures';
 
@@ -63,24 +63,24 @@ function createComposedGame() {
   };
 }
 
-function createFinishingGame(kind: 'pellet' | 'power-pellet', ghostState?: 'dangerous' | 'scared') {
+function createFinishingGame(kind: 'pellet' | 'power-pellet', enemyState?: 'dangerous' | 'scared') {
   const { composed } = createComposedGame();
   const { map, collisionGrid } = createMapFixture([[createCollisionTile(), createCollisionTile()]]);
   map.collectibleObjects = [{ type: kind, x: 8, y: 8 }];
   const movement = new MovementRules(16);
   const packet = new PacketEntity({ x: 0, y: 0 }, 10, 10);
   movement.setEntityTile(packet, packet.tile);
-  const ghost = new GhostEntity({
+  const enemy = new EnemyEntity({
     key: 'virus', tile: packet.tile, direction: 'left', speed: 1, displayWidth: 10, displayHeight: 10,
   });
-  movement.setEntityTile(ghost, ghost.tile);
-  ghost.state.free = true;
-  ghost.state.scared = ghostState === 'scared';
+  movement.setEntityTile(enemy, enemy.tile);
+  enemy.state.free = true;
+  enemy.state.scared = enemyState === 'scared';
   const world = new WorldState({
     map, collisionGrid, tileSize: 16, packet, packetSpawnTile: { x: 1, y: 0 },
-    ghosts: ghostState ? [ghost] : [], ghostJailBounds: { minX: 1, maxX: 1, y: 0 },
+    enemies: enemyState ? [enemy] : [], enemyJailBounds: { minX: 1, maxX: 1, y: 0 },
   });
-  const collisions = new GhostPacketCollisionSystem(world, movement);
+  const collisions = new EnemyPacketCollisionSystem(world, movement);
   const collectibles = new CollectibleSystem(world);
   composed.world = world;
   composed.updateSystems = [collisions, collectibles];
@@ -198,11 +198,11 @@ describe('GameRuntime', () => {
   });
 
   it.each([
-    { kind: 'pellet' as const, score: 10, ghostState: undefined },
-    { kind: 'power-pellet' as const, score: 50, ghostState: undefined },
-    { kind: 'pellet' as const, score: 210, ghostState: 'scared' as const },
-  ])('finishes on the final $kind with its score and any scared-ghost bonus ($score)', async ({ kind, score, ghostState }) => {
-    const { composed, world } = createFinishingGame(kind, ghostState);
+    { kind: 'pellet' as const, score: 10, enemyState: undefined },
+    { kind: 'power-pellet' as const, score: 50, enemyState: undefined },
+    { kind: 'pellet' as const, score: 210, enemyState: 'scared' as const },
+  ])('finishes on the final $kind with its score and any scared-enemy bonus ($score)', async ({ kind, score, enemyState }) => {
+    const { composed, world } = createFinishingGame(kind, enemyState);
     const onStateChange = vi.fn<(_state: RuntimeState) => void>();
     const runtime = new GameRuntime({ compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot, onStateChange);
     await runtime.start();

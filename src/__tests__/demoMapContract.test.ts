@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GhostJailService } from '../game/domain/services/GhostJailService';
+import { EnemyJailService } from '../game/domain/services/EnemyJailService';
 import { canMove, DEFAULT_TILE_SIZE } from '../game/domain/services/MovementRules';
 import { CollisionGrid } from '../game/domain/world/CollisionGrid';
 import { parseTiledMap, TiledMap, TiledProperty, TiledTileLayer } from '../game/infrastructure/map/TiledParser';
@@ -214,17 +214,17 @@ describe('demo.json contract', () => {
 
   it('infers packet and jail anchors when spawn objects are missing', () => {
     const parsed = parseTiledMap(readMap());
-    const jailService = new GhostJailService();
+    const jailService = new EnemyJailService();
     const fallback = {
       x: Math.floor(parsed.width / 2),
       y: Math.floor(parsed.height / 2),
     };
 
     expect(parsed.packetSpawn).toBeUndefined();
-    expect(parsed.ghostHome).toBeUndefined();
+    expect(parsed.enemyHome).toBeUndefined();
 
     const packetTile = jailService.resolveSpawnTile(parsed.packetSpawn, fallback, parsed);
-    const jailBounds = jailService.resolveGhostJailBounds(parsed, packetTile);
+    const jailBounds = jailService.resolveEnemyJailBounds(parsed, packetTile);
 
     expect(jailBounds).toEqual({ minX: 4, maxX: 8, y: 8 });
     expect(packetTile).toEqual({ x: 6, y: 7 });

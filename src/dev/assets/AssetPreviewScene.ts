@@ -3,15 +3,15 @@ import {
   MathUtils, Mesh, MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, Scene, Vector3,
 } from 'three';
 import {
-  ENEMY_CONFIG, GHOST_SCARED_WARNING_DURATION_MS, PACKET_DEATH_ANIMATION, PACKET_DEATH_RECOVERY, PACKET_PORTAL_BLINK,
+  ENEMY_CONFIG, ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_ANIMATION, PACKET_DEATH_RECOVERY, PACKET_PORTAL_BLINK,
   SPRITE_SIZE, TILE_SIZE,
 } from '../../config/constants';
-import type { GhostKey } from '../../game/domain/entities/GhostEntity';
+import type { EnemyKey } from '../../game/domain/entities/EnemyEntity';
 import { createEmptyCollisionTile } from '../../game/domain/world/CollisionGrid';
 import type { EnemyEffect, LagZone, WorldMapData } from '../../game/domain/world/WorldState';
 import { ArcadeAssets } from '../../game/infrastructure/three/ArcadeAssets';
 import { EnemyEffects } from '../../game/infrastructure/three/EnemyEffects';
-import { GhostEatPresentation } from '../../game/infrastructure/three/GhostEatPresentation';
+import { EnemyEatPresentation } from '../../game/infrastructure/three/EnemyEatPresentation';
 import { WALL_HEIGHT } from '../../game/infrastructure/three/MazeGeometry';
 import { MazeScene } from '../../game/infrastructure/three/MazeScene';
 import {
@@ -20,8 +20,8 @@ import {
 import { addGameplayLighting, createMazeFloorMaterial } from '../../game/infrastructure/three/ScenePresentation';
 import { resolveNextBlinkToggleAt } from '../../game/shared/blinkCadence';
 import { createEatEffect, samplePickupPulse, type CollectibleKind } from '../../game/shared/pickupEffects';
-import { GHOST_EAT_DURATION_MS } from '../../game/shared/ghostEating';
-import { ASSET_CATALOG, GHOST_IDENTITIES, type AssetPreviewEntry } from './assetCatalog';
+import { ENEMY_EAT_DURATION_MS } from '../../game/shared/enemyEating';
+import { ASSET_CATALOG, ENEMY_IDENTITIES, type AssetPreviewEntry } from './assetCatalog';
 
 export interface AssetPreviewTransform {
   rotation: number;
@@ -50,7 +50,7 @@ export class AssetPreviewScene {
   readonly bounds = new Box3();
   private readonly packet: Group;
   private readonly packetShadow: Mesh;
-  private readonly ghosts = new Map<GhostKey, Group>();
+  private readonly enemies = new Map<EnemyKey, Group>();
   private readonly spamCopies: Group[] = [];
   private readonly enemyEffects = new EnemyEffects();
   private readonly points = new Map<CollectibleKind, Mesh<BufferGeometry, MeshStandardMaterial>>();
@@ -58,7 +58,7 @@ export class AssetPreviewScene {
   private readonly floor = new Mesh(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2), createMazeFloorMaterial());
   private readonly guide = new LineSegments(new BufferGeometry(), new LineBasicMaterial({ color: 0x334e66, transparent: true, opacity: 0.6 }));
   private effect: Mesh<BufferGeometry, MeshBasicMaterial> | undefined;
-  private ghostEating: GhostEatPresentation | undefined;
+  private enemyEating: EnemyEatPresentation | undefined;
   private maze: MazeScene | undefined;
   private entry = ASSET_CATALOG[0];
   private disposed = false;
@@ -83,24 +83,25 @@ export class AssetPreviewScene {
       this.packetShadow = assets.createContactShadow(SPRITE_SIZE.packet);
       this.packet.add(this.packetShadow);
       this.scene.add(this.packet);
-      for (const key of GHOST_IDENTITIES) {
-        const ghost = assets.createGhost(key);
-        ghost.name = `ghost-${key}`;
-        ghost.position.set(CENTER, 0, CENTER);
-        ghost.add(assets.createContactShadow(SPRITE_SIZE.ghost));
-        this.ghosts.set(key, ghost);
-        this.scene.add(ghost);
+      for (const key of ENEMY_IDENTITIES) {
+        const enemy = assets.createEnemy(key);
+        enemy.name = `enemy-${key}`;
+        enemy.position.set(CENTER, 0, CENTER);
+        enemy.add(assets.createContactShadow(SPRITE_SIZE.enemy));
+        this.enemies.set(key, enemy);
+        this.scene.add(enemy);
       }
       for (let index = 0; index < ENEMY_CONFIG.spam.maxCount - 1; index += 1) {
-        const copy = assets.createGhost('spam');
-        copy.name = `ghost-spam-copy-${index}`;
+        const copy = assets.createEnemy('spam');
+        copy.name = `enemy-spam-copy-${index}`;
         copy.getObjectByName('character-model')!.scale.setScalar(ENEMY_CONFIG.spam.copyScale);
-        copy.add(assets.createContactShadow(SPRITE_SIZE.ghost * ENEMY_CONFIG.spam.copyScale));
+        copy.add(assets.createContactShadow(SPRITE_SIZE.enemy * ENEMY_CONFIG.spam.copyScale));
         this.spamCopies.push(copy);
         this.scene.add(copy);
       }
       for (const kind of ['base', 'power'] as const) {
-        const mesh = new Mesh(assets.pelletGeometry, kind === 'base' ? assets.pelletMaterial : assets.powerPelletMaterial);
+        const mesh = new Mesh(kind === 'base' ? assets.pelletGeometry : assets.powerPelletGeometry,
+          kind === 'base' ? assets.pelletMaterial : assets.powerPelletMaterial);
         mesh.name = `point-${kind}`;
         mesh.matrixAutoUpdate = false;
         setPointTransform(mesh.matrix, kind, CENTER, CENTER);
@@ -127,15 +128,15 @@ export class AssetPreviewScene {
       this.packet.visible = true;
       if (entry.id === 'player-death') this.setBounds(24, 24, 19);
       if (entry.id === 'player-eating' || entry.id.startsWith('effect-')) {
-        this.effect = createEatEffectMesh(this.assets.pelletGeometry, CENTER, CENTER);
+        this.effect = createEatEffectMesh(this.pointKind() === 'power' ? this.assets.powerPelletGeometry : this.assets.pelletGeometry, CENTER, CENTER);
         this.scene.add(this.effect);
       }
-    } else if (entry.category === 'Ghosts') {
-      this.ghosts.get(this.ghostKey())!.visible = true;
+    } else if (entry.category === 'Enemies') {
+      this.enemies.get(this.enemyKey())!.visible = true;
       if (entry.id.endsWith('-patrol') || entry.id.endsWith('-lag')) this.setBounds(52, 52, 15);
       if (entry.id.endsWith('-chase')) this.setBounds(64, 48, 15);
       if (entry.id.endsWith('-split')) this.setBounds(50, 50, 15);
-      if (entry.id === 'ghost-ping-ping') {
+      if (entry.id === 'enemy-ping-ping') {
         const diameter = ENEMY_CONFIG.ping.rangeTiles * TILE_SIZE * 2 + 4;
         this.setBounds(diameter, diameter, 15);
       }
@@ -152,14 +153,14 @@ export class AssetPreviewScene {
       this.scene.add(this.maze.group);
       this.setBounds(map.widthInPixels + 2, map.heightInPixels + 2, entry.id === 'other-floor' ? 1 : WALL_HEIGHT + 1);
     }
-    if (entry.id === 'player-ghost-eating' || entry.id.endsWith('-eaten')) {
-      const ghost = this.ghosts.get(entry.id === 'player-ghost-eating' ? 'virus' : this.ghostKey())!;
-      ghost.visible = true;
-      ghost.position.x = CENTER + 7;
+    if (entry.id === 'player-enemy-eating' || entry.id.endsWith('-eaten')) {
+      const enemy = this.enemies.get(entry.id === 'player-enemy-eating' ? 'virus' : this.enemyKey())!;
+      enemy.visible = true;
+      enemy.position.x = CENTER + 7;
       this.packet.position.x = CENTER - 4;
       this.packet.visible = true;
-      this.ghostEating = new GhostEatPresentation();
-      this.scene.add(this.ghostEating.group);
+      this.enemyEating = new EnemyEatPresentation();
+      this.scene.add(this.enemyEating.group);
       this.setBounds(30, 24, 15);
     } else if (entry.id.endsWith('-returning')) {
       this.maze = new MazeScene({ map: buildPreviewMap('other-prison', NO_TRANSFORM) });
@@ -175,6 +176,11 @@ export class AssetPreviewScene {
     const duration = this.entry.durationMs;
     const elapsed = Math.min(duration, Math.max(0, timeMs));
     const id = this.entry.id;
+    if (id === 'point-power') {
+      const powerPoint = this.points.get('power')!;
+      setPointTransform(powerPoint.matrix, 'power', CENTER, CENTER, elapsed / 1000);
+      powerPoint.matrixWorldNeedsUpdate = true;
+    }
     let deathProgress: number | null = null;
     let visible = true;
     if (id === 'player-death') {
@@ -193,41 +199,41 @@ export class AssetPreviewScene {
     this.assets.setPacketDeathProgress(this.packet, deathProgress);
     const powerAmount = id === 'player-powered'
       ? MathUtils.smootherstep(elapsed, 0, 320) * (1 - MathUtils.smootherstep(elapsed, duration - 320, duration))
-      : id === 'player-power-warning' || this.ghostEating !== undefined ? 1 : 0;
+      : id === 'player-power-warning' || this.enemyEating !== undefined ? 1 : 0;
     this.assets.setPacketPower(this.packet,
-      id === 'player-powered' || id === 'player-power-warning' || this.ghostEating !== undefined,
+      id === 'player-powered' || id === 'player-power-warning' || this.enemyEating !== undefined,
       id === 'player-power-warning', powerAmount);
-    this.assets.setPacketGhostEatProgress(this.packet,
-      this.ghostEating && elapsed < GHOST_EAT_DURATION_MS ? elapsed / GHOST_EAT_DURATION_MS : null);
-    this.packet.visible = (this.entry.category === 'Player' || this.effect !== undefined || this.ghostEating !== undefined) && visible;
+    this.assets.setPacketEnemyEatProgress(this.packet,
+      this.enemyEating && elapsed < ENEMY_EAT_DURATION_MS ? elapsed / ENEMY_EAT_DURATION_MS : null);
+    this.packet.visible = (this.entry.category === 'Player' || this.effect !== undefined || this.enemyEating !== undefined) && visible;
     this.packetShadow.visible = deathProgress === null || deathProgress < 0.94;
 
-    if (this.entry.category === 'Ghosts') {
-      const key = this.ghostKey();
-      const scared = id.endsWith('-scared') || (id.endsWith('-warning') && !blinkAt(elapsed, GHOST_SCARED_WARNING_DURATION_MS, false));
+    if (this.entry.category === 'Enemies') {
+      const key = this.enemyKey();
+      const scared = id.endsWith('-scared') || (id.endsWith('-warning') && !blinkAt(elapsed, ENEMY_SCARED_WARNING_DURATION_MS, false));
       const scaredExpression = id.endsWith('-scared') || id.endsWith('-warning');
       const scaredAmount = id.endsWith('-scared')
         ? MathUtils.smootherstep(elapsed, 0, 240) * (1 - MathUtils.smootherstep(elapsed, duration - 320, duration))
         : scaredExpression ? 1 : 0;
-      this.assets.setGhostAppearance(this.ghosts.get(key)!, scared ? 'scared' : key, scaredExpression, scaredAmount);
+      this.assets.setEnemyAppearance(this.enemies.get(key)!, scared ? 'scared' : key, scaredExpression, scaredAmount);
       this.sampleEnemyDemo(elapsed);
       if (id.endsWith('-returning')) {
-        const ghost = this.ghosts.get(key)!;
+        const enemy = this.enemies.get(key)!;
         const distance = Math.min(64, elapsed * 64 / 1400);
-        ghost.position.set(CENTER - 16 + Math.min(32, distance), 0, CENTER - 16 + Math.max(0, distance - 32));
-        this.assets.setGhostReturnProgress(ghost, elapsed < 1680 ? 1 - MathUtils.smootherstep(elapsed, 1400, 1680) : null, true);
+        enemy.position.set(CENTER - 16 + Math.min(32, distance), 0, CENTER - 16 + Math.max(0, distance - 32));
+        this.assets.setEnemyReturnProgress(enemy, elapsed < 1680 ? 1 - MathUtils.smootherstep(elapsed, 1400, 1680) : null, true);
       }
     }
-    if (this.ghostEating) {
-      const ghost = this.ghosts.get(id === 'player-ghost-eating' ? 'virus' : this.ghostKey())!;
-      this.assets.setGhostAppearance(ghost, 'scared', true, 1);
-      this.assets.setGhostReturnProgress(ghost, Math.min(1, elapsed / GHOST_EAT_DURATION_MS), true);
+    if (this.enemyEating) {
+      const enemy = this.enemies.get(id === 'player-enemy-eating' ? 'virus' : this.enemyKey())!;
+      this.assets.setEnemyAppearance(enemy, 'scared', true, 1);
+      this.assets.setEnemyReturnProgress(enemy, Math.min(1, elapsed / ENEMY_EAT_DURATION_MS), true);
     }
     this.assets.sampleAnimation(elapsed / 1000);
     this.assets.facePacket(this.packet, camera);
-    if (this.ghostEating) {
-      this.ghostEating.sample(this.ghosts.get(id === 'player-ghost-eating' ? 'virus' : this.ghostKey())!,
-        this.packet.getObjectByName('pickup-target')!, elapsed / GHOST_EAT_DURATION_MS);
+    if (this.enemyEating) {
+      this.enemyEating.sample(this.enemies.get(id === 'player-enemy-eating' ? 'virus' : this.enemyKey())!,
+        this.packet.getObjectByName('pickup-target')!, elapsed / ENEMY_EAT_DURATION_MS);
     }
     if (this.effect) {
       const effect = createEatEffect(this.pointKind(), CENTER, CENTER);
@@ -249,7 +255,7 @@ export class AssetPreviewScene {
 
   private disposeOwnedResources(): void {
     this.effect?.material.dispose();
-    this.ghostEating?.dispose();
+    this.enemyEating?.dispose();
     this.maze?.dispose();
     this.enemyEffects.dispose();
     this.floor.geometry.dispose();
@@ -268,24 +274,24 @@ export class AssetPreviewScene {
     this.assets.setPacketMotion(this.packet, 0, 0, 0);
     this.assets.setPacketDeathProgress(this.packet, null);
     this.assets.setPacketPower(this.packet, false, false, 0);
-    this.assets.setPacketGhostEatProgress(this.packet, null);
-    for (const [key, ghost] of this.ghosts) {
-      ghost.visible = false;
-      ghost.position.set(CENTER, 0, CENTER);
-      this.assets.setGhostAppearance(ghost, key, false, 0);
-      this.assets.setGhostReturnProgress(ghost, null, true);
+    this.assets.setPacketEnemyEatProgress(this.packet, null);
+    for (const [key, enemy] of this.enemies) {
+      enemy.visible = false;
+      enemy.position.set(CENTER, 0, CENTER);
+      this.assets.setEnemyAppearance(enemy, key, false, 0);
+      this.assets.setEnemyReturnProgress(enemy, null, true);
     }
     for (const copy of this.spamCopies) {
       copy.visible = false;
-      this.assets.setGhostAppearance(copy, 'spam', false, 0);
+      this.assets.setEnemyAppearance(copy, 'spam', false, 0);
     }
     this.enemyEffects.sync([], []);
     this.points.forEach((point) => { point.visible = false; });
     this.shadow.visible = false;
-    if (this.ghostEating) {
-      this.scene.remove(this.ghostEating.group);
-      this.ghostEating.dispose();
-      this.ghostEating = undefined;
+    if (this.enemyEating) {
+      this.scene.remove(this.enemyEating.group);
+      this.enemyEating.dispose();
+      this.enemyEating = undefined;
     }
     if (this.effect) {
       this.scene.remove(this.effect);
@@ -302,27 +308,27 @@ export class AssetPreviewScene {
 
   private sampleEnemyDemo(elapsed: number): void {
     const id = this.entry.id;
-    const ghost = this.ghosts.get(this.ghostKey())!;
+    const enemy = this.enemies.get(this.enemyKey())!;
     const effects: EnemyEffect[] = [];
     const zones: LagZone[] = [];
-    if (id === 'ghost-firewall-patrol' || id === 'ghost-lag-lag') {
-      const speed = id === 'ghost-lag-lag' ? ENEMY_CONFIG.lag.speed : ENEMY_CONFIG.firewall.speed;
+    if (id === 'enemy-firewall-patrol' || id === 'enemy-lag-lag') {
+      const speed = id === 'enemy-lag-lag' ? ENEMY_CONFIG.lag.speed : ENEMY_CONFIG.firewall.speed;
       const position = patrolAt(elapsed, speed);
-      ghost.position.set(position.x, 0, position.y);
-    } else if (id === 'ghost-virus-chase') {
+      enemy.position.set(position.x, 0, position.y);
+    } else if (id === 'enemy-virus-chase') {
       // An authored open-corridor route illustrates pursuit without running game AI in the inspector.
       const distance = elapsed * 60 * ENEMY_CONFIG.virus.speed / 1000;
-      ghost.position.set(CENTER - 24 + Math.min(48, distance), 0, CENTER - 16 + Math.min(32, Math.max(0, distance - 48)));
+      enemy.position.set(CENTER - 24 + Math.min(48, distance), 0, CENTER - 16 + Math.min(32, Math.max(0, distance - 48)));
       this.packet.position.set(CENTER + 24, 0, CENTER + 16);
       this.packet.visible = true;
-    } else if (id === 'ghost-ping-ping') {
+    } else if (id === 'enemy-ping-ping') {
       const target = { x: CENTER + TILE_SIZE * 3, y: CENTER };
       effects.push({ kind: 'ping', x: CENTER, y: CENTER, target,
         radius: ENEMY_CONFIG.ping.rangeTiles * TILE_SIZE, ageMs: elapsed, durationMs: ENEMY_CONFIG.ping.pulseDurationMs });
-      ghost.position.set(CENTER + Math.min(TILE_SIZE * 3, elapsed * 60 * ENEMY_CONFIG.ping.speed / 1000), 0, CENTER);
+      enemy.position.set(CENTER + Math.min(TILE_SIZE * 3, elapsed * 60 * ENEMY_CONFIG.ping.speed / 1000), 0, CENTER);
       this.packet.position.set(target.x, 0, target.y + Math.min(TILE_SIZE * 3, elapsed * 0.03));
       this.packet.visible = true;
-    } else if (id === 'ghost-spam-split') {
+    } else if (id === 'enemy-spam-split') {
       const count = Math.min(this.spamCopies.length, Math.floor(elapsed / ENEMY_CONFIG.spam.splitIntervalMs));
       const offsets = [[-TILE_SIZE, 0], [TILE_SIZE, 0], [0, TILE_SIZE]];
       this.spamCopies.forEach((copy, index) => {
@@ -332,7 +338,7 @@ export class AssetPreviewScene {
       if (count > 0) effects.push({ kind: 'split', x: CENTER, y: CENTER, radius: TILE_SIZE,
         ageMs: elapsed - count * ENEMY_CONFIG.spam.splitIntervalMs, durationMs: ENEMY_CONFIG.spam.splitEffectDurationMs });
     }
-    if (id === 'ghost-lag-lag') {
+    if (id === 'enemy-lag-lag') {
       const lastDrop = Math.floor(elapsed / ENEMY_CONFIG.lag.dropIntervalMs);
       for (let drop = Math.max(1, lastDrop - ENEMY_CONFIG.lag.maxZones + 1); drop <= lastDrop; drop += 1) {
         const bornAt = drop * ENEMY_CONFIG.lag.dropIntervalMs;
@@ -345,8 +351,8 @@ export class AssetPreviewScene {
     this.enemyEffects.sync(effects, zones);
   }
 
-  private ghostKey(): GhostKey {
-    return GHOST_IDENTITIES.find((key) => this.entry.id.startsWith(`ghost-${key}-`))!;
+  private enemyKey(): EnemyKey {
+    return ENEMY_IDENTITIES.find((key) => this.entry.id.startsWith(`enemy-${key}-`))!;
   }
 
   private pointKind(): CollectibleKind {

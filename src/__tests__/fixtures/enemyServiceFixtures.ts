@@ -4,20 +4,20 @@ import { openTile } from './collisionFixtures';
 
 export const TILE_SIZE = 16;
 
-export function makeMap(grid: CollisionTile[][], ghostHome?: WorldMapData['ghostHome']): WorldMapData {
+export function makeMap(grid: CollisionTile[][], enemyHome?: WorldMapData['enemyHome']): WorldMapData {
   const height = grid.length;
   const width = grid[0]?.length ?? 0;
 
-  const defaultGhostHome =
-    ghostHome ??
+  const defaultEnemyHome =
+    enemyHome ??
     ({
-      type: 'ghost-home',
+      type: 'enemy-home',
       y: 48,
       properties: [
         { name: 'startX', value: 1 },
         { name: 'endX', value: 3 },
         { name: 'gridY', value: 3 },
-        { name: 'ghostCount', value: 1 },
+        { name: 'enemyCount', value: 1 },
       ],
     } as const);
 
@@ -50,12 +50,12 @@ export function makeMap(grid: CollisionTile[][], ghostHome?: WorldMapData['ghost
         { name: 'gridY', value: 2 },
       ],
     },
-    ghostHome: defaultGhostHome,
+    enemyHome: defaultEnemyHome,
   };
 }
 
-export function makeOpenMap(width: number, height: number, ghostHome?: WorldMapData['ghostHome']): WorldMapData {
-  return makeMap(Array.from({ length: height }, () => Array.from({ length: width }, () => openTile())), ghostHome);
+export function makeOpenMap(width: number, height: number, enemyHome?: WorldMapData['enemyHome']): WorldMapData {
+  return makeMap(Array.from({ length: height }, () => Array.from({ length: width }, () => openTile())), enemyHome);
 }
 
 export function markPenGateRun(map: WorldMapData, y: number, minX: number, maxX: number): void {

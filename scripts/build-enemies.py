@@ -311,11 +311,11 @@ class EnemyAuthoring:
         for y in (-2.78, 2.78):
             for i, (x, z) in enumerate(outline):
                 next_x, next_z = outline[(i + 1) % count]
-                edges.append(self.rod("ghost-contour", (x, y, z), (next_x, y, next_z), 0.36,
+                edges.append(self.rod("enemy-contour", (x, y, z), (next_x, y, next_z), 0.36,
                                        self.materials["accent-edge"], motion))
         for i in (0, 1, 5, 6, 10, 11):
             x, z = outline[i]
-            edges.append(self.rod("ghost-depth-edge", (x, -2.75, z), (x, 2.75, z), 0.3,
+            edges.append(self.rod("enemy-depth-edge", (x, -2.75, z), (x, 2.75, z), 0.3,
                                    self.materials["identity-trim"], motion))
         self.light_surfaces(self.join(edges, "spam-outline", motion))
         self.eyes(motion, (0, -0.85, 3.79), blink_offset=0.19)

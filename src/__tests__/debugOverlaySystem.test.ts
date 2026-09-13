@@ -45,7 +45,7 @@ function createWorld(): WorldState {
     packet: {
       tile: { x: 0, y: 0 },
     },
-    ghosts: [],
+    enemies: [],
   } as unknown as WorldState;
 }
 

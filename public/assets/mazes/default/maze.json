@@ -97,9 +97,9 @@
         },
         {
           "id": 2,
-          "name": "ghost-home",
+          "name": "enemy-home",
           "rotation": 0,
-          "type": "ghost-home",
+          "type": "enemy-home",
           "visible": true,
           "x": 352,
           "y": 432,
@@ -107,7 +107,7 @@
           "height": 16,
           "properties": [
             {
-              "name": "ghostCount",
+              "name": "enemyCount",
               "type": "int",
               "value": 5
             },

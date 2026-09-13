@@ -2,7 +2,7 @@ import { vi } from 'vitest';
 import { CAMERA, SPRITE_SIZE } from '../../config/constants';
 import { Camera3D } from '../../engine/camera3d';
 import { PacketEntity } from '../../game/domain/entities/PacketEntity';
-import { GhostJailService } from '../../game/domain/services/GhostJailService';
+import { EnemyJailService } from '../../game/domain/services/EnemyJailService';
 import { RenderSystem } from '../../game/systems/RenderSystem';
 import type { ThreeRendererAdapter } from '../../game/infrastructure/adapters/ThreeRendererAdapter';
 import { CollectibleSystem } from '../../game/systems/CollectibleSystem';
@@ -81,8 +81,8 @@ export function createWorld(map: WorldMapData, collisionGrid: CollisionGrid, pac
     collisionGrid,
     packetSpawnTile: packetTile,
     packet,
-    ghosts: [],
-    ghostJailBounds: new GhostJailService().resolveGhostJailBounds(map, packetTile),
+    enemies: [],
+    enemyJailBounds: new EnemyJailService().resolveEnemyJailBounds(map, packetTile),
   });
 }
 

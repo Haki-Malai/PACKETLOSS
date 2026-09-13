@@ -1,8 +1,8 @@
 import { ENEMY_CONFIG } from '../../config/constants';
-import { GhostEntity } from '../domain/entities/GhostEntity';
+import { EnemyEntity } from '../domain/entities/EnemyEntity';
 import { EnemyNavigationService } from '../domain/services/EnemyNavigationService';
-import { isBodyOverlap } from '../domain/services/GhostPacketCollisionService';
-import { clearGhostScaredWindow } from '../domain/services/GhostScaredStateService';
+import { isBodyOverlap } from '../domain/services/EnemyPacketCollisionService';
+import { clearEnemyScaredWindow } from '../domain/services/EnemyScaredStateService';
 import { MovementRules, toWorldPosition } from '../domain/services/MovementRules';
 import { PortalService } from '../domain/services/PortalService';
 import { WorldState } from '../domain/world/WorldState';
@@ -30,57 +30,57 @@ export class EnemyAbilitySystem {
       .filter((zone) => zone.ageMs < zone.durationMs);
 
     // Snapshot eligible enemies so a newly activated copy cannot split in its birth update.
-    const eligible = this.world.ghosts.filter((ghost) => {
-      if (!ghost.active || !ghost.state.free || ghost.state.scared || this.world.ghostsExitingJail.has(ghost)) {
-        ghost.resetAbilities();
+    const eligible = this.world.enemies.filter((enemy) => {
+      if (!enemy.active || !enemy.state.free || enemy.state.scared || this.world.enemiesExitingJail.has(enemy)) {
+        enemy.resetAbilities();
         return false;
       }
       return true;
     });
-    for (const ghost of eligible) {
-      if (ghost.key === 'lag' && !ghost.lastLagTile) ghost.lastLagTile = { ...ghost.tile };
-      const interval = ghost.key === 'ping' ? ENEMY_CONFIG.ping.intervalMs
-        : ghost.key === 'spam' ? ENEMY_CONFIG.spam.splitIntervalMs
-          : ghost.key === 'lag' ? ENEMY_CONFIG.lag.dropIntervalMs : 0;
+    for (const enemy of eligible) {
+      if (enemy.key === 'lag' && !enemy.lastLagTile) enemy.lastLagTile = { ...enemy.tile };
+      const interval = enemy.key === 'ping' ? ENEMY_CONFIG.ping.intervalMs
+        : enemy.key === 'spam' ? ENEMY_CONFIG.spam.splitIntervalMs
+          : enemy.key === 'lag' ? ENEMY_CONFIG.lag.dropIntervalMs : 0;
       if (interval === 0) continue;
-      ghost.abilityRemainingMs = Math.max(0, (ghost.abilityRemainingMs ?? interval) - elapsed);
-      if (ghost.abilityRemainingMs > 0) continue;
-      if (ghost.key === 'ping') {
-        this.ping(ghost);
-        ghost.abilityRemainingMs = interval;
-      } else if (ghost.moved.x === 0 && ghost.moved.y === 0) {
-        if (ghost.key === 'spam') {
-          ghost.abilityRemainingMs = this.split(ghost) ? interval : ENEMY_CONFIG.spam.retryMs;
+      enemy.abilityRemainingMs = Math.max(0, (enemy.abilityRemainingMs ?? interval) - elapsed);
+      if (enemy.abilityRemainingMs > 0) continue;
+      if (enemy.key === 'ping') {
+        this.ping(enemy);
+        enemy.abilityRemainingMs = interval;
+      } else if (enemy.moved.x === 0 && enemy.moved.y === 0) {
+        if (enemy.key === 'spam') {
+          enemy.abilityRemainingMs = this.split(enemy) ? interval : ENEMY_CONFIG.spam.retryMs;
         } else {
-          this.dropLagZone(ghost);
-          ghost.abilityRemainingMs = interval;
+          this.dropLagZone(enemy);
+          enemy.abilityRemainingMs = interval;
         }
       }
     }
   }
 
-  private ping(ghost: GhostEntity): void {
+  private ping(enemy: EnemyEntity): void {
     const radius = ENEMY_CONFIG.ping.rangeTiles * this.world.tileSize;
     const packet = this.world.packet;
-    const detected = Math.hypot(packet.x - ghost.x, packet.y - ghost.y) <= radius;
-    if (detected) ghost.pingTarget = {
+    const detected = Math.hypot(packet.x - enemy.x, packet.y - enemy.y) <= radius;
+    if (detected) enemy.pingTarget = {
       x: Math.floor(packet.x / this.world.tileSize),
       y: Math.floor(packet.y / this.world.tileSize),
     };
     this.world.enemyEffects.push({
-      kind: 'ping', x: ghost.x, y: ghost.y, radius, ageMs: 0,
+      kind: 'ping', x: enemy.x, y: enemy.y, radius, ageMs: 0,
       durationMs: ENEMY_CONFIG.ping.pulseDurationMs,
       ...(detected ? { target: { x: packet.x, y: packet.y } } : {}),
     });
   }
 
-  private split(parent: GhostEntity): boolean {
-    const activeCount = this.world.ghosts.filter((ghost) => ghost.active && ghost.key === 'spam').length;
+  private split(parent: EnemyEntity): boolean {
+    const activeCount = this.world.enemies.filter((enemy) => enemy.active && enemy.key === 'spam').length;
     if (activeCount >= ENEMY_CONFIG.spam.maxCount) return false;
-    const copy = this.world.ghosts.find((ghost) => ghost.isCopy && ghost.key === 'spam' && !ghost.active);
+    const copy = this.world.enemies.find((enemy) => enemy.isCopy && enemy.key === 'spam' && !enemy.active);
     if (!copy) return false;
     const radius = Math.min(copy.displayWidth, copy.displayHeight) / 2;
-    const occupied = [this.world.packet, ...this.world.ghosts.filter((ghost) => ghost.active)];
+    const occupied = [this.world.packet, ...this.world.enemies.filter((enemy) => enemy.active)];
     const candidates = this.navigation.getSteps(parent.tile).filter((step) => {
       const tile = this.world.collisionGrid.getTileAt(step.destination.x, step.destination.y);
       if (step.cost !== 1 || tile.portal || tile.penGate) return false;
@@ -92,9 +92,9 @@ export class EnemyAbilitySystem {
     if (candidates.length === 0) return false;
     const step = candidates[this.rng.int(candidates.length)];
     this.movementRules.setEntityTile(copy, step.destination);
-    clearGhostScaredWindow(this.world, copy);
-    this.world.ghostsExitingJail.delete(copy);
-    this.world.ghostAnimations.delete(copy);
+    clearEnemyScaredWindow(this.world, copy);
+    this.world.enemiesExitingJail.delete(copy);
+    this.world.enemyAnimations.delete(copy);
     copy.resetAbilities();
     copy.active = true;
     copy.direction = step.direction;
@@ -110,17 +110,17 @@ export class EnemyAbilitySystem {
     return true;
   }
 
-  private dropLagZone(ghost: GhostEntity): void {
-    if (ghost.lastLagTile?.x === ghost.tile.x && ghost.lastLagTile.y === ghost.tile.y) return;
-    ghost.lastLagTile = { ...ghost.tile };
-    const tile = this.world.collisionGrid.getTileAt(ghost.tile.x, ghost.tile.y);
+  private dropLagZone(enemy: EnemyEntity): void {
+    if (enemy.lastLagTile?.x === enemy.tile.x && enemy.lastLagTile.y === enemy.tile.y) return;
+    enemy.lastLagTile = { ...enemy.tile };
+    const tile = this.world.collisionGrid.getTileAt(enemy.tile.x, enemy.tile.y);
     if (tile.portal || tile.penGate) return;
-    const position = toWorldPosition(ghost.tile, { x: 0, y: 0 }, this.world.tileSize);
+    const position = toWorldPosition(enemy.tile, { x: 0, y: 0 }, this.world.tileSize);
     this.world.lagZones = this.world.lagZones
-      .filter((zone) => zone.tile.x !== ghost.tile.x || zone.tile.y !== ghost.tile.y)
+      .filter((zone) => zone.tile.x !== enemy.tile.x || zone.tile.y !== enemy.tile.y)
       .slice(-(ENEMY_CONFIG.lag.maxZones - 1));
     this.world.lagZones.push({
-      tile: { ...ghost.tile }, ...position, radius: this.world.tileSize * ENEMY_CONFIG.lag.radiusTiles,
+      tile: { ...enemy.tile }, ...position, radius: this.world.tileSize * ENEMY_CONFIG.lag.radiusTiles,
       ageMs: 0, durationMs: ENEMY_CONFIG.lag.zoneDurationMs,
     });
   }

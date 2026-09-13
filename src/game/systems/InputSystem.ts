@@ -1,11 +1,11 @@
 import {
   COARSE_POINTER_MEDIA_QUERY,
-  GHOST_SCARED_DURATION_MS,
+  ENEMY_SCARED_DURATION_MS,
   MOBILE_SWIPE_AXIS_LOCK_RATIO,
   MOBILE_SWIPE_THRESHOLD_PX,
   MOBILE_TAP_MAX_DELTA_PX,
 } from '../../config/constants';
-import { clearAllGhostScaredWindow, setActiveGhostsScaredWindow } from '../domain/services/GhostScaredStateService';
+import { clearAllEnemyScaredWindow, setActiveEnemiesScaredWindow } from '../domain/services/EnemyScaredStateService';
 import type { Direction } from '../domain/valueObjects/Direction';
 import { WorldState } from '../domain/world/WorldState';
 import { BrowserInputAdapter, isInteractiveInputTarget, PointerState } from '../infrastructure/adapters/BrowserInputAdapter';
@@ -78,12 +78,12 @@ export class InputSystem {
     }
 
     if (event.code === 'KeyH') {
-      const shouldEnableScared = this.world.ghosts.some((ghost) => ghost.active && !ghost.state.scared);
+      const shouldEnableScared = this.world.enemies.some((enemy) => enemy.active && !enemy.state.scared);
       if (shouldEnableScared) {
-        setActiveGhostsScaredWindow(this.world, GHOST_SCARED_DURATION_MS);
-        this.world.ghostEatChainCount = 0;
+        setActiveEnemiesScaredWindow(this.world, ENEMY_SCARED_DURATION_MS);
+        this.world.enemyEatChainCount = 0;
       } else {
-        clearAllGhostScaredWindow(this.world);
+        clearAllEnemyScaredWindow(this.world);
       }
       return;
     }

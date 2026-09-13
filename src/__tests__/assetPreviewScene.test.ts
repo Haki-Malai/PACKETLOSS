@@ -1,4 +1,4 @@
-import { BufferGeometry, Mesh, MeshBasicMaterial, MeshStandardMaterial } from 'three';
+import { BufferGeometry, Mesh, MeshBasicMaterial, MeshStandardMaterial, Quaternion, Vector3 } from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ASSET_CATALOG } from '../dev/assets/assetCatalog';
 import { AssetPreviewScene } from '../dev/assets/AssetPreviewScene';
@@ -25,7 +25,7 @@ function preview() {
 describe('AssetPreviewScene', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('restores player and ghost presentation when changing states without losing the tile guide', () => {
+  it('restores player and enemy presentation when changing states without losing the tile guide', () => {
     const { assets, scene, camera } = preview();
     const packet = scene.scene.getObjectByName('packet')!;
     const body = packet.getObjectByName('hologram-body')!;
@@ -39,23 +39,23 @@ describe('AssetPreviewScene', () => {
     expect(packet.rotation.y).toBeCloseTo(-Math.PI);
     expect(packet.getObjectByName('motion-trail')?.visible).toBe(true);
 
-    scene.select(entry('ghost-firewall-normal'));
+    scene.select(entry('enemy-firewall-normal'));
     scene.sample(0, camera);
-    const ghost = scene.scene.getObjectByName('ghost-firewall')!.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
-    const eye = scene.scene.getObjectByName('ghost-firewall')!.getObjectByName('eye-left') as Mesh;
+    const enemy = scene.scene.getObjectByName('enemy-firewall')!.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
+    const eye = scene.scene.getObjectByName('enemy-firewall')!.getObjectByName('eye-left') as Mesh;
     const scaredIndex = eye.morphTargetDictionary!.scared;
-    const baseColor = ghost.material.color.getHex();
-    scene.select(entry('ghost-firewall-scared'));
+    const baseColor = enemy.material.color.getHex();
+    scene.select(entry('enemy-firewall-scared'));
     scene.sample(240, camera);
-    expect(ghost.material.color.getHex()).not.toBe(baseColor);
+    expect(enemy.material.color.getHex()).not.toBe(baseColor);
     expect(eye.morphTargetInfluences![scaredIndex]).toBe(1);
-    scene.select(entry('ghost-firewall-warning'));
+    scene.select(entry('enemy-firewall-warning'));
     scene.sample(1200, camera);
-    expect(ghost.material.color.getHex()).toBe(baseColor);
+    expect(enemy.material.color.getHex()).toBe(baseColor);
     expect(eye.morphTargetInfluences![scaredIndex]).toBe(1);
-    scene.select(entry('ghost-firewall-normal'));
+    scene.select(entry('enemy-firewall-normal'));
     scene.sample(0, camera);
-    expect(ghost.material.color.getHex()).toBe(baseColor);
+    expect(enemy.material.color.getHex()).toBe(baseColor);
     expect(eye.morphTargetInfluences![scaredIndex]).toBe(0);
 
     scene.select(entry('player-idle'));
@@ -86,11 +86,11 @@ describe('AssetPreviewScene', () => {
 
   it.each([
     { id: 'player-powered', midpointMs: 160 },
-    { id: 'ghost-virus-scared', midpointMs: 120 },
+    { id: 'enemy-virus-scared', midpointMs: 120 },
   ])('seeks directly and backward through the $id entry and exit transitions', ({ id, midpointMs }) => {
     const { assets, scene, camera } = preview();
     const rim = scene.scene.getObjectByName('packet')!.getObjectByName('rim-horizontal-1-1') as Mesh<BufferGeometry, MeshBasicMaterial>;
-    const eye = scene.scene.getObjectByName('ghost-virus')!.getObjectByName('eye-left') as Mesh;
+    const eye = scene.scene.getObjectByName('enemy-virus')!.getObjectByName('eye-left') as Mesh;
     const sampleState = () => id === 'player-powered' ? rim.material.color.r : eye.morphTargetInfluences![eye.morphTargetDictionary!.scared];
     const selected = entry(id);
     scene.select(selected);
@@ -126,13 +126,49 @@ describe('AssetPreviewScene', () => {
     const baseBounds = scene.bounds.clone();
     const base = scene.scene.getObjectByName('point-base')!;
     scene.select(entry('point-power'));
+    scene.sample(1500, camera);
     const power = scene.scene.getObjectByName('point-power')!;
     expect(scene.bounds.equals(baseBounds)).toBe(true);
-    expect(power.matrix.elements[0] / base.matrix.elements[0]).toBeCloseTo(1.6);
+    const baseScale = new Vector3();
+    const powerScale = new Vector3();
+    base.matrix.decompose(new Vector3(), new Quaternion(), baseScale);
+    power.matrix.decompose(new Vector3(), new Quaternion(), powerScale);
+    expect(powerScale.x / baseScale.x).toBeCloseTo(1.6);
     scene.select(entry('player-death'));
     const envelope = scene.bounds.clone();
     for (const time of [0, 400, 900, 2100]) scene.sample(time, camera);
     expect(scene.bounds.equals(envelope)).toBe(true);
+    scene.dispose();
+    assets.dispose();
+  });
+
+  it('rotates and hovers the power star across seeking while the regular star stays static', () => {
+    const { assets, scene, camera } = preview();
+    const base = scene.scene.getObjectByName('point-base') as Mesh;
+    const power = scene.scene.getObjectByName('point-power') as Mesh;
+    const baseMatrix = base.matrix.clone();
+    scene.select(entry('point-power'));
+    scene.sample(750, camera);
+    const midway = power.matrix.clone();
+    const midwayPosition = new Vector3();
+    const midwayRotation = new Quaternion();
+    midway.decompose(midwayPosition, midwayRotation, new Vector3());
+    expect(power.geometry).toBe(assets.powerPelletGeometry);
+    expect(base.geometry).toBe(assets.pelletGeometry);
+    expect(power.geometry).not.toBe(base.geometry);
+    scene.sample(0, camera);
+    const startPosition = new Vector3();
+    const startRotation = new Quaternion();
+    power.matrix.decompose(startPosition, startRotation, new Vector3());
+    expect(midwayPosition.y).not.toBe(startPosition.y);
+    expect(midwayRotation.angleTo(startRotation)).toBeGreaterThan(0);
+    scene.sample(6000, camera);
+    scene.sample(750, camera);
+    expect(power.matrix.equals(midway)).toBe(true);
+    expect(base.matrix.equals(baseMatrix)).toBe(true);
+    scene.select(entry('point-base'));
+    scene.sample(4000, camera);
+    expect(base.matrix.equals(baseMatrix)).toBe(true);
     scene.dispose();
     assets.dispose();
   });
@@ -149,7 +185,7 @@ describe('AssetPreviewScene', () => {
     const idleRimOpacity = rim.material.opacity;
     expect(packet.visible).toBe(true);
     expect(star.visible).toBe(true);
-    expect(star.geometry).toBe(assets.pelletGeometry);
+    expect(star.geometry).toBe(id === 'effect-power' ? assets.powerPelletGeometry : assets.pelletGeometry);
 
     scene.sample(90, camera);
     expect(star.scale.x).toBeLessThan(startScale.x);
@@ -172,9 +208,9 @@ describe('AssetPreviewScene', () => {
 
   it('reuses three Spam copies across seeking and restores isolated normal presentation', () => {
     const { assets, scene, camera } = preview();
-    const createGhost = vi.spyOn(assets, 'createGhost');
-    const copies = [0, 1, 2].map((index) => scene.scene.getObjectByName(`ghost-spam-copy-${index}`)!);
-    scene.select(entry('ghost-spam-split'));
+    const createEnemy = vi.spyOn(assets, 'createEnemy');
+    const copies = [0, 1, 2].map((index) => scene.scene.getObjectByName(`enemy-spam-copy-${index}`)!);
+    scene.select(entry('enemy-spam-split'));
     const bounds = scene.bounds.clone();
     scene.sample(3999, camera);
     expect(copies.every((copy) => !copy.visible)).toBe(true);
@@ -186,11 +222,11 @@ describe('AssetPreviewScene', () => {
     scene.sample(0, camera);
     expect(copies.every((copy) => !copy.visible)).toBe(true);
     expect(scene.bounds.equals(bounds)).toBe(true);
-    scene.select(entry('ghost-spam-normal'));
+    scene.select(entry('enemy-spam-normal'));
     scene.sample(0, camera);
     expect(copies.every((copy) => !copy.visible)).toBe(true);
     expect(scene.scene.getObjectByName('split-pulse')?.visible).toBe(false);
-    expect(createGhost).not.toHaveBeenCalled();
+    expect(createEnemy).not.toHaveBeenCalled();
     scene.dispose();
     assets.dispose();
   });
@@ -198,13 +234,13 @@ describe('AssetPreviewScene', () => {
   it('rewinds hunter intake and returning enemies and releases intake pixels on selection changes', () => {
     const { assets, scene, camera } = preview();
     const packet = scene.scene.getObjectByName('packet')!;
-    const ghost = scene.scene.getObjectByName('ghost-virus')!;
-    const bug = ghost.getObjectByName('return-bug')!;
-    const collapse = ghost.getObjectByName('ghost-collapse')!;
-    scene.select(entry('player-ghost-eating'));
+    const enemy = scene.scene.getObjectByName('enemy-virus')!;
+    const bug = enemy.getObjectByName('return-bug')!;
+    const collapse = enemy.getObjectByName('enemy-collapse')!;
+    scene.select(entry('player-enemy-eating'));
     scene.sample(180, camera);
     expect(packet.getObjectByName('hunter-rig')?.visible).toBe(true);
-    const pixels = scene.scene.getObjectByName('ghost-eat-pixels')!;
+    const pixels = scene.scene.getObjectByName('enemy-eat-pixels')!;
     const pixel = pixels.children[0] as Mesh<BufferGeometry, MeshBasicMaterial>;
     const disposeGeometry = vi.spyOn(pixel.geometry, 'dispose');
     const disposeMaterial = vi.spyOn(pixel.material, 'dispose');
@@ -216,14 +252,14 @@ describe('AssetPreviewScene', () => {
     expect(bug.visible).toBe(false);
     expect(collapse.visible).toBe(true);
 
-    scene.select(entry('ghost-virus-returning'));
+    scene.select(entry('enemy-virus-returning'));
     expect(disposeGeometry).toHaveBeenCalledOnce();
     expect(disposeMaterial).toHaveBeenCalledOnce();
     scene.sample(0, camera);
-    const start = ghost.position.clone();
+    const start = enemy.position.clone();
     expect(bug.visible).toBe(true);
     scene.sample(750, camera);
-    expect(ghost.position.x).toBeGreaterThan(start.x);
+    expect(enemy.position.x).toBeGreaterThan(start.x);
     scene.sample(1540, camera);
     const restoringScale = collapse.scale.clone();
     expect(restoringScale.x).toBeGreaterThan(0);
@@ -235,18 +271,18 @@ describe('AssetPreviewScene', () => {
     expect(collapse.scale.equals(restoringScale)).toBe(true);
     scene.sample(0, camera);
     expect(bug.visible).toBe(true);
-    expect(ghost.position.equals(start)).toBe(true);
+    expect(enemy.position.equals(start)).toBe(true);
     scene.select(entry('player-idle'));
     scene.sample(0, camera);
     expect(packet.getObjectByName('hunter-rig')?.visible).toBe(false);
-    expect(scene.scene.getObjectByName('ghost-eat-pixels')).toBeUndefined();
+    expect(scene.scene.getObjectByName('enemy-eat-pixels')).toBeUndefined();
     scene.dispose();
     assets.dispose();
   });
 
   it('samples detection markers and persistent slow zones without leaking effects across selections', () => {
     const { assets, scene, camera } = preview();
-    scene.select(entry('ghost-ping-ping'));
+    scene.select(entry('enemy-ping-ping'));
     const bounds = scene.bounds.clone();
     scene.sample(300, camera);
     const marker = scene.scene.getObjectByName('ping-target')!;
@@ -255,7 +291,7 @@ describe('AssetPreviewScene', () => {
     scene.sample(600, camera);
     expect(marker.visible).toBe(false);
     expect(scene.bounds.equals(bounds)).toBe(true);
-    scene.select(entry('ghost-lag-lag'));
+    scene.select(entry('enemy-lag-lag'));
     scene.sample(3500, camera);
     const zones = scene.scene.getObjectByName('enemy-effects')!.children.filter((child) => child.name === 'lag-zone-fill');
     expect(zones.filter((zone) => zone.visible)).toHaveLength(3);

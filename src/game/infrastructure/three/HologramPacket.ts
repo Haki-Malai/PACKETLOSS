@@ -69,7 +69,7 @@ export class HologramPacket {
   private powered = false;
   private powerWarning = false;
   private powerAmount: number | undefined;
-  private ghostEatProgress: number | null = null;
+  private enemyEatProgress: number | null = null;
   private disposed = false;
 
   constructor() {
@@ -182,7 +182,7 @@ export class HologramPacket {
       prong.rotation.z = -side * 0.32;
       this.hunterRig.add(prong);
     }
-    this.intake.name = 'ghost-intake';
+    this.intake.name = 'enemy-intake';
     this.intake.position.z = 2.3;
     this.hunterRig.add(this.intake);
     this.intakeCavity = new Mesh(this.plane, this.material('intake-cavity', 0x000205));
@@ -281,7 +281,7 @@ export class HologramPacket {
     const time = Math.max(0, timeSeconds);
     const pickup = this.deathProgress === null ? this.frame / 3 : 0;
     const hunter = this.deathProgress === null
-      ? this.powerTransition.sample(Number(this.powered || this.ghostEatProgress !== null), time, this.powerAmount)
+      ? this.powerTransition.sample(Number(this.powered || this.enemyEatProgress !== null), time, this.powerAmount)
       : this.powerTransition.reset();
     const accent = this.powerColor.setHex(CYAN).lerp(GOLD_COLOR, hunter);
     const warning = this.powerWarning ? MathUtils.lerp(1, 0.6 + Math.sin(time * 16) * 0.4, hunter) : 1;
@@ -319,7 +319,7 @@ export class HologramPacket {
     }
     this.hunterRig.visible = hunter > 0;
     this.hunterRig.scale.set(MathUtils.lerp(0.55, 1, hunter), hunter, 1);
-    const eating = this.deathProgress === null ? this.ghostEatProgress : null;
+    const eating = this.deathProgress === null ? this.enemyEatProgress : null;
     const opening = eating === null ? 0 : MathUtils.smoothstep(eating, 0, 0.25) * (1 - MathUtils.smoothstep(eating, 0.75, 0.95));
     this.intakeCavity.scale.y = 0.1 + opening * 0.6;
     for (const [index, jaw] of this.intakeJaws.entries()) {
@@ -392,8 +392,8 @@ export class HologramPacket {
     this.powerAmount = amount;
   }
 
-  setGhostEatProgress(progress: number | null): void {
-    this.ghostEatProgress = progress === null ? null : MathUtils.clamp(progress, 0, 1);
+  setEnemyEatProgress(progress: number | null): void {
+    this.enemyEatProgress = progress === null ? null : MathUtils.clamp(progress, 0, 1);
   }
 
   setFrame(frame: number): void {

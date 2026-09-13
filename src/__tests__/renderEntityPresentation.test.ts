@@ -1,12 +1,12 @@
 import { BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Quaternion, Vector3 } from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GhostEntity } from '../game/domain/entities/GhostEntity';
+import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import { MovementRules } from '../game/domain/services/MovementRules';
-import { setActiveGhostsScaredWindow } from '../game/domain/services/GhostScaredStateService';
+import { setActiveEnemiesScaredWindow } from '../game/domain/services/EnemyScaredStateService';
 import { HologramPacket } from '../game/infrastructure/three/HologramPacket';
-import { GhostPacketCollisionSystem } from '../game/systems/GhostPacketCollisionSystem';
+import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
 import { AnimationSystem } from '../game/systems/AnimationSystem';
-import { GHOST_EAT_DURATION_MS } from '../game/shared/ghostEating';
+import { ENEMY_EAT_DURATION_MS } from '../game/shared/enemyEating';
 import { resetGameState } from '../state/gameState';
 import { createCollisionTile, createMapFixture, createRenderHarness, createWorld } from './fixtures/renderFixtures';
 import { createEnemyWorld } from './fixtures/enemyFixtures';
@@ -19,15 +19,15 @@ function createEntityHarness(pointType?: 'pellet' | 'power-pellet') {
     { type: pointType, x: 8, y: 8 }, { type: pointType, x: 24, y: 8 }, { type: pointType, x: 40, y: 8 },
   ];
   const world = createWorld(map, collisionGrid, { x: 0, y: 0 });
-  const ghost = new GhostEntity({
+  const enemy = new EnemyEntity({
     key: 'virus', tile: { x: 1, y: 0 }, direction: 'right', speed: 1, displayWidth: 11, displayHeight: 11,
   });
-  new MovementRules(world.tileSize).setEntityTile(ghost, ghost.tile);
-  world.ghosts.push(ghost);
+  new MovementRules(world.tileSize).setEntityTile(enemy, enemy.tile);
+  world.enemies.push(enemy);
   const harness = createRenderHarness({ world });
   const packetModel = harness.scene.getObjectByName('packet') as Group;
-  const ghostModel = harness.scene.getObjectByName('ghost-virus') as Group;
-  return { ...harness, ghost, packetModel, ghostModel };
+  const enemyModel = harness.scene.getObjectByName('enemy-virus') as Group;
+  return { ...harness, enemy, packetModel, enemyModel };
 }
 
 function body(model: Group): Mesh<BufferGeometry, MeshStandardMaterial> {
@@ -41,12 +41,12 @@ describe('RenderSystem entity presentation', () => {
   });
 
   it('keeps the Packet and its shadow cut out after the final death timer reaches zero', () => {
-    const { world, ghost, packetModel, renderSystem } = createEntityHarness();
+    const { world, enemy, packetModel, renderSystem } = createEntityHarness();
     const movement = new MovementRules(world.tileSize);
-    movement.setEntityTile(world.packet, ghost.tile);
-    ghost.state.free = true;
+    movement.setEntityTile(world.packet, enemy.tile);
+    enemy.state.free = true;
     resetGameState(0, 1);
-    const collisions = new GhostPacketCollisionSystem(world, movement);
+    const collisions = new EnemyPacketCollisionSystem(world, movement);
     collisions.update();
     collisions.update(900);
     world.isMoving = false;
@@ -118,20 +118,20 @@ describe('RenderSystem entity presentation', () => {
     renderSystem.destroy();
   });
 
-  it('shows hunter mode during the edible window and finishes the final ghost intake while return movement continues', () => {
-    const { world, movement, ghostMovement } = createEnemyWorld([
+  it('shows hunter mode during the edible window and finishes the final enemy intake while return movement continues', () => {
+    const { world, movement, enemyMovement } = createEnemyWorld([
       '#######', '#.....#', '#.....#', '#.....#', '#.....#', '#.....#', '#######',
     ], [{ key: 'virus', tile: { x: 3, y: 1 } }], { x: 3, y: 1 });
     const { renderSystem, scene } = createRenderHarness({ world });
     const packet = scene.getObjectByName('packet')!;
-    const ghost = scene.getObjectByName('ghost-virus')!;
+    const enemy = scene.getObjectByName('enemy-virus')!;
     const hunter = packet.getObjectByName('hunter-rig')!;
-    const collapse = ghost.getObjectByName('ghost-collapse')!;
-    const bug = ghost.getObjectByName('return-bug')!;
-    const collision = new GhostPacketCollisionSystem(world, movement);
+    const collapse = enemy.getObjectByName('enemy-collapse')!;
+    const bug = enemy.getObjectByName('return-bug')!;
+    const collision = new EnemyPacketCollisionSystem(world, movement);
     const animation = new AnimationSystem(world, 1);
     animation.start();
-    setActiveGhostsScaredWindow(world, 1000);
+    setActiveEnemiesScaredWindow(world, 1000);
     renderSystem.render();
     expect(hunter.visible).toBe(false);
     renderSystem.capturePreviousState();
@@ -158,16 +158,16 @@ describe('RenderSystem entity presentation', () => {
     renderSystem.render();
     expect(hunter.visible).toBe(false);
 
-    setActiveGhostsScaredWindow(world, 5000);
+    setActiveEnemiesScaredWindow(world, 5000);
     collision.update();
     renderSystem.render();
     expect(hunter.visible).toBe(false);
     renderSystem.capturePreviousState();
-    ghostMovement.update(210);
+    enemyMovement.update(210);
     collision.update(210);
     renderSystem.update(210);
     renderSystem.render();
-    const pixels = scene.getObjectByName('ghost-eat-pixels')!;
+    const pixels = scene.getObjectByName('enemy-eat-pixels')!;
     expect(pixels.visible).toBe(true);
     const positions = pixels.children.map((pixel) => pixel.position.clone());
     world.isMoving = false;
@@ -177,21 +177,21 @@ describe('RenderSystem entity presentation', () => {
 
     world.isMoving = true;
     renderSystem.capturePreviousState();
-    ghostMovement.update(GHOST_EAT_DURATION_MS - 210);
-    collision.update(GHOST_EAT_DURATION_MS - 210);
+    enemyMovement.update(ENEMY_EAT_DURATION_MS - 210);
+    collision.update(ENEMY_EAT_DURATION_MS - 210);
     renderSystem.update(210);
     renderSystem.render();
     expect(hunter.visible).toBe(true);
     expect(collapse.visible).toBe(false);
     expect(bug.visible).toBe(true);
-    expect(scene.getObjectByName('ghost-eat-pixels')).toBeUndefined();
-    const before = ghost.position.clone();
+    expect(scene.getObjectByName('enemy-eat-pixels')).toBeUndefined();
+    const before = enemy.position.clone();
     renderSystem.capturePreviousState();
-    ghostMovement.update();
+    enemyMovement.update();
     renderSystem.update(1000 / 60);
     renderSystem.render(0.5);
-    expect(ghost.position.z).toBeGreaterThan(before.z);
-    expect(ghost.position.z).toBeLessThan(world.ghosts[0].y);
+    expect(enemy.position.z).toBeGreaterThan(before.z);
+    expect(enemy.position.z).toBeLessThan(world.enemies[0].y);
     renderSystem.capturePreviousState();
     renderSystem.update(330);
     renderSystem.render();
@@ -200,25 +200,25 @@ describe('RenderSystem entity presentation', () => {
   });
 
   it('clears a retired Spam copy’s return transition before the slot is reused', () => {
-    const { world, movement, ghostMovement, abilities } = createEnemyWorld([
+    const { world, movement, enemyMovement, abilities } = createEnemyWorld([
       '#######', '#.....#', '#.....#', '#.....#', '#.....#', '#.....#', '#######',
     ], [
       { key: 'spam', tile: { x: 3, y: 3 } },
       { key: 'spam', tile: { x: 3, y: 3 }, isCopy: true },
     ]);
     const { renderSystem, scene } = createRenderHarness({ world });
-    const copy = world.ghosts[1];
-    const model = scene.children.filter((object) => object.name === 'ghost-spam')[1];
+    const copy = world.enemies[1];
+    const model = scene.children.filter((object) => object.name === 'enemy-spam')[1];
     abilities.update(4000);
     expect(copy.active).toBe(true);
-    setActiveGhostsScaredWindow(world, 5000);
+    setActiveEnemiesScaredWindow(world, 5000);
     movement.setEntityTile(world.packet, copy.tile);
-    new GhostPacketCollisionSystem(world, movement).update();
+    new EnemyPacketCollisionSystem(world, movement).update();
     expect(copy.state.dead).toBe(true);
-    ghostMovement.update(GHOST_EAT_DURATION_MS);
+    enemyMovement.update(ENEMY_EAT_DURATION_MS);
     renderSystem.render();
     expect(model.getObjectByName('return-bug')!.visible).toBe(true);
-    for (let step = 0; step < 200 && copy.active; step += 1) ghostMovement.update();
+    for (let step = 0; step < 200 && copy.active; step += 1) enemyMovement.update();
     expect(copy.active).toBe(false);
     renderSystem.render();
     expect(model.visible).toBe(false);
@@ -227,13 +227,13 @@ describe('RenderSystem entity presentation', () => {
     animation.start();
     animation.update(5000);
     movement.setEntityTile(world.packet, { x: 1, y: 1 });
-    movement.setEntityTile(world.ghosts[0], { x: 3, y: 3 });
+    movement.setEntityTile(world.enemies[0], { x: 3, y: 3 });
     abilities.update(4000);
     expect(copy.active).toBe(true);
     renderSystem.render();
     expect(model.visible).toBe(true);
     expect(model.getObjectByName('return-bug')!.visible).toBe(false);
-    expect(model.getObjectByName('ghost-collapse')!.scale.x).toBe(1);
+    expect(model.getObjectByName('enemy-collapse')!.scale.x).toBe(1);
     renderSystem.destroy();
   });
 
@@ -282,7 +282,7 @@ describe('RenderSystem entity presentation', () => {
   });
 
   it('suppresses an active intake and its arrival pulse after dangerous contact', () => {
-    const { world, ghost, packetModel, renderSystem, collectibles, scene } = createEntityHarness('pellet');
+    const { world, enemy, packetModel, renderSystem, collectibles, scene } = createEntityHarness('pellet');
     const movement = new MovementRules(world.tileSize);
     const rim = packetModel.getObjectByName('rim-horizontal-1-1') as Mesh<BufferGeometry, MeshBasicMaterial>;
     renderSystem.render();
@@ -292,9 +292,9 @@ describe('RenderSystem entity presentation', () => {
     const star = scene.getObjectByName('pellet-effect')!;
     expect(star.visible).toBe(true);
 
-    ghost.state.free = true;
-    movement.setEntityTile(ghost, world.packet.tile);
-    new GhostPacketCollisionSystem(world, movement).update();
+    enemy.state.free = true;
+    movement.setEntityTile(enemy, world.packet.tile);
+    new EnemyPacketCollisionSystem(world, movement).update();
     renderSystem.render();
     expect(star.visible).toBe(false);
     expect(packetModel.getObjectByName('death-effect')?.visible).toBe(true);
@@ -305,30 +305,31 @@ describe('RenderSystem entity presentation', () => {
   });
 
   it('keeps scared eyes while warning colors flash and restores angry eyes when edible time ends', () => {
-    const { world, ghost, ghostModel, renderSystem } = createEntityHarness();
+    const { world, enemy, enemyModel, renderSystem } = createEntityHarness();
     renderSystem.render();
-    const baseColor = body(ghostModel).material.color.getHex();
-    const eye = ghostModel.getObjectByName('eye-left') as Mesh;
+    const baseColor = body(enemyModel).material.color.getHex();
+    const eye = enemyModel.getObjectByName('eye-left') as Mesh;
     const scaredIndex = eye.morphTargetDictionary!.scared;
-    ghost.state.scared = true;
-    world.ghostScaredTimers.set(ghost, 600);
-    world.ghostScaredWarnings.set(ghost, { elapsedMs: 600, nextToggleAtMs: 660, showBaseColor: false });
+    enemy.state.scared = true;
+    world.enemyScaredTimers.set(enemy, 600);
+    world.enemyScaredWarnings.set(enemy, { elapsedMs: 600, nextToggleAtMs: 660, showBaseColor: false });
     renderSystem.render();
     expect(eye.morphTargetInfluences![scaredIndex]).toBe(0);
     renderSystem.capturePreviousState();
     renderSystem.update(250);
     renderSystem.render();
-    const scaredMaterial = body(ghostModel).material;
+    const scaredMaterial = body(enemyModel).material;
     expect(scaredMaterial.color.getHex()).not.toBe(baseColor);
-    expect(scaredMaterial.color.b).toBeGreaterThan(scaredMaterial.color.r);
+    expect(scaredMaterial.color.r).toBeCloseTo(scaredMaterial.color.g);
+    expect(scaredMaterial.color.g).toBeCloseTo(scaredMaterial.color.b);
     expect(eye.morphTargetInfluences![scaredIndex]).toBe(1);
 
-    world.ghostScaredWarnings.set(ghost, { elapsedMs: 700, nextToggleAtMs: 760, showBaseColor: true });
+    world.enemyScaredWarnings.set(enemy, { elapsedMs: 700, nextToggleAtMs: 760, showBaseColor: true });
     renderSystem.render();
-    expect(body(ghostModel).material.color.getHex()).toBe(baseColor);
-    expect(ghost.state.scared).toBe(true);
+    expect(body(enemyModel).material.color.getHex()).toBe(baseColor);
+    expect(enemy.state.scared).toBe(true);
     expect(eye.morphTargetInfluences![scaredIndex]).toBe(1);
-    ghost.state.scared = false;
+    enemy.state.scared = false;
     renderSystem.render();
     expect(eye.morphTargetInfluences![scaredIndex]).toBe(1);
     renderSystem.capturePreviousState();
@@ -366,38 +367,38 @@ describe('RenderSystem entity presentation', () => {
   });
 
   it('interpolates both entity models while preserving gameplay coordinates', () => {
-    const { world, ghost, packetModel, ghostModel, renderSystem } = createEntityHarness();
+    const { world, enemy, packetModel, enemyModel, renderSystem } = createEntityHarness();
     renderSystem.capturePreviousState();
     world.packet.x += 8;
-    ghost.y += 8;
+    enemy.y += 8;
     renderSystem.render(0.5);
 
     expect(packetModel.position.x).toBe(12);
     expect(packetModel.position.z).toBe(8);
-    expect(ghostModel.position.x).toBe(24);
-    expect(ghostModel.position.z).toBe(12);
+    expect(enemyModel.position.x).toBe(24);
+    expect(enemyModel.position.z).toBe(12);
     expect(world.packet.x).toBe(16);
-    expect(ghost.y).toBe(16);
+    expect(enemy.y).toBe(16);
     renderSystem.destroy();
   });
 
   it('shows portal and respawn destinations immediately when tile positions reset', () => {
-    const { world, ghost, packetModel, ghostModel, renderSystem } = createEntityHarness();
+    const { world, enemy, packetModel, enemyModel, renderSystem } = createEntityHarness();
     renderSystem.capturePreviousState();
     const movement = new MovementRules(world.tileSize);
     movement.setEntityTile(world.packet, { x: 3, y: 1 });
-    movement.setEntityTile(ghost, { x: 2, y: 1 });
+    movement.setEntityTile(enemy, { x: 2, y: 1 });
     renderSystem.render(0.1);
 
     expect(packetModel.position.x).toBe(56);
     expect(packetModel.position.z).toBe(24);
-    expect(ghostModel.position.x).toBe(40);
-    expect(ghostModel.position.z).toBe(24);
+    expect(enemyModel.position.x).toBe(40);
+    expect(enemyModel.position.z).toBe(24);
     renderSystem.destroy();
   });
 
-  it('interpolates animation and freezes the hologram and ghost clips on pause without changing gameplay roots', () => {
-    const { world, packetModel, ghostModel, camera, renderSystem } = createEntityHarness();
+  it('interpolates animation and freezes the hologram and enemy clips on pause without changing gameplay roots', () => {
+    const { world, packetModel, enemyModel, camera, renderSystem } = createEntityHarness();
     const hologram = packetModel.getObjectByName('hologram-model')!;
     const binary = packetModel.getObjectByName('binary-000') as Mesh<BufferGeometry, MeshBasicMaterial>;
     renderSystem.render();
@@ -408,7 +409,7 @@ describe('RenderSystem entity presentation', () => {
     world.packet.angle = -90;
     renderSystem.render(0.5);
 
-    expect(body(ghostModel).position.y).toBeCloseTo(4.25);
+    expect(body(enemyModel).position.y).toBeCloseTo(4.25);
     expect(hologram.position.equals(initialPose)).toBe(false);
     expect(packetModel.rotation.y).toBeCloseTo(Math.PI / 2);
     const facing = new Vector3(0, 0, 1).applyQuaternion(hologram.getWorldQuaternion(new Quaternion()));
@@ -430,7 +431,7 @@ describe('RenderSystem entity presentation', () => {
     renderSystem.capturePreviousState();
     renderSystem.update(1500);
     renderSystem.render();
-    expect(body(ghostModel).position.y).toBeCloseTo(4.25);
+    expect(body(enemyModel).position.y).toBeCloseTo(4.25);
     expect(hologram.position.y).not.toBe(pausedHeight);
     renderSystem.destroy();
   });

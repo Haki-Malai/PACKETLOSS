@@ -1,7 +1,7 @@
 import { BoxGeometry, Group, MathUtils, Mesh, MeshBasicMaterial, Object3D, Vector3 } from 'three';
 
 /** A defeated shell sheds pixels into the Packet while its little return form emerges. */
-export class GhostEatPresentation {
+export class EnemyEatPresentation {
   readonly group = new Group();
   private readonly geometry = new BoxGeometry(0.65, 0.65, 0.65);
   private readonly material = new MeshBasicMaterial({
@@ -11,7 +11,7 @@ export class GhostEatPresentation {
   private readonly targetPosition = new Vector3();
 
   constructor() {
-    this.group.name = 'ghost-eat-pixels';
+    this.group.name = 'enemy-eat-pixels';
     for (let i = 0; i < 7; i += 1) {
       const pixel = new Mesh(this.geometry, this.material);
       pixel.renderOrder = 3;
