@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_POWER_POINT_RATIO, buildPointLayout } from '../game/domain/services/PointLayoutService';
+import { buildPointLayout } from '../game/domain/services/PointLayoutService';
 import {
   createCollisionTile,
   createMapFixture,
@@ -31,28 +31,48 @@ describe('buildPointLayout', () => {
     ]);
   });
 
-  it('includes non-colliding connector tiles and keeps traversal connected through them', () => {
-    const row = [
+  it('restores every regular point along corridors, including non-colliding connectors', () => {
+    const { map, collisionGrid } = createMapFixture([[
       createCollisionTile({ collides: true, left: true }),
       createCollisionTile(),
       createCollisionTile({ collides: true }),
       createCollisionTile({ collides: true, right: true }),
-    ];
-
-    const { map, collisionGrid } = createMapFixture([row]);
-    const layout = buildPointLayout({
-      map,
-      collisionGrid,
-      startTile: { x: 0, y: 0 },
-      tileSize: 16,
-      options: { powerPointRatio: 0, minPowerPoints: 0 },
-    });
+    ]]);
+    const layout = buildPointLayout({ map, collisionGrid, startTile: { x: 0, y: 0 }, tileSize: 16,
+      options: { powerPointRatio: 0, minPowerPoints: 0 } });
 
     expect(layout.basePoints).toEqual([
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 2, y: 0 },
-      { x: 3, y: 0 },
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 },
+    ]);
+  });
+
+  it('keeps complete point trails and places four powerups at the outer bends of a small maze', () => {
+    const rows = [
+      '#############',
+      '#...........#',
+      '#.####.####.#',
+      '#.####.####.#',
+      '#.####.####.#',
+      '#.####.####.#',
+      '#...........#',
+      '#.####.####.#',
+      '#.####.####.#',
+      '#.####.####.#',
+      '#.####.####.#',
+      '#...........#',
+      '#############',
+    ];
+    const { map, collisionGrid } = createMapFixture(rows.map((row) => [...row].map((cell) =>
+      createCollisionTile(cell === '#' ? { up: true, down: true, left: true, right: true } : {}),
+    )));
+    map.tiles[1][6].collision.portal = true;
+    const layout = buildPointLayout({ map, collisionGrid, startTile: { x: 6, y: 6 }, tileSize: 16 });
+
+    expect(layout.basePoints).toEqual(rows.flatMap((row, y) => [...row].flatMap((cell, x) =>
+      cell === '.' ? [{ x, y }] : [],
+    )));
+    expect(layout.powerPoints).toEqual([
+      { x: 1, y: 1 }, { x: 11, y: 1 }, { x: 1, y: 11 }, { x: 11, y: 11 },
     ]);
   });
 
@@ -156,7 +176,17 @@ describe('buildPointLayout', () => {
 
     expect(baseKeys.size).toBe(layout.basePoints.length);
     expect(baseKeys.has(toTileKey(startTile))).toBe(true);
-    expect(powerKeys).toHaveLength(Math.round(layout.basePoints.length * DEFAULT_POWER_POINT_RATIO));
+    expect(layout.basePoints).toHaveLength(2197);
+    expect(powerKeys).toHaveLength(12);
+    for (const power of layout.powerPoints) {
+      expect(Math.hypot(power.x - startTile.x, power.y - startTile.y)).toBeGreaterThanOrEqual(3);
+      expect(map.tiles[power.y][power.x].collision.portal).toBe(false);
+      // The authored jail spans x21–27 on row26; its frontage stays clear of powerups.
+      expect(power.x < 19 || power.x > 29 || power.y < 24 || power.y > 28).toBe(true);
+      for (const other of layout.powerPoints) {
+        if (power !== other) expect(Math.hypot(power.x - other.x, power.y - other.y)).toBeGreaterThanOrEqual(10);
+      }
+    }
     expect(new Set(powerKeys).size).toBe(powerKeys.length);
     expect(powerKeys.every((key) => baseKeys.has(key))).toBe(true);
     expect(layout.basePoints.some(({ x, y }) => map.tiles[y][x].collision.portal)).toBe(true);
