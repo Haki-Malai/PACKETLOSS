@@ -10,6 +10,11 @@ export interface PointerState {
 type KeyListener = (_event: KeyboardEvent) => void;
 type PointerListener = (_pointer: PointerState) => void;
 
+export function isInteractiveInputTarget(target: EventTarget | null): boolean {
+  const element = target as Element | null;
+  return !!element?.closest?.('button, a, input, select, textarea, [contenteditable], [role="dialog"]');
+}
+
 export class InputManager {
   private readonly element: HTMLElement;
   private readonly keyDown = new Set<string>();
@@ -18,6 +23,7 @@ export class InputManager {
   private readonly pointerDownListeners = new Set<PointerListener>();
   private readonly pointerUpListeners = new Set<PointerListener>();
   private readonly pointerCancelListeners = new Set<PointerListener>();
+  private readonly resetListeners = new Set<() => void>();
 
   constructor(element: HTMLElement) {
     this.element = element;
@@ -32,6 +38,16 @@ export class InputManager {
 
   isKeyDown(code: string): boolean {
     return this.keyDown.has(code);
+  }
+
+  reset(): void {
+    this.keyDown.clear();
+    this.resetListeners.forEach((listener) => listener());
+  }
+
+  onReset(listener: () => void): () => void {
+    this.resetListeners.add(listener);
+    return () => { this.resetListeners.delete(listener); };
   }
 
   onKeyDown(listener: KeyListener): () => void {
@@ -83,9 +99,12 @@ export class InputManager {
     this.pointerDownListeners.clear();
     this.pointerUpListeners.clear();
     this.pointerCancelListeners.clear();
+    this.resetListeners.clear();
   }
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
+    if (event.defaultPrevented || isInteractiveInputTarget(event.target)) return;
+    if (event.repeat && !this.keyDown.has(event.code)) return;
     this.keyDown.add(event.code);
     this.keyDownListeners.forEach((listener) => {
       listener(event);
@@ -97,7 +116,7 @@ export class InputManager {
   };
 
   private readonly handleBlur = (): void => {
-    this.keyDown.clear();
+    this.reset();
   };
 
   private readonly handlePointerMove = (event: PointerEvent): void => {
