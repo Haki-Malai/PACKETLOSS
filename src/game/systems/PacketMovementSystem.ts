@@ -12,6 +12,7 @@ export class PacketMovementSystem {
   ) {}
 
   update(deltaMs = 0): void {
+    if (this.world.packet.deathAnimationRemainingMs > 0) return;
     this.updatePortalBlink(deltaMs);
     this.updateDeathRecovery(deltaMs);
     this.updateDirectionVisuals();

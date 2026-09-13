@@ -143,10 +143,10 @@ export class MechanicsDomainHarness {
     if (this.world.isMoving) {
       this.world.nextTick();
       this.scheduler.update(deltaMs);
-      this.packetSystem.update();
+      this.packetSystem.update(deltaMs);
       this.ghostReleaseSystem.update();
       this.ghostMovementSystem.update();
-      this.ghostPacketCollisionSystem.update();
+      this.ghostPacketCollisionSystem.update(deltaMs);
       this.animationSystem.update(deltaMs);
     }
   }

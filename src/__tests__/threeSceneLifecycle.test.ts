@@ -17,6 +17,7 @@ import { CollisionGrid, createEmptyCollisionTile } from '../game/domain/world/Co
 import { WorldState, type WorldMapData } from '../game/domain/world/WorldState';
 import { CollectibleSystem } from '../game/systems/CollectibleSystem';
 import { RenderSystem } from '../game/systems/RenderSystem';
+import { createCharacterAssets } from './fixtures/characterFixtures';
 
 function createSceneHarness() {
   const tiles = Array.from({ length: 3 }, (_, y) => Array.from({ length: 4 }, (_, x) => ({
@@ -72,7 +73,7 @@ function createSceneHarness() {
   camera.snapToFollowTarget();
   const renderer = { pixelRatio: 1, render: vi.fn(), dispose: vi.fn() };
   const collectibles = new CollectibleSystem(world);
-  const system = new RenderSystem(world, renderer, camera, collectibles);
+  const system = new RenderSystem(world, renderer, camera, collectibles, createCharacterAssets());
   return { world, ghost, camera, renderer, collectibles, system };
 }
 
@@ -157,15 +158,15 @@ describe('Three.js scene lifecycle', () => {
     system.render();
     const packet = system.scene.getObjectByName('packet')!;
     const ghostModel = system.scene.getObjectByName('ghost-blinky')!;
-    const packetBody = packet.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
+    const packetBody = packet.getObjectByName('hologram-model')!;
     const ghostBody = ghostModel.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
     const effect = system.scene.getObjectByName('pellet-effect') as Mesh<BufferGeometry, MeshBasicMaterial>;
     const snapshot = () => ({
       packetPosition: packet.position.toArray(),
       packetVisible: packet.visible,
-      mouth: packetBody.geometry.id,
+      packetPose: packetBody.position.toArray(),
       ghostPosition: ghostModel.position.toArray(),
-      hem: ghostBody.geometry.id,
+      ghostPose: ghostBody.position.toArray(),
       ghostColor: ghostBody.material.color.getHex(),
       effectScale: effect.scale.toArray(),
       effectOpacity: effect.material.opacity,

@@ -8,6 +8,7 @@ import type { ThreeRendererAdapter } from '../../game/infrastructure/adapters/Th
 import { CollectibleSystem } from '../../game/systems/CollectibleSystem';
 import { CollisionGrid, CollisionTile, createEmptyCollisionTile } from '../../game/domain/world/CollisionGrid';
 import { WorldMapData, WorldState, WorldTile } from '../../game/domain/world/WorldState';
+import { createCharacterAssets } from './characterFixtures';
 
 export function createCollisionTile(overrides: Partial<CollisionTile> = {}): CollisionTile {
   return {
@@ -106,7 +107,7 @@ export function createRenderHarness(options: RenderHarnessOptions = {}) {
   camera.startFollow(world.packet, CAMERA.followLerp.x, CAMERA.followLerp.y);
   camera.snapToFollowTarget();
   const collectibles = new CollectibleSystem(world);
-  const renderSystem = new RenderSystem(world, renderer, camera, collectibles);
+  const renderSystem = new RenderSystem(world, renderer, camera, collectibles, createCharacterAssets());
 
   return {
     world,

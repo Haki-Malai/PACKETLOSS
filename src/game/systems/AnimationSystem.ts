@@ -24,9 +24,9 @@ const ANIMATIONS: Record<AnimationKey, AnimationDefinition> = {
   blinkyIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
 };
 
-const PACKET_CHOMP_SEQUENCE = [0, 1, 2, 3, 2, 1] as const;
+export const PACKET_CHOMP_SEQUENCE = [0, 1, 2, 3, 2, 1] as const;
 const PACKET_IDLE_FRAME = PACKET_CHOMP_SEQUENCE[0];
-const PACKET_CHOMP_FRAME_RATE = 20;
+export const PACKET_CHOMP_FRAME_RATE = 20;
 const SCARED_GHOST_SPEED = 0.5;
 
 export class AnimationSystem {

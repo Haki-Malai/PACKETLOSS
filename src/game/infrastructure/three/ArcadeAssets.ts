@@ -1,21 +1,39 @@
 import {
+  AnimationMixer,
   BufferGeometry,
+  BufferGeometryLoader,
+  Camera,
   DataTexture,
-  Float32BufferAttribute,
   Group,
   LinearFilter,
+  Material,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  Object3D,
   PlaneGeometry,
-  SphereGeometry,
+  Texture,
 } from 'three';
-import { SPRITE_SIZE } from '../../../config/constants';
+import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import type { GhostKey } from '../../domain/entities/GhostEntity';
-import type { Direction } from '../../domain/valueObjects/Direction';
+import { HologramPacket } from './HologramPacket';
+import pointStarGeometry from './point-star.json';
 
 type GhostAppearance = GhostKey | 'scared';
-type BodyMesh = Mesh<BufferGeometry, MeshStandardMaterial>;
+type CharacterModel = Pick<GLTF, 'scene' | 'animations'>;
+export type CharacterModels = Record<'block' | 'virus', CharacterModel>;
+
+interface Resources {
+  geometries: Set<BufferGeometry>;
+  materials: Set<Material>;
+  textures: Set<Texture>;
+}
+
+interface CharacterInstance {
+  mixer: AnimationMixer;
+  colors: Array<{ material: MeshStandardMaterial; accent: boolean }>;
+  appearance?: GhostAppearance;
+}
 
 const GHOST_COLORS: Record<GhostAppearance, number> = {
   inky: 0x45ddeb,
@@ -27,37 +45,16 @@ const GHOST_COLORS: Record<GhostAppearance, number> = {
 
 /** Shared, simulation-driven models. Every model's root sits on the maze ground. */
 export class ArcadeAssets {
-  readonly pelletGeometry = new SphereGeometry(1, 12, 8);
+  readonly pelletGeometry = new BufferGeometryLoader().parse(pointStarGeometry);
   readonly pelletMaterial = new MeshStandardMaterial({
-    color: 0xd6c6a6,
+    vertexColors: true,
     roughness: 0.9,
   });
   readonly powerPelletMaterial = new MeshStandardMaterial({
-    color: 0xe2d7bd,
+    vertexColors: true,
     roughness: 0.9,
   });
 
-  private readonly packetGeometries = [0, Math.PI / 12, Math.PI / 6, Math.PI / 4].map(
-    createPacketGeometry,
-  );
-  private readonly packetMaterial = new MeshStandardMaterial({
-    color: 0xffd729,
-    emissive: 0xffd729,
-    emissiveIntensity: 0.25,
-    roughness: 0.3,
-    metalness: 0.04,
-  });
-  private readonly ghostGeometries = [createGhostGeometry(0), createGhostGeometry(Math.PI)];
-  private readonly ghostMaterials = Object.fromEntries(
-    Object.entries(GHOST_COLORS).map(([key, color]) => [
-      key,
-      new MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.2, roughness: 0.38, metalness: 0.02 }),
-    ]),
-  ) as Record<GhostAppearance, MeshStandardMaterial>;
-  private readonly eyeGeometry = new SphereGeometry(1, 16, 12);
-  private readonly eyeMaterial = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 });
-  private readonly pupilMaterial = new MeshStandardMaterial({ color: 0x102341, roughness: 0.3 });
-  private readonly scaredPupilMaterial = new MeshStandardMaterial({ color: 0xffd8b6, roughness: 0.4 });
   private readonly shadowGeometry = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
   private readonly shadowTexture = createShadowTexture();
   private readonly shadowMaterial = new MeshBasicMaterial({
@@ -67,73 +64,96 @@ export class ArcadeAssets {
     depthWrite: false,
     toneMapped: false,
   });
-  private readonly packetBodies = new WeakMap<Group, BodyMesh>();
-  private readonly ghostParts = new WeakMap<Group, { body: BodyMesh; pupils: BodyMesh[] }>();
+  private readonly resources: Resources = {
+    geometries: new Set([this.pelletGeometry, this.shadowGeometry]),
+    materials: new Set([this.pelletMaterial, this.powerPelletMaterial, this.shadowMaterial]),
+    textures: new Set([this.shadowTexture]),
+  };
+  private readonly characters = new Map<Group, CharacterInstance>();
+  private readonly packets = new Map<Group, HologramPacket>();
   private disposed = false;
 
-  createPacket(): Group {
-    const group = new Group();
-    group.name = 'packet';
-    const body = new Mesh(this.packetGeometries[0], this.packetMaterial);
-    body.name = 'body';
-    body.position.y = SPRITE_SIZE.packet / 2;
-    group.add(body);
-    this.packetBodies.set(group, body);
+  constructor(private readonly models: CharacterModels) {
+    for (const model of Object.values(models)) collectResources(model.scene, this.resources);
+  }
 
-    for (const side of [-1, 1]) {
-      const eye = new Mesh(this.eyeGeometry, this.pupilMaterial);
-      eye.name = `eye-${side}`;
-      eye.scale.set(0.4, 0.18, 0.55);
-      eye.position.set(0.8, 9.7, side * 1.6);
-      group.add(eye);
+  static async load(signal?: AbortSignal): Promise<ArcadeAssets> {
+    signal?.throwIfAborted();
+    const loader = new GLTFLoader();
+    const keys = ['block', 'virus'] as const;
+    const results = await Promise.allSettled(keys.map(async (key) => {
+      try {
+        // The local inspector is a nested URL; resolve dev assets from Vite's root.
+        const baseUrl = import.meta.env.DEV ? '/' : import.meta.env.BASE_URL;
+        const url = `${baseUrl}assets/models/${key}.glb`;
+        const response = await fetch(url, { signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const model = await loader.parseAsync(await response.arrayBuffer(), '');
+        return { key, model };
+      } catch (error) {
+        signal?.throwIfAborted();
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Unable to load character model ${key}.glb: ${message}`);
+      }
+    }));
+    const models = new Map<keyof CharacterModels, CharacterModel>();
+    for (const result of results) {
+      if (result.status === 'fulfilled') models.set(result.value.key, result.value.model);
     }
-    return group;
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed || signal?.aborted) {
+      const resources: Resources = { geometries: new Set(), materials: new Set(), textures: new Set() };
+      for (const model of models.values()) collectResources(model.scene, resources);
+      disposeResources(resources);
+      signal?.throwIfAborted();
+      throw failed?.reason;
+    }
+    return new ArcadeAssets({ block: models.get('block')!, virus: models.get('virus')! });
+  }
+
+  createPacket(): Group {
+    const packet = new HologramPacket();
+    this.packets.set(packet.group, packet);
+    return packet.group;
   }
 
   setPacketFrame(group: Group, frame: number): void {
-    const body = this.packetBodies.get(group);
-    if (body) body.geometry = this.packetGeometries[Math.max(0, Math.min(3, Math.trunc(frame)))];
+    this.packets.get(group)?.setFrame(frame);
+  }
+
+  setPacketDeathProgress(group: Group, progress: number | null): void {
+    this.packets.get(group)?.setDeathProgress(progress);
+  }
+
+  setPacketMotion(group: Group, x: number, y: number, amount: number): void {
+    this.packets.get(group)?.setMotion(x, y, amount);
+  }
+
+  facePacket(group: Group, camera: Camera): void {
+    this.packets.get(group)?.faceCamera(camera);
   }
 
   createGhost(key: GhostKey): Group {
-    const group = new Group();
+    const group = this.createCharacter(key === 'blinky' || key === 'clyde' ? 'block' : 'virus');
     group.name = key;
-    const body = new Mesh(this.ghostGeometries[0], this.ghostMaterials[key]);
-    body.name = 'body';
-    group.add(body);
-
-    const pupils: BodyMesh[] = [];
-    for (const side of [-1, 1]) {
-      // Faces look upward and south so both eyes remain legible from the fixed camera.
-      const eye = new Group();
-      eye.name = `eye-${side}`;
-      eye.position.set(side * 1.8, 7.85, 3.4);
-      eye.rotation.x = -Math.PI / 4;
-      const white = new Mesh(this.eyeGeometry, this.eyeMaterial);
-      white.scale.set(1.3, 1.45, 0.8);
-      const pupil = new Mesh(this.eyeGeometry, this.pupilMaterial);
-      pupil.name = `pupil-${side}`;
-      pupil.scale.set(0.56, 0.65, 0.25);
-      pupil.position.z = 0.76;
-      eye.add(white, pupil);
-      group.add(eye);
-      pupils.push(pupil);
-    }
-    this.ghostParts.set(group, { body, pupils });
-    this.setGhostAppearance(group, key, 0, 'right');
+    this.setGhostAppearance(group, key);
     return group;
   }
 
-  setGhostAppearance(group: Group, key: GhostAppearance, frame: number, direction: Direction): void {
-    const parts = this.ghostParts.get(group);
-    if (!parts) return;
-    parts.body.geometry = this.ghostGeometries[Math.trunc(frame) % 2];
-    parts.body.material = this.ghostMaterials[key];
-    for (const pupil of parts.pupils) {
-      pupil.material = key === 'scared' ? this.scaredPupilMaterial : this.pupilMaterial;
-      pupil.position.x = direction === 'left' ? -0.3 : direction === 'right' ? 0.3 : 0;
-      pupil.position.y = direction === 'up' ? 0.3 : direction === 'down' ? -0.3 : 0;
+  setGhostAppearance(group: Group, key: GhostAppearance): void {
+    const character = this.characters.get(group);
+    if (!character || character.appearance === key) return;
+    character.appearance = key;
+    for (const { material, accent } of character.colors) {
+      material.color.setHex(GHOST_COLORS[key]);
+      if (accent) material.emissive.setHex(GHOST_COLORS[key]);
     }
+  }
+
+  sampleAnimation(timeSeconds: number): void {
+    if (this.disposed) return;
+    for (const packet of this.packets.values()) packet.sample(timeSeconds);
+    for (const character of this.characters.values()) character.mixer.setTime(timeSeconds);
   }
 
   createContactShadow(diameter: number): Mesh<PlaneGeometry, MeshBasicMaterial> {
@@ -147,87 +167,64 @@ export class ArcadeAssets {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    for (const geometry of [
-      this.pelletGeometry,
-      ...this.packetGeometries,
-      ...this.ghostGeometries,
-      this.eyeGeometry,
-      this.shadowGeometry,
-    ]) geometry.dispose();
-    for (const material of [
-      this.pelletMaterial,
-      this.powerPelletMaterial,
-      this.packetMaterial,
-      ...Object.values(this.ghostMaterials),
-      this.eyeMaterial,
-      this.pupilMaterial,
-      this.scaredPupilMaterial,
-      this.shadowMaterial,
-    ]) material.dispose();
-    this.shadowTexture.dispose();
-  }
-}
-
-function createPacketGeometry(halfAngle: number): BufferGeometry {
-  const radius = SPRITE_SIZE.packet / 2;
-  const sphere = new SphereGeometry(radius, 40, 24, Math.PI + halfAngle, 2 * Math.PI - 2 * halfAngle);
-  if (halfAngle === 0) return sphere;
-  const geometry = sphere.toNonIndexed();
-  sphere.dispose();
-  const positions = Array.from(geometry.getAttribute('position').array);
-  const normals = Array.from(geometry.getAttribute('normal').array);
-  for (const side of [-1, 1]) {
-    const normal = [Math.sin(halfAngle), 0, -side * Math.cos(halfAngle)];
-    for (let segment = 0; segment < 24; segment += 1) {
-      const arcPoint = (index: number): number[] => {
-        const theta = (index / 24) * Math.PI;
-        return [
-          radius * Math.sin(theta) * Math.cos(halfAngle),
-          radius * Math.cos(theta),
-          side * radius * Math.sin(theta) * Math.sin(halfAngle),
-        ];
-      };
-      const first = arcPoint(segment);
-      const second = arcPoint(segment + 1);
-      positions.push(0, 0, 0, ...(side === 1 ? first : second), ...(side === 1 ? second : first));
-      normals.push(...normal, ...normal, ...normal);
+    for (const character of this.characters.values()) {
+      character.mixer.stopAllAction();
+      character.mixer.uncacheRoot(character.mixer.getRoot());
     }
+    this.characters.clear();
+    for (const packet of this.packets.values()) packet.dispose();
+    this.packets.clear();
+    disposeResources(this.resources);
   }
-  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new Float32BufferAttribute(normals, 3));
-  geometry.deleteAttribute('uv');
-  return geometry;
+
+  private createCharacter(key: keyof CharacterModels): Group {
+    const source = this.models[key];
+    const scene = source.scene.clone(true);
+    const root = new Group();
+    const model = new Group();
+    model.name = 'character-model';
+    model.add(scene);
+    root.add(model);
+    const character: CharacterInstance = { mixer: new AnimationMixer(scene), colors: [] };
+    scene.traverse((object) => {
+      if (!(object instanceof Mesh)) return;
+      const mesh = object as Mesh<BufferGeometry, Material | Material[]>;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const clones = materials.map((material) => {
+        const clone = material.clone();
+        this.resources.materials.add(clone);
+        if (clone instanceof MeshStandardMaterial && /^(identity|accent)(?:[._-]|$)/i.test(clone.name)) {
+          character.colors.push({ material: clone, accent: /^accent/i.test(clone.name) });
+        }
+        return clone;
+      });
+      mesh.material = Array.isArray(mesh.material) ? clones : clones[0];
+    });
+    for (const clip of source.animations) character.mixer.clipAction(clip).play();
+    this.characters.set(root, character);
+    return root;
+  }
 }
 
-function createGhostGeometry(phase: number): BufferGeometry {
-  const radius = SPRITE_SIZE.ghost / 2;
-  const segments = 48;
-  const positions: number[] = [];
-  const indices: number[] = [];
-  const rings = 12;
-  for (let ring = 0; ring < rings; ring += 1) {
-    const theta = (Math.max(0, ring - 1) / (rings - 2)) * (Math.PI / 2);
-    const ringRadius = radius * Math.cos(theta);
-    for (let segment = 0; segment <= segments; segment += 1) {
-      const angle = (segment / segments) * 2 * Math.PI;
-      const height = ring === 0 ? 0.45 + 0.45 * Math.cos(8 * angle + phase) : 4.3 + radius * Math.sin(theta);
-      positions.push(ringRadius * Math.cos(angle), height, ringRadius * Math.sin(angle));
-      if (ring < rings - 1 && segment < segments) {
-        const a = ring * (segments + 1) + segment;
-        const b = a + 1;
-        const c = a + segments + 1;
-        indices.push(a, c, b, b, c, c + 1);
+function collectResources(object: Object3D, resources: Resources): void {
+  object.traverse((child) => {
+    if (!(child instanceof Mesh)) return;
+    const mesh = child as Mesh<BufferGeometry, Material | Material[]>;
+    resources.geometries.add(mesh.geometry);
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      resources.materials.add(material);
+      for (const value of Object.values(material)) {
+        if (value instanceof Texture) resources.textures.add(value as Texture);
       }
     }
-  }
-  const center = positions.length / 3;
-  positions.push(0, 0.45, 0);
-  for (let segment = 0; segment < segments; segment += 1) indices.push(center, segment, segment + 1);
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
+  });
+}
+
+function disposeResources(resources: Resources): void {
+  for (const geometry of resources.geometries) geometry.dispose();
+  for (const material of resources.materials) material.dispose();
+  for (const texture of resources.textures) texture.dispose();
 }
 
 function createShadowTexture(): DataTexture {

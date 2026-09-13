@@ -37,3 +37,17 @@ The Node suite does not verify actual browser appearance, WebGL output, or touch
 - `H` toggles the scared state of active ghosts for debugging.
 
 After editing the demo Tiled map, run `pnpm map:demo:convert` and `pnpm test` to check the generated map and its gameplay rules.
+
+## Development asset gallery
+
+When starting a dev server is authorized, run `pnpm dev` and open the Asset gallery link or `/dev/assets`. Select a thumbnail to inspect the current asset, switch between the game and orbit cameras, and use play/pause, replay, seeking, and speed controls. The gallery is excluded from production builds and does not start a game.
+
+Future acceptance checks, when validation is authorized:
+
+- Confirm the development route loads without constructing the game or resetting score/lives, and that production omits the route and link.
+- Inspect player and ghost states, both star sizes and pickup effects, all wall footprints and connected examples, prison joins, the wordmark, floor, and shadow against their shared runtime assets.
+- Check motion and trail directions, scared warnings, eating and blinking; seek across the death-to-respawn boundary at 900 ms and the following 1,200 ms recovery. Pausing must hold the displayed state, and replay must restart it.
+- Inspect both cameras at gameplay scale and close range, including outline seams, small glyph readability, resizing, and camera controls while playback is paused.
+- Exercise asset switching, failed/cancelled loading, and leaving the gallery; confirm previews, listeners, controls, and GPU resources are released without affecting later game startup.
+
+These are acceptance scenarios, not a record of completed validation. Follow any task-specific deferral of tests, builds, browser inspection, or dev servers.

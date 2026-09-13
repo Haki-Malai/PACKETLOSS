@@ -1,73 +1,75 @@
-import { Box3, BufferGeometry, Group, Mesh, MeshStandardMaterial, Vector3 } from 'three';
-import { describe, expect, it } from 'vitest';
+import { AnimationMixer, BufferGeometry, Group, Material, Mesh, MeshStandardMaterial, Texture } from 'three';
+import { describe, expect, it, vi } from 'vitest';
 import { ArcadeAssets } from '../game/infrastructure/three/ArcadeAssets';
-import type { Direction } from '../game/domain/valueObjects/Direction';
+import { createCharacterAssets, createCharacterModels } from './fixtures/characterFixtures';
 
 function body(group: Group): Mesh<BufferGeometry, MeshStandardMaterial> {
   return group.getObjectByName('body') as Mesh<BufferGeometry, MeshStandardMaterial>;
 }
 
 describe('ArcadeAssets', () => {
-  it('keeps Packet within its 10-unit footprint and shares four closed-to-open mouth poses', () => {
-    const assets = new ArcadeAssets();
+  it('assigns blocks to Blinky/Clyde and viruses to Inky/Pinky while sharing geometry', () => {
+    const models = createCharacterModels();
+    const assets = new ArcadeAssets(models);
+    for (const [key, source] of [['blinky', 'block'], ['clyde', 'block'], ['inky', 'virus'], ['pinky', 'virus']] as const) {
+      const ghost = assets.createGhost(key);
+      expect(body(ghost).geometry).toBe(body(models[source].scene).geometry);
+      expect(body(ghost).material).not.toBe(body(models[source].scene).material);
+    }
+    assets.dispose();
+  });
+
+  it('keeps shared-shape ghost colors independent while switching scared state and restoring identity', () => {
+    const assets = createCharacterAssets();
+    const blinky = assets.createGhost('blinky');
+    const clyde = assets.createGhost('clyde');
+    const initialBlinky = body(blinky).material.color.getHex();
+    const initialClyde = body(clyde).material.color.getHex();
+    expect(initialBlinky).not.toBe(initialClyde);
+    assets.setGhostAppearance(blinky, 'scared');
+    expect(body(blinky).material.color.getHex()).not.toBe(initialBlinky);
+    expect(body(blinky).material.color.b).toBeGreaterThan(body(blinky).material.color.r);
+    expect(body(clyde).material.color.getHex()).toBe(initialClyde);
+    assets.setGhostAppearance(blinky, 'blinky');
+    expect(body(blinky).material.color.getHex()).toBe(initialBlinky);
+    assets.dispose();
+  });
+
+  it('samples looping ghost animation without moving its gameplay root', () => {
+    const assets = createCharacterAssets();
+    const ghost = assets.createGhost('blinky');
+    assets.sampleAnimation(0);
+    expect(body(ghost).position.y).toBeCloseTo(4);
+    assets.sampleAnimation(1.5);
+    expect(body(ghost).position.y).toBeCloseTo(4.25);
+    expect(ghost.position.y).toBe(0);
+    assets.sampleAnimation(6);
+    expect(body(ghost).position.y).toBeCloseTo(4);
+    assets.dispose();
+  });
+
+  it('disposes templates, shared geometry/textures, instance materials, and animation bindings once', () => {
+    const models = createCharacterModels();
+    const texture = new Texture();
+    body(models.block.scene).material.map = texture;
+    const assets = new ArcadeAssets(models);
     const packet = assets.createPacket();
-    const other = assets.createPacket();
-    const frames = new Set<BufferGeometry>();
-    for (let frame = 0; frame < 4; frame += 1) {
-      assets.setPacketFrame(packet, frame);
-      assets.setPacketFrame(other, frame);
-      expect(body(packet).geometry).toBe(body(other).geometry);
-      frames.add(body(packet).geometry);
-      const bounds = new Box3().setFromObject(packet);
-      expect(bounds.min.x).toBeGreaterThanOrEqual(-5.00001);
-      expect(bounds.max.x).toBeLessThanOrEqual(5.00001);
-      expect(bounds.min.z).toBeGreaterThanOrEqual(-5.00001);
-      expect(bounds.max.z).toBeLessThanOrEqual(5.00001);
-      expect(bounds.min.y).toBeCloseTo(0);
-      expect(bounds.max.y).toBeCloseTo(10);
-    }
-    expect(frames.size).toBe(4);
-    assets.setPacketFrame(packet, 3);
-    expect(new Box3().setFromObject(body(packet)).max.x).toBeLessThan(4);
-    assets.setPacketFrame(packet, 0);
-    expect(new Box3().setFromObject(body(packet)).getSize(new Vector3()).x).toBeCloseTo(10);
-    assets.dispose();
-  });
-
-  it('keeps all ghost poses and eyes within the 11-unit footprint', () => {
-    const assets = new ArcadeAssets();
     const ghost = assets.createGhost('blinky');
-    const directions: Direction[] = ['up', 'down', 'left', 'right'];
-    for (let frame = 0; frame < 2; frame += 1) {
-      for (const direction of directions) {
-        assets.setGhostAppearance(ghost, 'blinky', frame, direction);
-        const bounds = new Box3().setFromObject(ghost);
-        expect(bounds.min.x).toBeGreaterThanOrEqual(-5.50001);
-        expect(bounds.max.x).toBeLessThanOrEqual(5.50001);
-        expect(bounds.min.z).toBeGreaterThanOrEqual(-5.50001);
-        expect(bounds.max.z).toBeLessThanOrEqual(5.50001);
-        expect(bounds.min.y).toBeCloseTo(0);
-        expect(bounds.max.y).toBeLessThanOrEqual(10);
-      }
+    const resources = new Set<BufferGeometry | Material | Texture>([texture]);
+    for (const scene of [...Object.values(models).map((model) => model.scene), packet, ghost]) {
+      scene.traverse((object) => {
+        if (!(object instanceof Mesh)) return;
+        const mesh = object as Mesh<BufferGeometry, Material | Material[]>;
+        resources.add(mesh.geometry);
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) resources.add(material);
+      });
     }
+    const spies = [...resources].map((resource) => vi.spyOn(resource, 'dispose'));
+    const uncache = vi.spyOn(AnimationMixer.prototype, 'uncacheRoot');
     assets.dispose();
-  });
-
-  it('switches scared colors and hem poses from state while retaining shared base materials', () => {
-    const assets = new ArcadeAssets();
-    const ghost = assets.createGhost('blinky');
-    const originalMaterial = body(ghost).material;
-    const originalGeometry = body(ghost).geometry;
-    assets.setGhostAppearance(ghost, 'scared', 1, 'up');
-    expect(body(ghost).material).not.toBe(originalMaterial);
-    expect(body(ghost).geometry).not.toBe(originalGeometry);
-    const pupil = ghost.getObjectByName('pupil--1');
-    expect(pupil?.position.y).toBeGreaterThan(0);
-    assets.setGhostAppearance(ghost, 'blinky', 2, 'left');
-    expect(body(ghost).material).toBe(originalMaterial);
-    expect(body(ghost).geometry).toBe(originalGeometry);
-    expect(pupil?.position.x).toBeLessThan(0);
-    expect(pupil?.position.y).toBe(0);
     assets.dispose();
+    for (const spy of spies) expect(spy).toHaveBeenCalledOnce();
+    expect(uncache).toHaveBeenCalledTimes(1);
+    uncache.mockRestore();
   });
 });

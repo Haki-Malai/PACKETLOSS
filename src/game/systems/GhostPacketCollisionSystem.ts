@@ -1,5 +1,6 @@
 import {
   GHOST_EAT_CHAIN_SCORES,
+  PACKET_DEATH_ANIMATION,
   PACKET_DEATH_RECOVERY,
   SPEED,
 } from '../../config/constants';
@@ -20,8 +21,14 @@ export class GhostPacketCollisionSystem {
     private readonly defaultGhostSpeed: number = SPEED.ghost,
   ) {}
 
-  update(): void {
+  update(deltaMs = 0): void {
     this.resetGhostEatChainIfNoScaredGhosts();
+    if (this.world.packet.deathAnimationRemainingMs > 0) {
+      const elapsed = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
+      this.world.packet.deathAnimationRemainingMs = Math.max(0, this.world.packet.deathAnimationRemainingMs - elapsed);
+      if (this.world.packet.deathAnimationRemainingMs === 0) this.respawnPacket();
+      return;
+    }
     if (this.isPacketInDeathRecovery()) {
       return;
     }
@@ -56,6 +63,10 @@ export class GhostPacketCollisionSystem {
 
   private applyPacketHitOutcome(): void {
     loseLife();
+    this.world.packet.deathAnimationRemainingMs = PACKET_DEATH_ANIMATION.durationMs;
+  }
+
+  private respawnPacket(): void {
     this.movementRules.setEntityTile(this.world.packet, this.world.packetSpawnTile);
     this.world.packet.direction.current = PACKET_RESPAWN_DIRECTION;
     this.world.packet.direction.next = PACKET_RESPAWN_DIRECTION;
