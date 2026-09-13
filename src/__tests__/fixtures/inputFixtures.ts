@@ -11,6 +11,17 @@ class MockInput {
   private pointerUpListeners: Array<(_pointer: PointerState) => void> = [];
   private pointerCancelListeners: Array<(_pointer: PointerState) => void> = [];
   private keys = new Set<string>();
+  private resetListeners = new Set<() => void>();
+
+  reset(): void {
+    this.keys.clear();
+    this.resetListeners.forEach((listener) => listener());
+  }
+
+  onReset(listener: () => void): () => void {
+    this.resetListeners.add(listener);
+    return () => { this.resetListeners.delete(listener); };
+  }
 
   setKeyDown(code: string, down: boolean): void {
     if (down) {
@@ -101,11 +112,14 @@ function createWorld(): WorldState {
       },
     },
     ghosts: [],
+    lagZones: [],
+    enemyEffects: [],
     collisionDebugEnabled: false,
     hoveredDebugTile: null,
     debugPanelText: '',
     pointerScreen: null,
     isMoving: true,
+    outcome: null,
   } as unknown as WorldState;
 }
 

@@ -42,25 +42,30 @@ describe('InputSystem', () => {
     expect(togglePause).toHaveBeenCalledTimes(1);
   });
 
-  it('toggles pause on touch tap to resume', () => {
+  it('leaves paused touch input to the menu without resuming or queuing movement', () => {
     const { input, world, togglePause } = createHarness();
     world.isMoving = false;
 
     input.emitPointerDown(pointer({ x: 30, y: 30 }));
+    input.emitPointerMove(pointer({ x: 80, y: 30 }));
     input.emitPointerUp(pointer({ x: 33, y: 31 }));
 
-    expect(togglePause).toHaveBeenCalledTimes(1);
+    expect(togglePause).not.toHaveBeenCalled();
+    expect(world.packet.direction.next).toBe('left');
   });
 
-  it('resumes paused touch input immediately on pointer down', () => {
+  it('clears a pending gesture and held keys when input resets across pause and resume', () => {
     const { input, world, togglePause } = createHarness();
-    world.isMoving = false;
-
     input.emitPointerDown(pointer({ x: 30, y: 30 }));
-    expect(togglePause).toHaveBeenCalledTimes(1);
-
+    input.setKeyDown('ArrowUp', true);
+    world.isMoving = false;
+    input.reset();
+    world.isMoving = true;
+    input.emitPointerMove(pointer({ x: 80, y: 30 }));
     input.emitPointerUp(pointer({ x: 31, y: 31 }));
-    expect(togglePause).toHaveBeenCalledTimes(1);
+    expect(togglePause).not.toHaveBeenCalled();
+    expect(world.packet.direction.next).toBe('left');
+    expect(input.isKeyDown('ArrowUp')).toBe(false);
   });
 
   it('never toggles pause for swipe gestures', () => {

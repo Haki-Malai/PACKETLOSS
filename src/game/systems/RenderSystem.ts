@@ -141,7 +141,8 @@ export class RenderSystem {
     const remaining = this.world.packet.deathAnimationRemainingMs;
     const presentedRemaining = remaining > 0 && this.previousDeathRemainingMs > 0
       ? lerp(this.previousDeathRemainingMs, remaining, animationAlpha) : remaining;
-    const deathProgress = remaining > 0 ? 1 - presentedRemaining / PACKET_DEATH_ANIMATION.durationMs : null;
+    const deathProgress = this.world.outcome === 'lost' ? 1
+      : remaining > 0 ? 1 - presentedRemaining / PACKET_DEATH_ANIMATION.durationMs : null;
     this.assets.setPacketDeathProgress(this.packet, deathProgress);
     const edibleGhosts = this.world.ghosts.filter((ghost) => ghost.active && !ghost.state.dead && ghost.state.scared);
     const powerRemaining = Math.max(0, ...edibleGhosts.map((ghost) => this.world.ghostScaredTimers.get(ghost) ?? Infinity));

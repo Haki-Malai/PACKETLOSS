@@ -3,6 +3,35 @@ import type { WorldState } from '../game/domain/world/WorldState';
 import { createHarness } from './fixtures/inputFixtures';
 
 describe('InputSystem', () => {
+  it.each(['paused', 'lost', 'cleared'] as const)('ignores movement, pause and debug keys while %s', (state) => {
+    const { input, world, togglePause, system } = createHarness();
+    if (state === 'paused') world.isMoving = false;
+    else world.outcome = state;
+    input.setKeyDown('ArrowUp', true);
+    system.update();
+    const preventDefault = vi.fn();
+    for (const code of ['Space', 'Escape', 'KeyH', 'KeyC']) {
+      input.emitKeyDown({ code, key: code, altKey: true, preventDefault } as unknown as KeyboardEvent);
+    }
+    expect(world.packet.direction.next).toBe('left');
+    expect(world.collisionDebugEnabled).toBe(false);
+    expect(togglePause).not.toHaveBeenCalled();
+    expect(preventDefault).not.toHaveBeenCalled();
+    system.destroy();
+  });
+
+  it('ignores keys consumed by the shell or originating on interactive controls', () => {
+    const { input, togglePause, system } = createHarness();
+    const preventDefault = vi.fn();
+    input.emitKeyDown({ code: 'Space', defaultPrevented: true, preventDefault } as unknown as KeyboardEvent);
+    input.emitKeyDown({
+      code: 'Space', target: { closest: () => ({}) }, preventDefault,
+    } as unknown as KeyboardEvent);
+    expect(togglePause).not.toHaveBeenCalled();
+    expect(preventDefault).not.toHaveBeenCalled();
+    system.destroy();
+  });
+
   it('toggles pause on keyboard Space code and legacy Spacebar key', () => {
     const { input, togglePause } = createHarness();
 

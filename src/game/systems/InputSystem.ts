@@ -8,7 +8,7 @@ import {
 import { clearAllGhostScaredWindow, setActiveGhostsScaredWindow } from '../domain/services/GhostScaredStateService';
 import type { Direction } from '../domain/valueObjects/Direction';
 import { WorldState } from '../domain/world/WorldState';
-import { BrowserInputAdapter, PointerState } from '../infrastructure/adapters/BrowserInputAdapter';
+import { BrowserInputAdapter, isInteractiveInputTarget, PointerState } from '../infrastructure/adapters/BrowserInputAdapter';
 
 interface PauseController {
   togglePause(): void;
@@ -46,9 +46,11 @@ export class InputSystem {
     this.disposers.push(this.input.onPointerDown((pointer) => this.handlePointerDown(pointer)));
     this.disposers.push(this.input.onPointerUp((pointer) => this.handlePointerUp(pointer)));
     this.disposers.push(this.input.onPointerCancel((pointer) => this.handlePointerCancel(pointer)));
+    this.disposers.push(this.input.onReset(() => { this.activeTouchGesture = null; }));
   }
 
   update(): void {
+    if (!this.world.isMoving || this.world.outcome) return;
     const keyboardDirection = this.getDirectionalKeyboardIntent();
     if (keyboardDirection) {
       this.world.packet.direction.next = keyboardDirection;
@@ -64,7 +66,8 @@ export class InputSystem {
   }
 
   private handleKeyDown(event: KeyboardEvent): void {
-    if (event.repeat) {
+    if (event.repeat || event.defaultPrevented || isInteractiveInputTarget(event.target)
+      || !this.world.isMoving || this.world.outcome) {
       return;
     }
 
@@ -110,10 +113,11 @@ export class InputSystem {
   }
 
   private isPauseToggleEvent(event: Pick<KeyboardEvent, 'code' | 'key'>): boolean {
-    return event.code === 'Space' || PAUSE_EVENT_KEYS.has(event.key);
+    return event.code === 'Escape' || event.code === 'Space' || PAUSE_EVENT_KEYS.has(event.key);
   }
 
   private handlePointerMove(pointer: PointerState): void {
+    if (!this.world.isMoving || this.world.outcome) return;
     this.world.pointerScreen = { x: pointer.x, y: pointer.y };
 
     const gesture = this.getActiveGesture(pointer.pointerId);
@@ -131,16 +135,11 @@ export class InputSystem {
   }
 
   private handlePointerDown(pointer: PointerState): void {
+    if (!this.world.isMoving || this.world.outcome) return;
     this.world.pointerScreen = { x: pointer.x, y: pointer.y };
 
     if (!this.isTouchLikePointer(pointer)) {
       this.pauseController.togglePause();
-      return;
-    }
-
-    if (!this.world.isMoving) {
-      this.pauseController.togglePause();
-      this.activeTouchGesture = null;
       return;
     }
 
@@ -153,6 +152,10 @@ export class InputSystem {
   }
 
   private handlePointerUp(pointer: PointerState): void {
+    if (!this.world.isMoving || this.world.outcome) {
+      this.activeTouchGesture = null;
+      return;
+    }
     const gesture = this.getActiveGesture(pointer.pointerId);
     if (!gesture) {
       return;

@@ -185,6 +185,7 @@ export class GameCompositionRoot {
         scheduler,
         updateSystems,
         renderSystems,
+        getRemainingPointCount: () => collectibleSystem.getPointCount(),
         destroy: () => {
           canvas?.remove();
         },

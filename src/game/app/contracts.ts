@@ -3,6 +3,20 @@ import { BrowserInputAdapter } from '../infrastructure/adapters/BrowserInputAdap
 import { RendererViewport } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { TimerSchedulerAdapter } from '../infrastructure/adapters/TimerSchedulerAdapter';
 
+export interface RunResult {
+  outcome: 'lost' | 'cleared';
+  score: number;
+  lives: number;
+  elapsedMs: number;
+  pointsCollected: number;
+  totalPoints: number;
+}
+
+export interface RuntimeState {
+  paused: boolean;
+  result: RunResult | null;
+}
+
 export interface PacketGame {
   start(): Promise<void>;
   pause(): void;
@@ -36,5 +50,6 @@ export interface ComposedGame {
   scheduler: TimerSchedulerAdapter;
   updateSystems: UpdateCapableSystem[];
   renderSystems: RenderCapableSystem[];
+  getRemainingPointCount(): number;
   destroy: () => void;
 }
