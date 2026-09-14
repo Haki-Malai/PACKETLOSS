@@ -15,12 +15,12 @@ export const TUTORIAL_LESSONS = [
   {
     id: 'movement', title: 'Move and turn',
     introduction: 'Use the arrow keys, WASD, or a swipe. Head right, then queue Up before the far corner. Your turn waits until the corridor allows it.',
-    objective: 'Move right, turn up at the far corner, and collect the marked pellet.',
+    objective: 'Move right, turn up at the far corner, and collect the marked data bit.',
   },
   {
     id: 'firewall', title: 'Meet Firewall',
     introduction: 'Firewall repeats a fixed patrol instead of chasing you. Every enemy body is dangerous unless it is scared. Contact here lets you retry this lesson.',
-    objective: 'Move right to the pellet while Firewall follows its patrol.',
+    objective: 'Move right to the data bit while Firewall follows its patrol.',
   },
   {
     id: 'portal', title: 'Use a portal',
@@ -29,13 +29,13 @@ export const TUTORIAL_LESSONS = [
   },
   {
     id: 'power', title: 'Turn the chase around',
-    introduction: 'The large star is a power pellet. Collect it before touching Firewall, then catch the scared enemy while your power lasts.',
-    objective: 'Move right to collect the power pellet, then catch Firewall.',
+    introduction: 'The large star is a power core. Collect it before touching Firewall, then catch the scared enemy while your power lasts.',
+    objective: 'Move right to collect the power core, then catch Firewall.',
   },
   {
     id: 'virus', title: 'Evade Virus',
     introduction: 'Virus follows the shortest route to your current position, including portal shortcuts. Keep moving to stay ahead.',
-    objective: 'Move left to the pellet while Virus follows you.',
+    objective: 'Move left to the data bit while Virus follows you.',
   },
   {
     id: 'ping', title: 'Escape a scan',
@@ -54,8 +54,8 @@ export const TUTORIAL_LESSONS = [
   },
   {
     id: 'suppression', title: 'Switch off their abilities',
-    introduction: 'A yellow zone is already active in this checkpoint. Power pellets clear existing zones and stop Ping scans, Spam copies, and new Lag zones while those enemies are scared.',
-    objective: 'Move right to the power pellet to clear the zone and suppress all three abilities.',
+    introduction: 'A yellow zone is already active in this checkpoint. Power cores clear existing zones and stop Ping scans, Spam copies, and new Lag zones while those enemies are scared.',
+    objective: 'Move right to the power core to clear the zone and suppress all three abilities.',
   },
 ] as const satisfies readonly {
   id: TutorialLessonId;

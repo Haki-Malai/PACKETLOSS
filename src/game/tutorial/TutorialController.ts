@@ -164,9 +164,9 @@ export class TutorialController {
 
     if (this.lesson === 'movement') {
       if (firstCollection && !this.turnedUp) {
-        this.setPhase('retry', 'You found the pellet. Retry and reach it by moving right, then turning up at the far corner.');
+        this.setPhase('retry', 'You found the data bit. Retry and reach it by moving right, then turning up at the far corner.');
       } else if (this.collected && this.turnedUp && this.atMarker()) {
-        this.setPhase('success', 'Corner turned, pellet collected. Regular pellets are worth 10 points.');
+        this.setPhase('success', 'Corner turned, data bit recovered. Data bits are worth 10 points.');
       }
     } else if (this.lesson === 'firewall' || this.lesson === 'virus') {
       this.observeEnemyTravel(this.enemy(this.lesson));
@@ -191,7 +191,7 @@ export class TutorialController {
       if (firstCollection && this.before.zoneRemainingMs > deltaMs && suppressed && this.world.lagZones.length === 0) {
         this.setPhase('success', 'Zone cleared. Ping, Spam, and Lag cannot use their abilities while scared. You are ready to play.');
       } else if (!requiredZoneActive && (!this.collected || firstCollection)) {
-        this.setPhase('retry', 'The zone expired before you collected power. Retry to see the pellet clear it.');
+        this.setPhase('retry', 'The zone expired before you collected power. Retry to see the power core clear it.');
       }
     }
   }
@@ -199,14 +199,14 @@ export class TutorialController {
   private updatePower(firstCollection: boolean): void {
     const enemy = this.enemy('firewall');
     if (firstCollection && enemy?.state.dead) {
-      this.setPhase('retry', 'Collect the power pellet before catching Firewall. Retry to practice that order.');
+      this.setPhase('retry', 'Collect the power core before catching Firewall. Retry to practice that order.');
     } else if (firstCollection && enemy?.state.scared) {
       this.setPhase('explanation', 'Firewall is scared and moves at half speed. Keep moving right to catch it before power fades.',
         'Catch the scared Firewall.', { x: 8, y: 7 });
     } else if (this.collected && enemy?.state.dead && (enemy.eatenElapsedMs ?? 0) >= ENEMY_EAT_DURATION_MS) {
       this.setPhase('success', 'You ate Firewall for 200 points. Its harmless bug returns to the pen; flashing warns when power is ending.');
     } else if (this.collected && enemy && !enemy.state.scared && !enemy.state.dead) {
-      this.setPhase('retry', 'Power wore off before you caught Firewall. Retry the checkpoint for another power pellet.');
+      this.setPhase('retry', 'Power wore off before you caught Firewall. Retry the checkpoint for another power core.');
     }
   }
 
@@ -230,7 +230,7 @@ export class TutorialController {
     if (this.atMarker()) {
       this.setPhase('success', this.lesson === 'ping'
         ? 'You moved away from Ping’s last scan. Walls cannot hide you from its next pulse.'
-        : 'You stayed clear of the growing crowd. Power pellets stop further splitting.');
+        : 'You stayed clear of the growing crowd. Power cores stop further splitting.');
     }
   }
 

@@ -92,7 +92,7 @@ function tutorialState(
   return {
     paused,
     result: null,
-    tutorial: { lesson, phase, message: 'A paused explanation.', objective: 'Reach the marked pellet.', marker: null },
+    tutorial: { lesson, phase, message: 'A paused explanation.', objective: 'Reach the marked data bit.', marker: null },
   };
 }
 

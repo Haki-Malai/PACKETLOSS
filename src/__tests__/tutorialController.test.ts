@@ -72,7 +72,7 @@ function createLesson(lesson: TutorialLessonId) {
 describe('guided tutorial checkpoints', () => {
   beforeEach(() => resetGameState());
 
-  it('requires real input, a corner turn, and a pellet pickup in the movement lesson', () => {
+  it('requires real input, a corner turn, and a data-bit pickup in the movement lesson', () => {
     const lesson = createLesson('movement');
     const introduction = lesson.controller.getSnapshot();
     expect(lesson.controller.getSnapshot()).toBe(introduction);

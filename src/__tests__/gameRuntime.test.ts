@@ -228,7 +228,7 @@ describe('GameRuntime', () => {
     runtime.destroy();
   });
 
-  it('lets a final-life collision beat the last power pellet, freezes death on pause, and records active time once', async () => {
+  it('lets a final-life collision beat the last power core, freezes death on pause, and records active time once', async () => {
     const { composed, world, collectibles } = createFinishingGame('power-pellet', 'dangerous');
     resetGameState(100, 1);
     const onStateChange = vi.fn<(_state: RuntimeState) => void>();

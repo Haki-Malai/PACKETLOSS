@@ -2,7 +2,7 @@
 
 PACKETLOSS is a maze arcade game for the browser, built with TypeScript, Vite, and Three.js. Requires WebGL 2.
 
-Collect pellets, avoid enemies, and use power pellets to turn the chase around. The game includes enemy pen/release behavior, lives and respawn recovery, linked portals, a following camera, and desktop/mobile controls. Start from the title screen, clear the maze or retry after losing all lives, and keep scores in a device-local profile. Maps are made in Tiled.
+Recover data bits, avoid enemies, and use power cores to turn the chase around. The game includes enemy pen/release behavior, lives and respawn recovery, linked portals, a following camera, and desktop/mobile controls. Start from the title screen, clear the maze or retry after losing all lives, and keep scores in a device-local profile. Maps are made in Tiled.
 
 ## Documentation
 
