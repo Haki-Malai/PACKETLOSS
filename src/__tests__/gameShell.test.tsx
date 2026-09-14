@@ -292,7 +292,11 @@ describe('GameShell', () => {
         const movement = page.games[0];
         movement.emit(tutorialState('movement', 'playing'));
         const event = new KeyboardEvent('keydown', {
-            key: 'n', code: 'KeyN', repeat: false, bubbles: true, cancelable: true,
+            key: 'n',
+            code: 'KeyN',
+            repeat: false,
+            bubbles: true,
+            cancelable: true,
         });
 
         fireEvent(page.find('canvas'), event);
@@ -399,8 +403,10 @@ describe('GameShell', () => {
             expect(Array.from(ambient.children)).toEqual(digits);
             expect(viewport.scrollTop).toBe(0);
             if (action === 'settings') {
-                const motion = page.find<HTMLSelectElement>('[data-control="motion"]');
-                fireEvent.change(motion, { target: { value: 'full' } });
+                const motion = page.find<HTMLButtonElement>('[data-control="motion"]');
+                fireEvent.click(motion);
+                page.key('End', motion);
+                page.key('Enter', motion);
                 expect(page.find('.packet-ambient')).toBe(ambient);
                 expect(page.find('.game-shell').getAttribute('data-menu-motion')).toBe('full');
             }
@@ -452,8 +458,9 @@ describe('GameShell', () => {
             vi.mocked(mountEnemyPortraits).mockReturnValue(dispose);
             const page = setup();
             fireEvent.click(page.action('settings'));
-            const motion = page.find<HTMLSelectElement>('[data-control="motion"]');
-            fireEvent.change(motion, { target: { value: 'reduced' } });
+            const motion = page.find<HTMLButtonElement>('[data-control="motion"]');
+            fireEvent.click(motion);
+            fireEvent.click(page.find('[role="option"][data-value="reduced"]'));
             fireEvent.click(page.action('back'));
             if (parent === 'paused') {
                 fireEvent.click(page.action('start'));
@@ -532,8 +539,9 @@ describe('GameShell', () => {
         expect(page.createGame).not.toHaveBeenCalled();
         fireEvent.click(page.action('settings'));
         expect(dispose).toHaveBeenCalledOnce();
-        const motion = page.find<HTMLSelectElement>('[data-control="motion"]');
-        fireEvent.change(motion, { target: { value: 'reduced' } });
+        const motion = page.find<HTMLButtonElement>('[data-control="motion"]');
+        fireEvent.click(motion);
+        fireEvent.click(page.find('[role="option"][data-value="reduced"]'));
         fireEvent.click(page.action('back'));
         await flushStart();
         expect(mountTitleWordmark).toHaveBeenLastCalledWith(
@@ -656,8 +664,10 @@ describe('GameShell', () => {
         expect(game.pause).toHaveBeenCalled();
         expect(page.action('sound').disabled).toBe(true);
         expect(page.root.querySelector('[data-action="fullscreen"]')).toBeNull();
-        const motion = page.find<HTMLSelectElement>('[data-control="motion"]');
-        fireEvent.change(motion, { target: { value: 'reduced' } });
+        expect(page.root.querySelector('select')).toBeNull();
+        const motion = page.find<HTMLButtonElement>('[data-control="motion"]');
+        fireEvent.click(motion);
+        fireEvent.click(page.find('[role="option"][data-value="reduced"]'));
         expect(page.store.getMotion()).toBe('reduced');
         expect(page.find('.game-shell').getAttribute('data-menu-motion')).toBe('reduced');
         page.key('Escape');

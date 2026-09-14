@@ -122,8 +122,8 @@ describe('game startup and development asset route', () => {
     it('enables the gallery in an explicit development build under the deployment base path', async () => {
         vi.stubEnv('DEV', false);
         vi.stubEnv('MODE', 'development');
-        vi.stubEnv('BASE_URL', '/PACKETLOSS/dev/');
-        await boot('/PACKETLOSS/dev/dev/assets/');
+        vi.stubEnv('BASE_URL', '/dev/');
+        await boot('/dev/dev/assets/');
         await settle();
         expect(screen.getByRole('heading', { name: 'Asset Lab' })).toBeDefined();
         expect(mocks.importShowcase).toHaveBeenCalledOnce();

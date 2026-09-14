@@ -118,7 +118,7 @@ Tiled map data defines walls, directional collision rules, portals, spawn locati
 
 ## Development asset gallery
 
-The development-only Asset gallery link opens `/dev/assets`, a catalog of current game assets with static thumbnails and a live inspector. It includes the Packet's idle, four movement directions, eating, death/respawn, recovery, and portal states; each enemy in normal, scared, and warning states; data bits, power cores, and their pickup effects; wall pieces and connected examples; the prison, wordmark, floor, and contact shadow. The death/respawn preview includes the 900 ms death effect followed by 1,200 ms of recovery.
+The development-only Asset gallery link opens `dev/assets` relative to the application base (`/dev/assets` locally and at `dev.packetloss.hakimalai.com`), with static thumbnails and a live inspector. It includes the Packet's idle, four movement directions, eating, death/respawn, recovery, and portal states; each enemy in normal, scared, and warning states; data bits, power cores, and their pickup effects; wall pieces and connected examples; the prison, wordmark, floor, and contact shadow. The death/respawn preview includes the 900 ms death effect followed by 1,200 ms of recovery.
 
 The enemy gallery includes all five archetypes in normal, scared, warning, eaten, and return-to-jail states, plus separate patrol, chase, detection, splitting, and slowdown demonstrations. The player gallery also includes the gold hunter, power-ending warning, and enemy intake animation. Return previews use an authored short route; gameplay navigation runs in the simulation. Preview copies are bounded and seeking does not create additional enemies.
 

@@ -23,6 +23,7 @@ function tileKey(tile: TilePosition): string {
   return `${tile.x},${tile.y}`;
 }
 
+/** Returns whether a tile lies inside an inclusive authored movement area. */
 function isWithinBounds(tile: Readonly<TilePosition>, bounds: Readonly<TileBounds>): boolean {
   return tile.x >= bounds.minX && tile.x <= bounds.maxX && tile.y >= bounds.minY && tile.y <= bounds.maxY;
 }

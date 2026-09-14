@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, type ComponentProps, type RefObject } from 'react';
-import { MenuButton, buttonLayout, fieldLayout, inputLayout } from '../../game/ui/MenuPanel';
+import {
+    CustomSelect,
+    MenuButton,
+    buttonLayout,
+    fieldLayout,
+    inputLayout,
+} from '../../game/ui/MenuPanel';
 import { LocalProfileStore } from '../../game/infrastructure/adapters/LocalProfileStore';
 import { ASSET_CATALOG, type AssetPreviewEntry } from './assetCatalog';
 import type { PreviewCameraMode } from './AssetPreviewViewport';
@@ -74,19 +80,21 @@ export default function AssetShowcase() {
                                 onChange={(event) => setSearch(event.target.value)}
                             />
                         </label>
-                        <label className={fieldLayout}>
-                            Category
-                            <select
-                                className={inputLayout}
+                        <div className={fieldLayout}>
+                            <span>Category</span>
+                            <CustomSelect
+                                ariaLabel="Category"
+                                className="min-w-32"
                                 value={category}
-                                onChange={(event) => setCategory(event.target.value)}
-                            >
-                                <option value="">All assets</option>
-                                {['Player', 'Enemies', 'Points', 'Walls', 'Other'].map((value) => (
-                                    <option key={value}>{value}</option>
-                                ))}
-                            </select>
-                        </label>
+                                options={[
+                                    { value: '', label: 'All assets' },
+                                    ...['Player', 'Enemies', 'Points', 'Walls', 'Other'].map(
+                                        (value) => ({ value, label: value })
+                                    ),
+                                ]}
+                                onChange={setCategory}
+                            />
+                        </div>
                     </div>
                     <p className="my-4 text-xs text-packet-muted">
                         {visible.size} of {ASSET_CATALOG.length} previews
@@ -159,8 +167,6 @@ function AssetInspector({
     const p = useAssetInspector(selected, thumbnails, onReady);
     const animated = selected.durationMs > 0;
     const inlineLabel = 'flex items-center gap-2 text-xs text-packet-muted';
-    const selectStyle =
-        'min-h-12 border border-packet-line bg-packet-raised px-2 text-sm text-packet-text';
     const checkbox = 'size-4 accent-packet-focus';
     return (
         <section
@@ -212,21 +218,20 @@ function AssetInspector({
                     <AssetButton onClick={p.replay} disabled={!animated}>
                         Replay
                     </AssetButton>
-                    <label className={inlineLabel}>
-                        Speed
-                        <select
-                            className={selectStyle}
+                    <div className={inlineLabel}>
+                        <span>Speed</span>
+                        <CustomSelect
+                            ariaLabel="Speed"
+                            className="min-w-20"
                             disabled={!animated}
-                            value={p.clock.speed}
-                            onChange={(event) => p.setSpeed(Number(event.target.value))}
-                        >
-                            {[0.25, 0.5, 1, 2].map((value) => (
-                                <option key={value} value={value}>
-                                    {value}×
-                                </option>
-                            ))}
-                        </select>
-                    </label>
+                            value={String(p.clock.speed)}
+                            options={[0.25, 0.5, 1, 2].map((value) => ({
+                                value: String(value),
+                                label: `${value}×`,
+                            }))}
+                            onChange={(value) => p.setSpeed(Number(value))}
+                        />
+                    </div>
                     <label className={`${inlineLabel} min-h-12 px-1`}>
                         <input
                             className={checkbox}
@@ -259,19 +264,21 @@ function AssetInspector({
                     />
                 </label>
                 <div className="flex flex-wrap items-center gap-2 border-t border-packet-line pt-3">
-                    <label className={inlineLabel}>
-                        Camera
-                        <select
-                            className={selectStyle}
+                    <div className={inlineLabel}>
+                        <span>Camera</span>
+                        <CustomSelect
+                            ariaLabel="Camera"
+                            className="min-w-32"
                             value={p.camera}
-                            onChange={(event) =>
-                                p.setCamera(event.target.value as PreviewCameraMode)
+                            options={
+                                [
+                                    { value: 'game', label: 'Game View' },
+                                    { value: 'orbit', label: 'Orbit' },
+                                ] satisfies { value: PreviewCameraMode; label: string }[]
                             }
-                        >
-                            <option value="game">Game View</option>
-                            <option value="orbit">Orbit</option>
-                        </select>
-                    </label>
+                            onChange={p.setCamera}
+                        />
+                    </div>
                     <AssetButton onClick={() => p.viewport.current?.fit()}>Fit</AssetButton>
                     <AssetButton onClick={() => p.viewport.current?.actualSize()}>
                         Game scale
@@ -301,25 +308,25 @@ function AssetInspector({
                 </div>
                 {selected.transformable && (
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-packet-line pt-3">
-                        <label className={inlineLabel}>
-                            Tile rotation
-                            <select
-                                className={selectStyle}
-                                value={p.transform.rotation}
-                                onChange={(event) =>
+                        <div className={inlineLabel}>
+                            <span>Tile rotation</span>
+                            <CustomSelect
+                                ariaLabel="Tile rotation"
+                                className="min-w-20"
+                                placement="top"
+                                value={String(p.transform.rotation)}
+                                options={[0, 90, 180, 270].map((value) => ({
+                                    value: String(value),
+                                    label: `${value}°`,
+                                }))}
+                                onChange={(value) =>
                                     p.setTransform({
                                         ...p.transform,
-                                        rotation: Number(event.target.value),
+                                        rotation: Number(value),
                                     })
                                 }
-                            >
-                                {[0, 90, 180, 270].map((value) => (
-                                    <option key={value} value={value}>
-                                        {value}°
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
+                            />
+                        </div>
                         <label className={`${inlineLabel} min-h-12 px-1`}>
                             <input
                                 className={checkbox}

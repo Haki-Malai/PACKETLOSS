@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { getTutorialLesson, TUTORIAL_LESSONS } from '../tutorial/TutorialLesson';
 import type { MenuMotion } from '../infrastructure/adapters/LocalProfileStore';
-import { MenuPanel, MenuButton, MenuColumns, fieldLayout, inputLayout } from './MenuPanel';
+import { CustomSelect, MenuPanel, MenuButton, MenuColumns, fieldLayout } from './MenuPanel';
 import { EnemyGuide, TitleHeading } from './MenuPreviews';
 import { ProfileBody, score, duration } from './ProfileScreen';
 import type { GameSession, Screen } from './useGameSession';
@@ -158,9 +158,7 @@ export function MenuScreens({
             if (!tutorial) break;
             body = (
                 <>
-                    {tutorial.phase === 'retry' && (
-                        <p className="packet-eyebrow">Try that again</p>
-                    )}
+                    {tutorial.phase === 'retry' && <p className="packet-eyebrow">Try that again</p>}
                     <p className="packet-copy">{tutorial.message}</p>
                 </>
             );
@@ -291,22 +289,26 @@ export function MenuScreens({
                     <MenuButton action="sound" disabled>
                         Sound — Coming soon
                     </MenuButton>
-                    <label className={fieldLayout}>
-                        Menu motion
-                        <select
-                            className={inputLayout}
-                            data-control="motion"
+                    <div className={fieldLayout}>
+                        <span>Menu motion</span>
+                        <CustomSelect
+                            ariaLabel="Menu motion"
+                            className="w-full"
+                            control="motion"
                             value={store.getMotion()}
-                            onChange={(event) => {
-                                store.setMotion(event.target.value as MenuMotion);
+                            options={
+                                [
+                                    { value: 'system', label: 'Follow system' },
+                                    { value: 'reduced', label: 'Reduced' },
+                                    { value: 'full', label: 'Full' },
+                                ] satisfies { value: MenuMotion; label: string }[]
+                            }
+                            onChange={(value) => {
+                                store.setMotion(value);
                                 s.refresh('[data-control="motion"]');
                             }}
-                        >
-                            <option value="system">Follow system</option>
-                            <option value="reduced">Reduced</option>
-                            <option value="full">Full</option>
-                        </select>
-                    </label>
+                        />
+                    </div>
                 </>
             );
             actions = <FullscreenControl rootRef={rootRef} />;

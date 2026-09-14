@@ -1,0 +1,136 @@
+name: Deploy AWS
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        description: "GitHub deployment environment: dev or prod"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packetloss-deploy-${{ inputs.stage }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.stage }}
+    env:
+      STAGE: ${{ inputs.stage }}
+      BUILD_MODE: ${{ vars.BUILD_MODE }}
+      VITE_GAME_ENV: ${{ vars.VITE_GAME_ENV }}
+    steps:
+      - name: Validate stage settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$STAGE:$GITHUB_REF:$BUILD_MODE" in
+            dev:refs/heads/dev:development|prod:refs/heads/main:production) ;;
+            *) echo "::error::Stage, branch, and build mode do not match."; exit 1 ;;
+          esac
+          case "$VITE_GAME_ENV" in
+            DEFAULT|DEMO) ;;
+            *) echo "::error::VITE_GAME_ENV must be DEFAULT or DEMO."; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build at the domain root
+        run: pnpm run build --mode "$BUILD_MODE" --base /
+
+      - name: Record deployed revision
+        run: |
+          printf '{"sha":"%s","stage":"%s"}\n' "$GITHUB_SHA" "$STAGE" > dist/deployment.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site-${{ inputs.stage }}-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.stage }}
+      url: ${{ vars.SITE_URL }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      S3_BUCKET: ${{ vars.S3_BUCKET }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+    steps:
+      - name: Skip a superseded revision
+        id: revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest_sha="$(gh api --method GET "repos/$GITHUB_REPOSITORY/git/ref/heads/$GITHUB_REF_NAME" --jq '.object.sha')"
+          if [[ "$latest_sha" == "$GITHUB_SHA" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::A newer commit exists; skipping deployment of $GITHUB_SHA."
+          fi
+
+      - name: Validate deployment settings
+        if: steps.revision.outputs.current == 'true'
+        run: |
+          set -euo pipefail
+          test -n "$AWS_REGION"
+          test -n "$AWS_ROLE_ARN"
+          test -n "$S3_BUCKET"
+          test -n "$CLOUDFRONT_DISTRIBUTION_ID"
+
+      - uses: actions/download-artifact@v4
+        if: steps.revision.outputs.current == 'true'
+        with:
+          name: site-${{ inputs.stage }}-${{ github.sha }}
+          path: dist
+
+      - name: Authenticate to the stage role
+        if: steps.revision.outputs.current == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: packetloss-${{ inputs.stage }}-${{ github.run_id }}
+
+      - name: Upload assets, then publish the entry point
+        if: steps.revision.outputs.current == 'true'
+        run: |
+          set -euo pipefail
+          test -s dist/index.html
+          # Keep earlier hashed bundles available to already-open browser sessions.
+          aws s3 sync dist/ "s3://$S3_BUCKET/" \
+            --exclude index.html --exclude deployment.json \
+            --cache-control 'public,max-age=300' --only-show-errors
+          aws s3 cp dist/index.html "s3://$S3_BUCKET/index.html" \
+            --content-type text/html --cache-control 'no-cache,no-store,must-revalidate' --only-show-errors
+          aws s3 cp dist/deployment.json "s3://$S3_BUCKET/deployment.json" \
+            --content-type application/json --cache-control 'no-cache,no-store,must-revalidate' --only-show-errors
+          invalidation_id="$(aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths '/*' --query 'Invalidation.Id' --output text)"
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --id "$invalidation_id"
