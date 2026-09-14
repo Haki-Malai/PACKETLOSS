@@ -21,7 +21,7 @@ pnpm test src/__tests__/portalService.test.ts
 Each test should identify a meaningful failure it would catch. Prefer small authored scenarios with independent expected outcomes, especially boundary conditions, state transitions, and resource ownership. For a bug fix, add a regression case to the relevant test file and remove any redundant coverage it replaces.
 
 - Exercise gameplay through domain services and systems. Use authored map objects and public operations instead of injecting private state; do not construct a Three.js scene to check scoring or movement rules.
-- Use controlled inputs and fixed seeds to make failures reproducible. Assert valid movement, reachable unique pellets, or another gameplay invariant. Comparing two runs alone cannot establish correctness, and changing a seed need not produce a different result in every scenario.
+- Use controlled inputs and fixed seeds to make failures reproducible. Assert valid movement, reachable unique collectibles, or another gameplay invariant. Comparing two runs alone cannot establish correctness, and changing a seed need not produce a different result in every scenario.
 - Do not copy production traversal, filtering, or selection algorithms into fixtures to generate expected answers. Use hand-authored expected tile sets for small maps and a few independent invariants for real maps.
 - Keep integration checks for entity/camera interpolation, teleport and respawn snaps, pause/resume, collectible removal, startup cancellation, and GPU disposal. Stub browser/WebGL boundaries while using real scene and gameplay objects where those interactions matter.
 - Geometry checks should protect maze clearance, transformed wall/bar footprints, authored holes and portals, and connected outlines. Prison bars remain complete across release paths; check enemy pass-through rules in gameplay tests rather than requiring visual exit cutouts. Avoid locking down incidental vertex counts, exact decorative colors, or implementation-specific object IDs. A structural assertion is useful when it protects a stated contract, such as shared resource ownership.
@@ -31,7 +31,7 @@ Run the relevant test first, then `pnpm test:all` before handing off code change
 
 ## Run flow and menu regression scenarios
 
-- Use authored domain scenarios for nonfinal death/respawn, loss only after the final 900 ms death phase, hidden Packet at loss, final-pellet points and clear, collision-before-collection, and no automatic clear for initially empty maps.
+- Use authored domain scenarios for nonfinal death/respawn, loss only after the final 900 ms death phase, hidden Packet at loss, final-collectible points and clear, collision-before-collection, and no automatic clear for initially empty maps.
 - Exercise the runtime's public state callback to check exactly one completed snapshot, active play timing, frozen terminal timers, and immunity to resume/focus events after completion. Preserve focused pause/resume, restart disposal, and cancelled-startup coverage.
 - Exercise observable menu actions with a stubbed game boundary: title without runtime initialization, repeated Start clicks, retry after load failure, cancellation and late callbacks, pause/settings/help navigation, confirmation before abandonment, and focus restoration. Verify menu typing/buttons do not trigger movement, pause, or debug shortcuts, and held keys/touches do not leak back into play.
 - Exercise the labelled top-right Back control and Escape from settings/help/profile, including parent focus restoration and continued pause. Keep explicit Resume, replay/main-menu, and Cancel/Confirm behaviors covered. Check that menu navigation retains the same ambient decoration while replacing panel content, and shell disposal removes it; do not assert decorative node counts or animation geometry.
@@ -49,7 +49,7 @@ These scenarios protect observable behavior; avoid snapshots of decorative geome
 - Exercise Try Out immediately below Pause, title-help launch, the disabled control and explanation during a run, same-lesson loading retry, cancellation and obsolete callbacks, disposal, unlimited retry, completion actions, and focus restored to Try Out on exit. Check manual and focus-caused pauses, held-input clearing, and checkpoint immunity to Escape, Space, and focus return.
 - Keep marker coverage at the renderer boundary: current tile placement, visibility and target updates while paused, no marker for normal play, and exact resource disposal. `pnpm test src/__tests__/renderTutorialMarker.test.ts` runs that focused check.
 
-Run `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` after implementation. Browser QA remains deferred until explicitly requested; then check tutorial objective readability, marker visibility around pellets, touch gestures, short screens, focus, and reduced motion through the complete flow. Domain and renderer tests do not establish browser usability.
+Run `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` after implementation. Browser QA remains deferred until explicitly requested; then check tutorial objective readability, marker visibility around collectibles, touch gestures, short screens, focus, and reduced motion through the complete flow. Domain and renderer tests do not establish browser usability.
 
 ## Visual checks and debugging
 

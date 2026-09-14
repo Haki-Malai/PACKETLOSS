@@ -1,8 +1,13 @@
 {
   "name": "packetloss",
   "version": "0.0.0",
+  "description": "A network-themed maze arcade game for the browser.",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Haki-Malai/PACKETLOSS.git"
+  },
   "packageManager": "pnpm@10.28.0",
   "scripts": {
     "dev": "vite",

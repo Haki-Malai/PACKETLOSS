@@ -339,7 +339,7 @@ export class GameShell {
             result:
                 this.result?.outcome === 'lost'
                     ? ['All lives lost', 'PACKET LOST']
-                    : ['Every pellet collected', 'MAZE CLEARED'],
+                    : ['All data recovered', 'MAZE CLEARED'],
             settings: ['Make yourself comfortable', 'SETTINGS'],
             help: ['Keep your signal alive', 'HOW TO PLAY'],
             profile: ['On this device', 'PROFILE & RECORDS'],
@@ -474,7 +474,7 @@ export class GameShell {
                 wordmark.removeAttribute('data-ready');
             });
         panel.body.append(
-            element('p', 'packet-copy', 'Collect pellets. Evade enemies. Keep your signal alive.')
+            element('p', 'packet-copy', 'Recover data. Evade enemies. Keep your signal alive.')
         );
         const identity = element('div', 'packet-identity');
         identity.append(
@@ -611,7 +611,7 @@ export class GameShell {
         const stats = element('dl', 'packet-stats');
         for (const [label, value] of [
             ['Local best', score(this.store.getTopRecords(this.options.mapVariant)[0]?.score ?? 0)],
-            ['Pellets', `${result.pointsCollected} / ${result.totalPoints}`],
+            ['Data recovered', `${result.pointsCollected} / ${result.totalPoints}`],
             ['Play time', duration(result.elapsedMs)],
         ]) {
             const stat = element('div');
@@ -721,11 +721,11 @@ export class GameShell {
             ],
             [
                 'Collect',
-                'Pellets score 10 points. Larger power pellets score 50 and let you eat scared enemies for increasing bonuses.',
+                'Data bits score 10 points. Larger power cores score 50 and let you eat scared enemies for increasing bonuses.',
             ],
             [
                 'Survive',
-                'You have three lives. Avoid enemies, use the linked portals, and collect every pellet to clear the maze.',
+                'You have three lives. Avoid enemies, use the linked portals, and recover all data to clear the maze.',
             ],
             [
                 'Pause',

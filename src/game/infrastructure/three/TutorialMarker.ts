@@ -1,7 +1,7 @@
 import { Group, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three';
 import type { TilePosition } from '../../domain/valueObjects/TilePosition';
 
-/** A floor outline leaves the lesson's pellet or enemy unobscured. */
+/** A floor outline leaves the lesson's collectible or enemy unobscured. */
 export class TutorialMarker {
   readonly group = new Group();
   private readonly geometry: PlaneGeometry;
