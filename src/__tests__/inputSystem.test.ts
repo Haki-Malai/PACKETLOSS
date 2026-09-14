@@ -1,11 +1,48 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WorldState } from '../game/domain/world/WorldState';
 import { createHarness } from './fixtures/inputFixtures';
 import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import type { BrowserInputAdapter } from '../game/infrastructure/adapters/BrowserInputAdapter';
 import { InputSystem } from '../game/systems/InputSystem';
 
+const environment = vi.hoisted(() => ({ isDev: true }));
+vi.mock('../config/environment', () => ({ get IS_DEV() { return environment.isDev; } }));
+afterEach(() => {
+  environment.isDev = true;
+  vi.unstubAllGlobals();
+});
+
 describe('InputSystem', () => {
+  it('ignores inspection, clipboard and power shortcuts in production while movement and pause work', () => {
+    environment.isDev = false;
+    const { input, world, togglePause, system } = createHarness();
+    const enemy = new EnemyEntity({
+      key: 'lag', tile: { x: 2, y: 2 }, direction: 'right', speed: 0.5,
+      displayWidth: 11, displayHeight: 11,
+    });
+    world.enemies = [enemy];
+    const copy = vi.fn();
+    vi.stubGlobal('navigator', { clipboard: { writeText: copy } });
+    world.debugPanelText = 'stale diagnostics';
+    const preventDefault = vi.fn();
+    for (const event of [
+      { code: 'KeyH', key: 'h' },
+      { code: 'KeyC', key: 'c', altKey: true },
+      { code: 'KeyC', key: 'C', shiftKey: true },
+    ]) input.emitKeyDown({ ...event, preventDefault } as unknown as KeyboardEvent);
+    expect(world.collisionDebugEnabled).toBe(false);
+    expect(enemy.state.scared).toBe(false);
+    expect(copy).not.toHaveBeenCalled();
+    expect(preventDefault).not.toHaveBeenCalled();
+
+    input.setKeyDown('ArrowUp', true);
+    system.update();
+    expect(world.packet.direction.next).toBe('up');
+    input.emitKeyDown({ code: 'Escape', key: 'Escape', preventDefault } as unknown as KeyboardEvent);
+    expect(togglePause).toHaveBeenCalledOnce();
+    system.destroy();
+  });
+
   it.each([true, false])('enables debug power only when its shortcut is allowed (%s)', (allowPowerShortcut) => {
     const { input, world, system: original } = createHarness();
     original.destroy();

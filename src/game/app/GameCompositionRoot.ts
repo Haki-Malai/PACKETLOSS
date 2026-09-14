@@ -22,11 +22,12 @@ import { AnimationSystem } from '../systems/AnimationSystem';
 import { CameraSystem } from '../systems/CameraSystem';
 import { CollectibleSystem } from '../systems/CollectibleSystem';
 import { DebugOverlaySystem } from '../systems/DebugOverlaySystem';
+import { IS_DEV } from '../../config/environment';
 import { EnemyAbilitySystem } from '../systems/EnemyAbilitySystem';
 import { EnemyMovementSystem } from '../systems/EnemyMovementSystem';
 import { EnemyPacketCollisionSystem } from '../systems/EnemyPacketCollisionSystem';
 import { EnemyReleaseSystem } from '../systems/EnemyReleaseSystem';
-import { HudSystem } from '../systems/HudSystem';
+import type { DebugSnapshot } from '../shared/events/DebugSnapshot';
 import { InputSystem } from '../systems/InputSystem';
 import { PacketMovementSystem } from '../systems/PacketMovementSystem';
 import { RenderSystem } from '../systems/RenderSystem';
@@ -36,9 +37,12 @@ import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
 import { ComposedGame, RuntimeControl } from './contracts';
 
 const ENEMY_KEYS: EnemyKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
+// Keep the development constructor outside the startup try/catch so production can omit its module.
+const DevelopmentDebugSystem = IS_DEV ? DebugOverlaySystem : null;
 
 export interface GameCompositionOptions {
   mountId?: string;
+  onDebugChange?: (_snapshot: DebugSnapshot) => void;
   mapVariant?: MapVariant;
   tutorialLesson?: TutorialLessonId;
   rng?: (() => number) | { next(): number; int(maxExclusive: number): number };
@@ -47,6 +51,13 @@ export interface GameCompositionOptions {
 export class GameCompositionRoot {
   constructor(private readonly options: GameCompositionOptions = {}) {}
 
+  /**
+   * Builds the game and its owned resources, including diagnostics only in development.
+   *
+   * @param runtimeControl - Pause and resume operations bound to the owning runtime.
+   * @param signal - Cancels loading before resources can be mounted into a replacement session.
+   * @returns The composed game; rejects on startup failure after releasing acquired resources.
+   */
   async compose(runtimeControl: RuntimeControl, signal?: AbortSignal): Promise<ComposedGame> {
     const mountId = this.options.mountId ?? 'game-root';
     const mount = document.getElementById(mountId);
@@ -166,8 +177,8 @@ export class GameCompositionRoot {
       const tutorial = this.options.tutorialLesson
         ? new TutorialController(this.options.tutorialLesson, world, movementRules, collectibleSystem)
         : undefined;
-      const hudSystem = new HudSystem(mount, () => runtimeControl.pause());
-      const debugSystem = new DebugOverlaySystem(world, camera);
+      const debugSystem = IS_DEV && DevelopmentDebugSystem
+        ? new DevelopmentDebugSystem(world, camera, this.options.onDebugChange) : null;
       renderSystem = new RenderSystem(world, renderer, camera, collectibleSystem, assets,
         tutorial ? () => tutorial.getSnapshot().marker : undefined);
 
@@ -182,11 +193,10 @@ export class GameCompositionRoot {
         renderSystem,
         cameraSystem,
         collectibleSystem,
-        hudSystem,
-        debugSystem,
+        ...(debugSystem ? [debugSystem] : []),
       ];
 
-      const renderSystems = [renderSystem, debugSystem, hudSystem];
+      const renderSystems = [renderSystem, ...(debugSystem ? [debugSystem] : [])];
 
       mount.replaceChildren(canvas);
       return {

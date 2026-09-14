@@ -13,7 +13,7 @@ The project moved from a single large runtime file to a layered OOP structure fo
 The runtime is now composed from small, explicit systems operating on a shared `WorldState`.
 
 Entrypoint flow:
-1. `src/main.ts` selects the development-only `/dev/assets` gallery; otherwise it creates `GameShell`, which shows the title screen before initializing gameplay.
+1. `src/main.tsx` mounts one React root inside `EnvironmentProvider`. `App` selects the development-only `/dev/assets` gallery relative to the configured base URL; otherwise it renders `GameShell`, which shows the title screen before initializing gameplay.
 2. Starting a run calls `createPacketGame`, which builds a `GameRuntime` with `GameCompositionRoot`.
 3. `GameCompositionRoot` wires map/adapters/domain services/systems.
 4. `GameRuntime` drives ordered updates and rendering via fixed-step loop.
@@ -33,7 +33,9 @@ src/game/
     services/
   systems/
   ui/
-    GameShell.ts
+    GameShell.tsx
+    useGameSession.ts
+    MenuPanel.tsx
     gameUi.css
   infrastructure/
     map/
@@ -54,9 +56,9 @@ Composition and lifecycle orchestration.
 - `contracts.ts`: runtime and system interfaces.
 
 ### `ui`
-`GameShell` owns title, loading/error, pause, result, settings, help, and profile/record screens outside the renderer-owned mount. It controls the public game lifecycle, consumes runtime state notifications, and destroys/recreates the runtime for a fresh run. Returning to the title cancels pending startup and destroys the current runtime. Generation guards ignore repeated actions and late callbacks from obsolete runs.
+`GameShell` and its `useGameSession` hook own title, loading/error, pause, result, settings, help, and profile/record screens outside the renderer-owned mount. The hook controls the public game lifecycle, consumes runtime state notifications, and destroys/recreates the runtime for a fresh run. Returning to the title cancels pending startup and destroys the current runtime. Generation guards ignore repeated actions and late callbacks from obsolete runs.
 
-`MenuPanel` provides shared DOM element/button/panel constructors and header, body, actions, and footer slots. All menus use the same frame and spacing with standard (640-pixel maximum) and wide (1,040-pixel maximum) variants; help and profile share responsive `.packet-columns`. The shared header owns the labelled top-right Back control for submenus, while the shell owns parent navigation and focus restoration. `GameShell` mounts ambient decoration once beside a dedicated scrollable `.packet-menu-viewport`; screen changes replace only the panel. This keeps background CSS animation continuous across menu navigation without recreating decorative nodes or gameplay timers. Shell disposal removes both, and reduced-motion rules still apply to the persistent background.
+`MenuPanel` and `MenuButton` provide shared React components and header, body, actions, and footer slots. All menus use the same frame and spacing with standard (640-pixel maximum) and wide (1,040-pixel maximum) variants; help and profile share the responsive `MenuColumns` component. The shared header owns the labelled top-right Back control for submenus, while the shell owns parent navigation and focus restoration. `GameShell` mounts ambient decoration once beside a dedicated scrollable `.packet-menu-viewport`; screen changes replace only the panel. This keeps background CSS animation continuous across menu navigation without recreating decorative nodes or gameplay timers. Shell disposal removes both, and reduced-motion rules still apply to the persistent background.
 
 The title lazily imports `TitleWordmark`, a small independent Three.js view of the actual map lettering. It reuses `MazeScene`, scene lighting, and `Camera3D` without loading a map, enemy models, or gameplay systems. It renders only on mounting, resizing, and occasional single-letter flicker transitions. Title-owned vertex and outline-instance colors dim one authored glyph without changing the map asset. Leaving the title cancels its timer and disposes its renderer, scene resources, and listeners; stale imports cannot mount into a replacement menu. The accessible text heading remains as a fallback on load failure or context loss.
 
@@ -66,7 +68,11 @@ Help lazily imports `EnemyPortraits`, independently of gameplay. It loads the cu
 
 The shell contains/restores menu focus, handles submenu navigation and abandon/clear confirmations, and keeps gameplay input inactive while menus own control. The runtime clears held keys and gestures at transitions. Explicit menu interaction clears the intent to resume automatically after focus returns; only an untouched focus-caused pause resumes that way. Terminal results cannot resume.
 
-A small versioned local-storage adapter owns the optional nickname, menu motion preference, and top 10/recent 10 completed runs per map. Records contain a stable run ID, completion date, map, nickname snapshot, and result; duplicate result delivery cannot save a run twice. Scores sort descending with most recent completion breaking ties. Invalid or unavailable storage uses defaults/in-memory state and reports save status. The shell renders nicknames as text and reflects browser fullscreen state without persisting it. `gameUi.css` holds shared tokens and Tailwind-backed styles governed by the HTML contract in [Product](PRODUCT.md#canonical-html-visual-contract).
+A small versioned local-storage adapter owns the optional nickname, menu motion preference, and top 10/recent 10 completed runs per map. Records contain a stable run ID, completion date, map, nickname snapshot, and result; duplicate result delivery cannot save a run twice. Scores sort descending with most recent completion breaking ties. Invalid or unavailable storage uses defaults/in-memory state and reports save status. The shell renders nicknames as text and reflects browser fullscreen state without persisting it. `tailwind.css` imports Tailwind 4 through PostCSS, maps the shared tokens into theme utilities, and limits source scanning to application files and the HTML entrypoint. `gameUi.css` retains shared tokens, safe-area rules, and complex decorative/motion styles; component layouts and controls use Tailwind JSX utilities governed by the HTML contract in [Product](PRODUCT.md#canonical-html-visual-contract).
+
+The HUD is a React sibling of the dedicated `packet-scene` canvas mount. It subscribes to score/lives events using `useSyncExternalStore` with primitive snapshots. The former HUD adapter/system is removed from runtime composition. An inert wrapper around the canvas and HUD prevents interaction while a menu owns control. In development, `DebugOverlaySystem` computes pointer/tile diagnostics and frame timings and publishes readonly `DebugSnapshot` values through optional `onDebugChange` composition options. A session-owned store updates only the React debug subscriber; stale generations cannot publish into a newer run. Production sessions create no debug store or callback, and runtime composition excludes debug systems and collision inspection geometry.
+
+React effects own preview loading, listeners, observers, and disposal. Lazy menu preview imports are shared across concurrent effect setups; each active setup still owns its own resources. The root runs in Strict Mode, and pagehide/HMR unmount it. Persisted pageshow reloads a previously disposed page. Startup render/import errors have a readable React fallback.
 
 ### `domain`
 Gameplay model and pure logic.
@@ -90,8 +96,7 @@ Frame-by-frame behavior execution.
 - `AnimationSystem`
 - `CameraSystem`
 - `CollectibleSystem`
-- `HudSystem`
-- `DebugOverlaySystem`
+- `DebugOverlaySystem` (development only)
 - `RenderSystem`
 
 `EnemyPacketCollisionSystem` owns the 900 ms death phase through `PacketEntity.deathAnimationRemainingMs`. Dangerous contact removes one life and leaves the Packet at the contact position; further contacts are ignored until the timer expires. With lives remaining, it returns the Packet to `packetSpawnTile`, resets its direction and portal blink state, and starts the existing recovery protection. At zero lives, it finalizes loss with the Packet hidden instead of respawning. `PacketMovementSystem` suppresses movement during death, while `CollectibleSystem` suppresses consumption but continues existing effects. Enemies and other gameplay timers continue; pausing stops the fixed updates that advance death.
@@ -106,7 +111,7 @@ Movement code resolves per-archetype speed and the non-stacking Lag slowdown. An
 Browser/engine integration and data loading.
 - map parser/repository (`TiledParser`, `TiledMapRepository`)
 - `TiledMapTopology` handles portal inference and void-boundary guards after tile trimming.
-- adapters for renderer/input/timer/hud
+- adapters for renderer/input/timer
 - `ThreeRendererAdapter` owns the WebGL renderer and viewport sizing. It renders directly to the antialiased canvas with sRGB output and tone mapping, without bloom or intermediate postprocessing targets, and disposes the renderer on destruction.
 - `RenderSystem` owns a Three.js scene with `MazeScene`, injected `ArcadeAssets`, and `CollisionDebugScene`, and disposes their GPU resources when destroyed. It reads the injected `CollectibleSystem`; only the update pipeline advances collection and effect timers.
 - `MazeGeometry` builds wall and jail footprints from code-native tile templates, applies the map's rotation and flip transforms, then traces and extrudes continuous contours. The templates preserve the former authored silhouettes without runtime image assets. `MazeScene` batches the outline strips into static instanced meshes and supplies the floor, jail, and extruded vector lettering separately.
@@ -117,7 +122,7 @@ Browser/engine integration and data loading.
 - `HologramPacket` samples a gold hunter variation from edible enemy state and a snapping intake from `PacketEntity.enemyEatRemainingMs`. `ArcadeAssets` collapses the existing enemy GLB inside an independent wrapper and reveals `ReturnEnemyPresentation`, a small bug with oversized eyes and animated feet. These wrappers preserve the root, copy scale, and contact shadow. Return-form geometry/materials belong to the assets lifetime. `EnemyEatPresentation` owns the short-lived pixel stream into the presented Packet anchor; expiry, death, position resets, and scene disposal clean up or suppress it. Gameplay and gallery use the same presentation APIs and 420 ms timeline. `StateTransition` samples short eased blends on the presentation clock for the hunter form, scared expression and tint, and jail restoration; interrupted blends continue from the current pose. The gallery supplies absolute blend weights for independent seeking. Retired Spam slots clear these blends before reuse.
 - Ping waves and target markers, Spam split echoes, and Lag-zone outlines consume domain effect snapshots. Rendering may interpolate effect age but never advances cooldowns, spawns copies, or applies slowdown. Expired visuals release their owned resources, and all effects freeze with the game clock.
 - `HologramPacket` builds the player from a shallow beveled block with closely matched near-black fixed colors for the top and sides, cyan corner outlines on the top and all four vertical faces, shaded eye sockets, solid depth rails, top-mounted eyes and face frame, restrained square pixel accents, ten surrounding floating glyphs, and three short speed marks. The body has an authored height of 3.8 units and a presentation scale of 1.15; gameplay collision dimensions remain unchanged. Four additional binary digits and four extra square pixel marks attach directly to the upper face. Surface digits stay readable and independently switch 0/1 values with soft flickering. The body also has a 1.2 scale on its world X axis. Scene lighting does not change the core colors. The eyes blink periodically and shift together toward actual movement, returning to center at rest. A camera-facing presentation group compensates for the gameplay root's heading; its body child cancels the camera rotation to stay aligned with the maze's world axes, without rotational rocking. Floating glyphs cluster about 20% closer to the center at the same authored size and remain readable in the camera plane with slight depth drift; time-seeded noise selects each digit's 0/1 value independently at staggered intervals. Projected ground movement orients the trail independently of the body. Additive quads provide local eye glow without a global bloom pass. Direct sampling of the shared presentation time drives body and eye motion, the trail, and independent digit fading. During death, simulation timing drives body stutters, horizontally displaced cyan and magenta scan slices and echoes, scrambled binary digits, and brief signal dropouts at the contact position. The body remains recognizable until it cuts out before respawn restores the normal pose. It owns and disposes its geometry, materials, and textures. Only model children animate, leaving entity roots and contact shadows grounded.
-- `RenderSystem` also participates in fixed updates, advancing an animation clock only while active. It derives trail direction from captured player displacement, preserving immediate turns while interpolating trail intensity and fading it over 120 ms at rest. Tile-object replacement clears the trail on portals and respawns. It snapshots and interpolates the animation clock alongside entity presentation, then samples mixers and digit opacity at the same absolute time. Pause freezes animation and trail fading. Data-bit transforms refresh only when the collectible count changes, avoiding per-frame array copies. Remaining power-core positions are cached; only their instance transforms and bounds refresh from the shared presentation clock for rotation and hover. The gallery samples the same six-second animation directly for pause and arbitrary seeking. Collision markings render in the 3D scene; `DebugOverlaySystem` owns the HTML debug panels.
+- `RenderSystem` also participates in fixed updates, advancing an animation clock only while active. It derives trail direction from captured player displacement, preserving immediate turns while interpolating trail intensity and fading it over 120 ms at rest. Tile-object replacement clears the trail on portals and respawns. It snapshots and interpolates the animation clock alongside entity presentation, then samples mixers and digit opacity at the same absolute time. Pause freezes animation and trail fading. Data-bit transforms refresh only when the collectible count changes, avoiding per-frame array copies. Remaining power-core positions are cached; only their instance transforms and bounds refresh from the shared presentation clock for rotation and hover. The gallery samples the same six-second animation directly for pause and arbitrary seeking. Collision markings render in the 3D scene; `DebugOverlaySystem` publishes data for React debug panels.
 
 ### `shared`
 Cross-cutting utilities.
@@ -125,9 +130,19 @@ Cross-cutting utilities.
 - generic event bus used by state/UI integration
 - `blinkCadence` shares the next-toggle calculation for death recovery and scared-enemy warnings; systems retain their own state transitions.
 
+## Application environment
+
+`src/config/environment.ts` defines `IS_DEV` from Vite's development-server flag or the explicit `development` build mode. `EnvironmentProvider` exposes the same value as `useEnvironment().isDev` to React. Gameplay systems import the shared flag directly so they do not depend on React. `VITE_GAME_ENV` continues to select the normal-run maze and does not enable development features; tutorial practice remains available in production.
+
+Development entrypoints retain an `IS_DEV` build-time guard as well as the UI context check. This lets the bundler remove the gallery, debug panels, diagnostic systems, collision inspection scene, and `DebugInput` shortcut/clipboard implementation from production. Hiding controls through React context alone would leave their code in the bundle. Pointer inspection state is collected only in development.
+
+The Pages workflow supports only `dev` and `prod`. It builds `dev` with `--mode development` and `prod` with production mode. It supplies each target's absolute Pages base URL and writes a development gallery entry HTML file so direct navigation and reload work on the static host. The next publication removes the retired `int` directory from the shared `gh-pages` branch. A development build still uses optimized React; Vite build mode is separate from `NODE_ENV` ([Vite environment guide](https://v4.vitejs.dev/guide/env-and-mode.html)).
+
 ## Development Asset Gallery
 
 The development entry branch loads `/dev/assets` independently of the game composition. It does not construct `GameRuntime`, reset shared game state, or start gameplay systems. Production builds omit the gallery branch and navigation link.
+
+React owns the gallery library, inspector, loading states, and controls. The inspector hook owns its preview session, resize observer, and animation loop; timeline updates do not rerender the library. Selection resets playback/transform controls, and unmount cancels loading and thumbnail preparation.
 
 The gallery owns one renderer for static catalog thumbnails and the selected asset's live inspector. Preview scenes reuse current `ArcadeAssets`, `HologramPacket`, maze geometry/materials, scene lighting, and effect presentation helpers. Each enemy has normal, scared, warning, and ability previews. Authored timelines and a finite Spam copy pool demonstrate abilities without starting gameplay systems or mutating shared state. Small authored map examples expose the ten wall footprints, connected walls, prison joins, and the complete wordmark without a live world simulation. The catalog excludes retired models and unimplemented collectible types.
 
@@ -158,14 +173,13 @@ Update order (fixed):
 8. `RenderSystem` character animation clock
 9. `CameraSystem`
 10. `CollectibleSystem`
-11. `HudSystem`
-12. `DebugOverlaySystem`
+11. `DebugOverlaySystem` (development only)
 
 Render order:
 1. `RenderSystem` presents the camera and interpolated entity positions, then synchronizes collectibles, effects, and collision markings.
 2. `ThreeRendererAdapter` renders the complete scene with depth testing.
-3. `DebugOverlaySystem` refreshes HTML debug panels.
-4. The HUD and application menu shell remain DOM-based; no pause overlay system runs inside the simulation.
+3. `DebugOverlaySystem` publishes diagnostic snapshots in development.
+4. React renders the HUD, diagnostics, and menu shell; no pause overlay system runs inside the simulation.
 
 ## Camera Behavior Contract
 - `CameraSystem.start()` configures bounds, zoom, follow target, and viewport, then calls a one-time snap so the first gameplay frame is centered on Packet instead of animating in from `(0, 0)`.

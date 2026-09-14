@@ -8,6 +8,7 @@ Recover data bits, avoid enemies, and use power cores to turn the chase around. 
 
 - [Product overview](docs/PRODUCT.md) — gameplay, scoring, controls, maps, and current scope.
 - [Architecture](docs/ARCHITECTURE.md) — runtime structure, system order, rendering, and module boundaries.
+- [Coding guide](docs/CODING.md) — JSDoc conventions for non-JSX functions.
 - [Testing](docs/TESTING.md) — local checks, focused tests, and debugging shortcuts.
 
 ## Controls
@@ -28,6 +29,8 @@ pnpm dev
 
 `pnpm build` creates the production bundle in `dist/`; `pnpm preview` serves that build locally. `pnpm test:all` runs typecheck, lint, tests, and the production build.
 
+`pnpm dev` enables development tools. `pnpm build --mode development` includes those tools in an optimized build; the default production build excludes the asset gallery, debug panels, collision inspection, and debug shortcuts. React UI reads the shared environment context, while runtime code uses the same build-time flag. `VITE_GAME_ENV=DEMO` selects a maze independently of development tools.
+
 To run the demo maze:
 
 ```sh
@@ -38,7 +41,7 @@ After editing its Tiled map, run `pnpm map:demo:convert` to regenerate the demo 
 
 ## Project layout
 
-- `src/main.ts` opens the title/menu shell; starting a run initializes the game.
+- `src/main.tsx` mounts the React title/menu shell; starting a run initializes the game.
 - `src/engine/` contains the loop, camera, input, timers, and tweens.
 - `src/game/` contains gameplay logic, runtime wiring, map loading, Three.js presentation, and UI integration.
 - `public/assets/` contains fonts and maze data.

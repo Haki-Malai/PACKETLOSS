@@ -10,6 +10,7 @@ import { AnimationSystem } from '../game/systems/AnimationSystem';
 import { CameraSystem } from '../game/systems/CameraSystem';
 import { EnemyReleaseSystem } from '../game/systems/EnemyReleaseSystem';
 import { RenderSystem } from '../game/systems/RenderSystem';
+import { DebugOverlaySystem } from '../game/systems/DebugOverlaySystem';
 import { getGameState, resetGameState } from '../state/gameState';
 import { createCharacterAssets } from './fixtures/characterFixtures';
 import { createCollisionTile, createMapFixture } from './fixtures/renderFixtures';
@@ -18,6 +19,8 @@ import { createHarnessMap } from './helpers/mechanicsDomainMapFactory';
 
 vi.mock('../game/infrastructure/adapters/ThreeRendererAdapter', () => ({ ThreeRendererAdapter: vi.fn() }));
 vi.mock('../game/infrastructure/adapters/BrowserInputAdapter', () => ({ BrowserInputAdapter: vi.fn() }));
+const environment = vi.hoisted(() => ({ isDev: true }));
+vi.mock('../config/environment', () => ({ get IS_DEV() { return environment.isDev; } }));
 
 function prepareComposition() {
   const document = new FakeDocument();
@@ -34,6 +37,7 @@ const runtimeControl = { pause: vi.fn(), resume: vi.fn(), togglePause: vi.fn() }
 
 describe('GameCompositionRoot startup', () => {
   afterEach(() => {
+    environment.isDev = true;
     vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
@@ -124,7 +128,8 @@ describe('GameCompositionRoot startup', () => {
     expect(mount.children).toHaveLength(0);
   });
 
-  it('mounts loaded models and registers their presentation clock after gameplay animation', async () => {
+  it.each([true, false])('mounts models and their presentation clock with diagnostics only in dev (%s)', async (isDev) => {
+    environment.isDev = isDev;
     const { mount } = prepareComposition();
     const assets = createCharacterAssets();
     vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(assets);
@@ -136,6 +141,9 @@ describe('GameCompositionRoot startup', () => {
     const render = composed.renderSystems.find((system) => system instanceof RenderSystem)!;
     const animationIndex = composed.updateSystems.findIndex((system) => system instanceof AnimationSystem);
     expect(composed.updateSystems[animationIndex + 1]).toBe(render);
+    expect(composed.updateSystems.some((system) => system instanceof DebugOverlaySystem)).toBe(isDev);
+    expect(composed.renderSystems.some((system) => system instanceof DebugOverlaySystem)).toBe(isDev);
+    expect(render.scene.getObjectByName('collision-debug') !== undefined).toBe(isDev);
     expect(composed.updateSystems.some((system) => system instanceof EnemyReleaseSystem)).toBe(true);
     expect(composed.tutorial).toBeUndefined();
     expect(mount.children).toHaveLength(1);

@@ -6,7 +6,6 @@ on:
     types: [completed]
     branches:
       - dev
-      - int
       - main
       - development
   workflow_dispatch:
@@ -17,7 +16,6 @@ on:
         type: choice
         options:
           - dev
-          - int
           - prod
       ref:
         description: "Optional ref to deploy (must be reachable from mapped branch)"
@@ -64,7 +62,6 @@ jobs:
           map_branch_to_env() {
             case "$1" in
               dev|development) echo "dev" ;;
-              int) echo "int" ;;
               main) echo "prod" ;;
               *)
                 echo "::error::Unsupported deployment branch '$1'."
@@ -76,7 +73,6 @@ jobs:
           map_env_to_branch() {
             case "$1" in
               dev) echo "dev" ;;
-              int) echo "int" ;;
               prod) echo "main" ;;
               *)
                 echo "::error::Unsupported environment '$1'."
@@ -173,7 +169,20 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: pnpm run build
+        env:
+          DEPLOY_ENV: ${{ needs.resolve_target.outputs.env_path }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          build_mode=production
+          if [[ "$DEPLOY_ENV" == "dev" ]]; then
+            build_mode=development
+          fi
+          pnpm run build --mode "$build_mode" --base "/$REPO_NAME/$DEPLOY_ENV/"
+          if [[ "$DEPLOY_ENV" == "dev" ]]; then
+            mkdir -p dist/dev/assets
+            cp dist/index.html dist/dev/assets/index.html
+          fi
 
       - name: Upload site artifact
         uses: actions/upload-artifact@v4
@@ -234,7 +243,8 @@ jobs:
             find "$worktree_dir" -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
           fi
 
-          rm -rf "$worktree_dir/$ENV_PATH"
+          # Retire the integration site when publishing either supported environment.
+          rm -rf "$worktree_dir/int" "$worktree_dir/$ENV_PATH"
           mkdir -p "$worktree_dir/$ENV_PATH"
           cp -R "$artifact_root"/. "$worktree_dir/$ENV_PATH"/
 

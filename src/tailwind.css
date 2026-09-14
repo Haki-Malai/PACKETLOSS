@@ -1,3 +1,18 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss' source('./');
+@import './style.css' layer(base);
+@import './game/ui/gameUi.css' layer(components);
+@source '../index.html';
+
+@theme inline {
+    --color-packet-void: var(--packet-void);
+    --color-packet-surface: var(--packet-surface);
+    --color-packet-raised: var(--packet-raised);
+    --color-packet-pink: var(--packet-pink);
+    --color-packet-cyan: var(--packet-cyan);
+    --color-packet-gold: var(--packet-gold);
+    --color-packet-focus: var(--packet-focus);
+    --color-packet-text: var(--packet-text);
+    --color-packet-muted: var(--packet-muted);
+    --color-packet-line: var(--packet-line);
+    --font-heading: var(--packet-heading-font);
+}

@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import tailwindcss from 'eslint-plugin-tailwindcss';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 import vitest from 'eslint-plugin-vitest';
 
@@ -27,9 +28,13 @@ export default tseslint.config(
     },
     plugins: {
       tailwindcss,
+      'react-hooks': reactHooks,
       vitest,
     },
+    settings: { tailwindcss: { cssConfigPath: './src/tailwind.css' } },
     rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
       'no-console': 'off',
       eqeqeq: 'off',
       'no-redeclare': 'off',

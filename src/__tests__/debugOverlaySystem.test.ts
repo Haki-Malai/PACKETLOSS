@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorldState } from '../game/domain/world/WorldState';
 import { DebugOverlaySystem } from '../game/systems/DebugOverlaySystem';
-import { FakeDocument } from './helpers/fakeDom';
+import { EMPTY_DEBUG } from '../game/shared/events/DebugSnapshot';
 
 function createWorld(): WorldState {
   const emptyCollision = {
@@ -50,37 +50,21 @@ function createWorld(): WorldState {
 }
 
 describe('DebugOverlaySystem', () => {
-  let fakeDocument: FakeDocument;
+  afterEach(() => { vi.restoreAllMocks(); });
 
-  beforeEach(() => {
-    fakeDocument = new FakeDocument();
-    vi.stubGlobal('document', fakeDocument as unknown as Document);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  });
-
-  it('hides and clears diagnostics panels when diagnostics mode is disabled', () => {
+  it('publishes cleared diagnostics when diagnostics mode is disabled', () => {
     const world = createWorld();
     world.debugPanelText = 'stale';
     const camera = {
       screenToWorld: () => ({ x: 0, y: 0 }),
     };
-    const system = new DebugOverlaySystem(world, camera);
+    const publish = vi.fn();
+    const system = new DebugOverlaySystem(world, camera, publish);
 
     system.start();
     system.render();
 
-    const runtimePanel = fakeDocument.getElementById('runtime-debug-panel');
-    const collisionPanel = fakeDocument.getElementById('collision-debug-panel');
-    expect(runtimePanel).not.toBeNull();
-    expect(collisionPanel).not.toBeNull();
-    expect(runtimePanel?.style.display).toBe('none');
-    expect(collisionPanel?.style.display).toBe('none');
-    expect(runtimePanel?.textContent).toBe('');
-    expect(collisionPanel?.textContent).toBe('');
+    expect(publish).toHaveBeenLastCalledWith(EMPTY_DEBUG);
     expect(world.debugPanelText).toBe('');
   });
 
@@ -90,7 +74,8 @@ describe('DebugOverlaySystem', () => {
     const camera = {
       screenToWorld: () => ({ x: 0, y: 0 }),
     };
-    const system = new DebugOverlaySystem(world, camera);
+    const publish = vi.fn();
+    const system = new DebugOverlaySystem(world, camera, publish);
     const nowSpy = vi
       .spyOn(performance, 'now')
       .mockReturnValueOnce(100)
@@ -102,29 +87,22 @@ describe('DebugOverlaySystem', () => {
 
     nowSpy.mockRestore();
 
-    const runtimePanel = fakeDocument.getElementById('runtime-debug-panel');
-    const collisionPanel = fakeDocument.getElementById('collision-debug-panel');
-
-    expect(runtimePanel?.style.display).toBe('block');
-    expect(collisionPanel?.style.display).toBe('block');
-    expect(runtimePanel?.textContent).toContain('Runtime Diagnostics');
-    expect(runtimePanel?.textContent).toContain('fps: 62.5');
-    expect(runtimePanel?.textContent).toContain('frame: 16.00 ms');
+    expect(publish).toHaveBeenLastCalledWith({ enabled: true, collisionText: 'Collision Debug\nmove mouse over a block to inspect', runtimeText: 'Runtime Diagnostics\nfps: 62.5\nframe: 16.00 ms' });
   });
 
-  it('removes diagnostics panels on destroy', () => {
+  it('clears diagnostics on destroy', () => {
     const world = createWorld();
     const camera = {
       screenToWorld: () => ({ x: 0, y: 0 }),
     };
-    const system = new DebugOverlaySystem(world, camera);
+    const publish = vi.fn();
+    const system = new DebugOverlaySystem(world, camera, publish);
 
     system.start();
-    expect(fakeDocument.getElementById('runtime-debug-panel')).not.toBeNull();
-    expect(fakeDocument.getElementById('collision-debug-panel')).not.toBeNull();
-
+    world.collisionDebugEnabled = true;
+    system.render();
     system.destroy();
-    expect(fakeDocument.getElementById('runtime-debug-panel')).toBeNull();
-    expect(fakeDocument.getElementById('collision-debug-panel')).toBeNull();
+    expect(publish).toHaveBeenLastCalledWith(EMPTY_DEBUG);
+    expect(world.debugPanelText).toBe('');
   });
 });
