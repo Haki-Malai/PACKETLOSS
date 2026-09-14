@@ -226,17 +226,8 @@ export class GameShell {
     }
 
     private exitTutorial(): void {
-        this.generation += 1;
-        this.game?.destroy();
-        this.game = null;
-        this.result = null;
-        this.tutorialLesson = null;
-        this.tutorial = null;
-        this.viewport.replaceChildren();
-        this.parentScreen = 'title';
-        this.returnAction = 'help';
-        this.show('help');
-        this.ui.querySelector<HTMLElement>('[data-action="try-out"]')?.focus();
+        this.mainMenu();
+        this.ui.querySelector<HTMLElement>('[data-action="tutorial"]')?.focus();
     }
 
     private retrySession(): void {
@@ -348,7 +339,7 @@ export class GameShell {
             confirm: ['One more thing', 'Are you sure?'],
             tutorial: [
                 `Practice · Lesson ${TUTORIAL_LESSONS.findIndex((lesson) => lesson.id === this.tutorialLesson) + 1} of ${TUTORIAL_LESSONS.length}`,
-                this.tutorialLesson ? getTutorialLesson(this.tutorialLesson).title : 'Try Out',
+                this.tutorialLesson ? getTutorialLesson(this.tutorialLesson).title : 'Tutorial',
             ],
             'tutorial-complete': ['Practice complete', 'READY TO PLAY'],
         };
@@ -402,7 +393,7 @@ export class GameShell {
                     this.button('Replay tutorial', 'replay-tutorial', () =>
                         this.startRun('movement')
                     ),
-                    this.button('Back to How to play', 'exit-tutorial', () => this.exitTutorial())
+                    this.button('Back to main menu', 'exit-tutorial', () => this.exitTutorial())
                 );
                 break;
             case 'loading':
@@ -490,7 +481,8 @@ export class GameShell {
             this.button('Start game', 'start', () => this.startRun(), 'packet-primary'),
             this.button('Profile & records', 'profile', () => this.submenu('profile', 'profile')),
             this.button('Settings', 'settings', () => this.submenu('settings', 'settings')),
-            this.button('How to play', 'help', () => this.submenu('help', 'help'))
+            this.button('How to play', 'help', () => this.submenu('help', 'help')),
+            this.button('Tutorial', 'tutorial', () => this.startRun('movement'))
         );
         panel.footer.append(
             element('p', 'packet-note', 'Your profile and records stay on this device.')
@@ -735,27 +727,6 @@ export class GameShell {
             instructions.append(element('dt', '', label), element('dd', '', text));
         }
         basics.append(heading, instructions);
-        const practice = element('div', 'packet-practice-entry');
-        const tryOut = this.button(
-            'Try Out',
-            'try-out',
-            () => {
-                if (!this.game && !this.tutorialLesson) this.startRun('movement');
-            },
-            'packet-primary'
-        );
-        tryOut.disabled = Boolean(this.game || this.tutorialLesson);
-        const practiceNote = element(
-            'p',
-            'packet-note',
-            tryOut.disabled
-                ? 'Return to the main menu to try the tutorial.'
-                : 'Learn each mechanic in a guided practice maze. Pause, try it, and retry as often as you like.'
-        );
-        practiceNote.id = 'packet-practice-note';
-        tryOut.setAttribute('aria-describedby', practiceNote.id);
-        practice.append(tryOut, practiceNote);
-        basics.append(practice);
         const enemies = this.enemyGuide();
         layout.append(basics, enemies);
         panel.body.append(layout);
