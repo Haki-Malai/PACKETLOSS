@@ -17,7 +17,7 @@ import { EnemyMovementSystem } from '../game/systems/EnemyMovementSystem';
 import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
 import { PacketMovementSystem } from '../game/systems/PacketMovementSystem';
 import { prepareTutorialWorld, TutorialController } from '../game/tutorial/TutorialController';
-import type { TutorialLessonId } from '../game/tutorial/TutorialLesson';
+import { TUTORIAL_LESSONS, type TutorialLessonId } from '../game/tutorial/TutorialLesson';
 import { getGameState, resetGameState } from '../state/gameState';
 import { createHarnessMap } from './helpers/mechanicsDomainMapFactory';
 
@@ -72,121 +72,235 @@ function createLesson(lesson: TutorialLessonId) {
 describe('guided tutorial checkpoints', () => {
   beforeEach(() => resetGameState());
 
-  it('requires real input, a corner turn, and a data-bit pickup in the movement lesson', () => {
+  it('groups consistently titled enemy introductions before advanced mechanics', () => {
+    expect(TUTORIAL_LESSONS.map(({ id, title }) => [id, title])).toEqual([
+      ['movement', 'Move and turn'],
+      ['firewall', 'Meet Firewall'],
+      ['virus', 'Meet Virus'],
+      ['ping', 'Meet Ping'],
+      ['spam', 'Meet Spam'],
+      ['lag', 'Meet Lag'],
+      ['power', 'Turn the chase around'],
+    ]);
+    expect(TUTORIAL_LESSONS.find(({ id }) => id === 'power')?.introduction)
+      .toContain('stop Ping scans, Spam copies, and new Lag zones');
+  });
+
+  it.each(TUTORIAL_LESSONS)('starts the Packet moving automatically in $title', ({ id }) => {
+    const lesson = createLesson(id);
+    const before = { x: lesson.world.packet.x, y: lesson.world.packet.y };
+    lesson.controller.resume();
+    lesson.tick();
+    expect({ x: lesson.world.packet.x, y: lesson.world.packet.y }).not.toEqual(before);
+    expect(lesson.world.packet.direction.current).toBe(lesson.world.packet.direction.next);
+  });
+
+  it('starts moving automatically and requires a corner turn plus every data bit', () => {
     const lesson = createLesson('movement');
     const introduction = lesson.controller.getSnapshot();
     expect(lesson.controller.getSnapshot()).toBe(introduction);
     lesson.controller.resume();
     const playing = lesson.controller.getSnapshot();
-    lesson.advance(60);
-    expect(lesson.world.packet.tile).toEqual({ x: 6, y: 7 });
+    expect(lesson.controller.getMarkerTiles()).toEqual([
+      { x: 1, y: 1 },
+      { x: 1, y: 11 },
+      { x: 6, y: 5 },
+      { x: 11, y: 3 },
+    ]);
+    lesson.advance(16);
+    expect(lesson.world.packet.tile).toEqual({ x: 7, y: 7 });
     expect(lesson.controller.getSnapshot()).toBe(playing);
-    expect(lesson.collectibles.getPointCount()).toBe(1);
+    expect(lesson.collectibles.getPointCount()).toBe(4);
+    expect(getGameState().score).toBe(0);
 
-    lesson.advance(64, 'right');
-    lesson.advance(48, 'up');
-    expect(lesson.controller.getSnapshot().phase).toBe('success');
-    expect(lesson.world.packet.tile).toEqual({ x: 11, y: 5 });
-    expect(lesson.world.packet.portalBlinkRemainingMs).toBe(0);
+    lesson.advance(128, 'up');
+    expect(lesson.world.packet.tile).toEqual({ x: 11, y: 3 });
+    expect(lesson.collectibles.getPointCount()).toBe(3);
+    expect(lesson.controller.getMarkerTiles()).toEqual([
+      { x: 1, y: 1 },
+      { x: 1, y: 11 },
+      { x: 6, y: 5 },
+    ]);
     expect(getGameState().score).toBe(10);
+
+    for (const [tile, direction] of [
+      [{ x: 1, y: 1 }, 'up'],
+      [{ x: 1, y: 11 }, 'down'],
+      [{ x: 6, y: 5 }, 'down'],
+    ] as const) {
+      lesson.movement.setEntityTile(lesson.world.packet, tile);
+      lesson.world.packet.direction = { current: direction, next: direction };
+      lesson.tick();
+    }
+    expect(lesson.controller.getSnapshot().phase).toBe('success');
+    expect(lesson.world.packet.portalBlinkRemainingMs).toBe(0);
+    expect(lesson.collectibles.getPointCount()).toBe(0);
+    expect(lesson.controller.getMarkerTiles()).toEqual([]);
+    expect(getGameState().score).toBe(40);
   });
 
-  it.each([
-    { id: 'firewall' as const, direction: 'right' as const, destination: { x: 8, y: 7 } },
-    { id: 'virus' as const, direction: 'left' as const, destination: { x: 4, y: 7 } },
-  ])('makes the $id checkpoint safely reachable while the real enemy moves', ({ id, direction, destination }) => {
-    const lesson = createLesson(id);
+  it('keeps Firewall on its top-left patrol while requiring the distant data bit', () => {
+    const lesson = createLesson('firewall');
+    const firewall = lesson.world.enemies.find((enemy) => enemy.key === 'firewall')!;
+    expect(firewall.tile).toEqual({ x: 1, y: 1 });
+    expect(firewall.movementBounds).toEqual({ minX: 1, maxX: 2, minY: 1, maxY: 5 });
+    expect(Array.from(lesson.collectibles.getPoints()).map((entry) => entry.tile)).toEqual([
+      { x: 1, y: 2 },
+    ]);
     lesson.controller.resume();
-    lesson.advance(32, direction);
+    for (let step = 0; step < 192; step += 1) {
+      lesson.tick();
+      expect(firewall.tile.x).toBeGreaterThanOrEqual(1);
+      expect(firewall.tile.x).toBeLessThanOrEqual(2);
+      expect(firewall.tile.y).toBeGreaterThanOrEqual(1);
+      expect(firewall.tile.y).toBeLessThanOrEqual(5);
+    }
+    lesson.movement.setEntityTile(lesson.world.packet, { x: 1, y: 2 });
+    lesson.world.packet.direction = { current: 'left', next: 'left' };
+    lesson.tick();
     expect(lesson.controller.getSnapshot().phase).toBe('success');
-    expect(lesson.world.packet.tile).toEqual(destination);
-    expect(lesson.world.enemies.filter((enemy) => enemy.active).map((enemy) => enemy.key)).toEqual([id]);
-    expect(lesson.world.enemies.find((enemy) => enemy.key === id)?.tile).toEqual({ x: 11, y: 6 });
+    expect(lesson.world.packet.tile).toEqual({ x: 1, y: 2 });
+    expect(lesson.world.enemies.filter((enemy) => enemy.active).map((enemy) => enemy.key)).toEqual([
+      'firewall',
+    ]);
     expect(getGameState().lives).toBe(3);
   });
 
-  it('requires a real outward portal crossing instead of just reaching its entrance', () => {
-    const lesson = createLesson('portal');
+  it('auto-starts toward the bottom-right data bit while Virus follows the real movement', () => {
+    const lesson = createLesson('virus');
+    expect(Array.from(lesson.collectibles.getPoints()).map((entry) => entry.tile)).toEqual([{ x: 11, y: 11 }]);
+    expect(lesson.world.enemies.find((enemy) => enemy.key === 'virus')?.tile).toEqual({ x: 1, y: 1 });
     lesson.controller.resume();
-    lesson.advance(16, 'left');
-    expect(lesson.controller.getSnapshot().phase).toBe('playing');
-    expect(lesson.world.packet.tile).toEqual({ x: 1, y: 7 });
-    lesson.advance(8, 'left');
+    lesson.advance(80, 'right');
+    lesson.advance(64, 'down');
     expect(lesson.controller.getSnapshot().phase).toBe('success');
-    expect(lesson.world.packet.tile).toEqual({ x: 11, y: 7 });
-    expect(lesson.world.packet.portalBlinkRemainingMs).toBeGreaterThan(0);
-    expect(lesson.collectibles.getPointCount()).toBe(0);
+    expect(lesson.world.packet.tile).toEqual({ x: 11, y: 11 });
+    expect(lesson.world.enemies.filter((enemy) => enemy.active).map((enemy) => enemy.key)).toEqual([
+      'virus',
+    ]);
+    expect(getGameState().lives).toBe(3);
   });
 
-  it('lets the player collect power and catch Firewall within the normal scared window', () => {
+  it('puts power below the same bounded Firewall patrol and supports the full scared chase', () => {
     const lesson = createLesson('power');
-    lesson.controller.resume();
-    lesson.advance(16, 'right');
-    expect(lesson.controller.getSnapshot().phase).toBe('explanation');
-    expect(getGameState().score).toBe(50);
     const enemy = lesson.world.enemies.find((entry) => entry.key === 'firewall')!;
-    expect(enemy.state.scared).toBe(true);
+    expect(enemy.tile).toEqual({ x: 1, y: 1 });
+    expect(enemy.movementBounds).toEqual({ minX: 1, maxX: 2, minY: 1, maxY: 5 });
+    expect(Array.from(lesson.collectibles.getPoints()).map((entry) => entry.tile)).toEqual([{ x: 2, y: 6 }]);
     lesson.controller.resume();
-    lesson.advance(90, 'right');
+    for (let step = 0; step < 64; step += 1) {
+      lesson.tick();
+      expect(enemy.tile.x).toBeGreaterThanOrEqual(1);
+      expect(enemy.tile.x).toBeLessThanOrEqual(2);
+      expect(enemy.tile.y).toBeGreaterThanOrEqual(1);
+      expect(enemy.tile.y).toBeLessThanOrEqual(5);
+    }
+    expect(lesson.world.packet.tile).toEqual({ x: 2, y: 7 });
+    lesson.advance(32, 'up');
+    lesson.advance(16, 'right');
+    expect(lesson.world.packet.tile).toEqual({ x: 2, y: 6 });
+    expect(lesson.controller.getSnapshot().phase).toBe('playing');
+    expect(lesson.controller.getMarkerTiles()).toEqual([enemy.tile]);
+    expect(getGameState().score).toBe(50);
+    expect(enemy.state.scared).toBe(true);
+    lesson.advance(16, 'left');
+    expect(lesson.controller.getMarkerTiles()).toEqual([enemy.tile]);
+    lesson.advance(16, 'up');
+    expect(lesson.controller.getMarkerTiles()).toEqual([enemy.tile]);
+    lesson.advance(90);
     expect(lesson.controller.getSnapshot().phase).toBe('success');
     expect(enemy.state.dead).toBe(true);
     expect(enemy.eatenElapsedMs).toBe(420);
     expect(getGameState()).toEqual({ score: 250, lives: 3 });
   });
 
-  it.each(['ping', 'spam'] as const)('pauses on the real %s ability, then requires movement to finish', (id) => {
-    const lesson = createLesson(id);
+  it('auto-starts through a real Ping scan, then requires the data bit at (10,11)', () => {
+    const lesson = createLesson('ping');
+    expect(Array.from(lesson.collectibles.getPoints()).map((entry) => entry.tile)).toEqual([{ x: 10, y: 11 }]);
     lesson.controller.resume();
-    lesson.advance(id === 'ping' ? 181 : 241);
+    lesson.advance(16);
+    expect(lesson.world.packet.tile).toEqual({ x: 7, y: 7 });
+    lesson.advance(165);
     expect(lesson.controller.getSnapshot().phase).toBe('explanation');
-    if (id === 'ping') {
-      expect(lesson.world.enemyEffects.find((effect) => effect.kind === 'ping')?.target).toEqual({ x: 104, y: 120 });
-    } else {
-      expect(lesson.world.enemies.filter((enemy) => enemy.isCopy && enemy.active)).toHaveLength(1);
-    }
+    expect(lesson.world.enemyEffects.find((effect) => effect.kind === 'ping')?.target?.x).toBeGreaterThan(104);
+    expect(lesson.controller.getSnapshot().marker).toEqual({ x: 10, y: 11 });
     lesson.controller.resume();
-    lesson.tick();
-    expect(lesson.controller.getSnapshot().phase).toBe('playing');
-    lesson.advance(32, 'right');
+    lesson.movement.setEntityTile(lesson.world.packet, { x: 10, y: 11 });
+    lesson.world.packet.direction = { current: 'down', next: 'down' };
+    lesson.tick('down');
     expect(lesson.controller.getSnapshot().phase).toBe('success');
+    expect(lesson.collectibles.getPointCount()).toBe(0);
+    expect(getGameState().score).toBe(10);
     expect(getGameState().lives).toBe(3);
   });
 
-  it('keeps the zone created by Lag and requires actually crossing it at half speed', () => {
+  it('pauses on a real Spam split, then requires the data bit at (11,1)', () => {
+    const lesson = createLesson('spam');
+    expect(Array.from(lesson.collectibles.getPoints()).map((entry) => entry.tile)).toEqual([{ x: 11, y: 1 }]);
+    lesson.controller.resume();
+    lesson.advance(241);
+    expect(lesson.controller.getSnapshot().phase).toBe('explanation');
+    expect(lesson.world.enemies.filter((enemy) => enemy.isCopy && enemy.active)).toHaveLength(1);
+    expect(lesson.controller.getSnapshot().marker).toEqual({ x: 11, y: 1 });
+    lesson.controller.resume();
+    expect(lesson.controller.getSnapshot().phase).toBe('playing');
+    lesson.movement.setEntityTile(lesson.world.packet, { x: 11, y: 1 });
+    lesson.world.packet.direction = { current: 'up', next: 'up' };
+    lesson.tick('up');
+    expect(lesson.controller.getSnapshot().phase).toBe('success');
+    expect(lesson.collectibles.getPointCount()).toBe(0);
+    expect(getGameState().score).toBe(10);
+    expect(getGameState().lives).toBe(3);
+  });
+
+  it('preserves the Meet Lag scene and requires actually crossing its zone at half speed', () => {
     const lesson = createLesson('lag');
     lesson.controller.resume();
     lesson.advance(65);
     expect(lesson.controller.getSnapshot().phase).toBe('explanation');
     const zone = lesson.world.lagZones[0];
+    const lag = lesson.world.enemies.find((enemy) => enemy.key === 'lag')!;
+    const preserved = {
+      packet: {
+        x: lesson.world.packet.x, y: lesson.world.packet.y,
+        tile: { ...lesson.world.packet.tile }, moved: { ...lesson.world.packet.moved },
+        direction: { ...lesson.world.packet.direction },
+      },
+      lag: {
+        x: lag.x, y: lag.y, tile: { ...lag.tile }, moved: { ...lag.moved }, direction: lag.direction,
+      },
+    };
     expect(zone.tile).toEqual({ x: 4, y: 5 });
     lesson.controller.resume();
     expect(lesson.world.lagZones[0]).toBe(zone);
-    lesson.advance(32, 'right');
+    expect({
+      packet: {
+        x: lesson.world.packet.x, y: lesson.world.packet.y,
+        tile: lesson.world.packet.tile, moved: lesson.world.packet.moved,
+        direction: lesson.world.packet.direction,
+      },
+      lag: { x: lag.x, y: lag.y, tile: lag.tile, moved: lag.moved, direction: lag.direction },
+    }).toEqual(preserved);
+
+    lesson.movement.setEntityTile(lesson.world.packet, { x: 3, y: 5 });
+    lesson.world.packet.direction = { current: 'right', next: 'right' };
+    lesson.movement.setEntityTile(lag, { x: 5, y: 5 });
+    lag.direction = 'right';
+    lesson.advance(32);
     expect(lesson.controller.getSnapshot().phase).toBe('playing');
     expect(lesson.world.packet.x).toBeLessThan(88);
-    lesson.advance(16, 'right');
+    lesson.advance(16);
     expect(lesson.controller.getSnapshot().phase).toBe('success');
     expect(lesson.world.packet.tile).toEqual({ x: 5, y: 5 });
     expect(getGameState().lives).toBe(3);
   });
 
-  it('shows actual power collection clearing an existing zone and suppressing all three abilities', () => {
-    const lesson = createLesson('suppression');
-    lesson.controller.resume();
-    expect(lesson.world.lagZones).toHaveLength(1);
-    lesson.advance(24, 'right');
-    expect(lesson.controller.getSnapshot().phase).toBe('success');
-    expect(lesson.world.lagZones).toHaveLength(0);
-    expect(lesson.world.enemies.filter((enemy) => enemy.active).map((enemy) => [enemy.key, enemy.state.scared]))
-      .toEqual([['ping', true], ['spam', true], ['lag', true]]);
-    expect(getGameState().score).toBe(50);
-  });
-
   it('offers retry when required power or a zone expires instead of leaving an impossible goal', () => {
     const power = createLesson('power');
     power.controller.resume();
+    power.advance(64);
+    power.advance(32, 'up');
     power.advance(16, 'right');
-    power.controller.resume();
     power.tick('left', ENEMY_SCARED_DURATION_MS + 1);
     expect(power.controller.getSnapshot().phase).toBe('retry');
     expect(power.controller.resume()).toBe(false);
@@ -212,35 +326,29 @@ describe('guided tutorial checkpoints', () => {
     resetGameState();
     const retry = createLesson('firewall');
     retry.controller.resume();
-    retry.advance(32, 'right');
+    retry.advance(192);
+    retry.movement.setEntityTile(retry.world.packet, { x: 1, y: 2 });
+    retry.world.packet.direction = { current: 'left', next: 'left' };
+    retry.tick();
     expect(retry.controller.getSnapshot().phase).toBe('success');
   });
 
-  it('does not mistake zone expiry on the pickup tick for power clearing it', () => {
-    const lesson = createLesson('suppression');
-    lesson.controller.resume();
-    lesson.movement.setEntityTile(lesson.world.packet, { x: 4, y: 5 });
-    lesson.tick(undefined, ENEMY_CONFIG.lag.zoneDurationMs);
-    expect(getGameState().score).toBe(50);
-    expect(lesson.controller.getSnapshot().phase).toBe('retry');
-  });
-
-  it('retries when the authored suppression zone expires even while other zones remain', () => {
-    const lesson = createLesson('suppression');
-    lesson.controller.resume();
-    lesson.advance(241);
-    expect(lesson.world.lagZones.length).toBeGreaterThan(0);
-    expect(lesson.world.lagZones.some((zone) => zone.tile.x === 4 && zone.tile.y === 5)).toBe(false);
-    expect(lesson.controller.getSnapshot().phase).toBe('retry');
-    expect(lesson.collectibles.getPointCount()).toBe(1);
-  });
-
-  it('also accepts a valid turn entered at the corner instead of queuing it early', () => {
+  it('also accepts a valid turn entered at the corner while collecting sparse bits', () => {
     const lesson = createLesson('movement');
     lesson.controller.resume();
     lesson.advance(80, 'right');
-    lesson.advance(32, 'up');
-    expect(lesson.world.packet.tile).toEqual({ x: 11, y: 5 });
+    lesson.advance(64, 'up');
+    expect(lesson.world.packet.tile).toEqual({ x: 11, y: 3 });
+    expect(lesson.collectibles.getPointCount()).toBe(3);
+    for (const [tile, direction] of [
+      [{ x: 1, y: 1 }, 'up'],
+      [{ x: 1, y: 11 }, 'down'],
+      [{ x: 6, y: 5 }, 'down'],
+    ] as const) {
+      lesson.movement.setEntityTile(lesson.world.packet, tile);
+      lesson.world.packet.direction = { current: direction, next: direction };
+      lesson.tick();
+    }
     expect(lesson.collectibles.getPointCount()).toBe(0);
     expect(lesson.controller.getSnapshot().phase).toBe('success');
   });
@@ -253,7 +361,8 @@ describe('guided tutorial checkpoints', () => {
     lesson.movement.setEntityTile(enemy, lesson.world.packet.tile);
     lesson.tick();
     expect(enemy.state.dead).toBe(true);
-    lesson.movement.setEntityTile(lesson.world.packet, { x: 7, y: 7 });
+    lesson.movement.setEntityTile(lesson.world.packet, { x: 2, y: 6 });
+    lesson.world.packet.direction = { current: 'up', next: 'up' };
     lesson.tick();
     expect(lesson.collectibles.getPointCount()).toBe(0);
     expect(lesson.controller.getSnapshot().phase).toBe('retry');
@@ -283,10 +392,10 @@ describe('guided tutorial checkpoints', () => {
   it('does not accept out-of-order collection or debug fear as learned mechanics', () => {
     const movement = createLesson('movement');
     movement.controller.resume();
-    movement.movement.setEntityTile(movement.world.packet, { x: 11, y: 5 });
+    movement.movement.setEntityTile(movement.world.packet, { x: 11, y: 3 });
     movement.world.packet.direction = { current: 'right', next: 'right' };
     movement.tick();
-    expect(movement.collectibles.getPointCount()).toBe(0);
+    expect(movement.collectibles.getPointCount()).toBe(3);
     expect(movement.controller.getSnapshot().phase).toBe('retry');
 
     const power = createLesson('power');
@@ -295,12 +404,5 @@ describe('guided tutorial checkpoints', () => {
     power.tick();
     expect(power.controller.getSnapshot().phase).toBe('playing');
     expect(power.collectibles.getPointCount()).toBe(1);
-
-    const suppression = createLesson('suppression');
-    suppression.controller.resume();
-    setActiveEnemiesScaredWindow(suppression.world, ENEMY_SCARED_DURATION_MS);
-    suppression.tick();
-    expect(suppression.controller.getSnapshot().phase).toBe('retry');
-    expect(suppression.collectibles.getPointCount()).toBe(1);
   });
 });

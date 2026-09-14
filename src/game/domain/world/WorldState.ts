@@ -137,6 +137,7 @@ export class WorldState {
     active: false,
   };
   isMoving = true;
+  debugFrozen = false;
   outcome: 'lost' | 'cleared' | null = null;
   collisionDebugEnabled = false;
   hoveredDebugTile: TilePosition | null = null;

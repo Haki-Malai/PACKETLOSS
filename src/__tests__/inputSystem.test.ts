@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 describe('InputSystem', () => {
-  it('ignores inspection, clipboard and power shortcuts in production while movement and pause work', () => {
+  it('ignores freeze, inspection, clipboard and power shortcuts in production while movement and pause work', () => {
     environment.isDev = false;
     const { input, world, togglePause, system } = createHarness();
     const enemy = new EnemyEntity({
@@ -26,10 +26,13 @@ describe('InputSystem', () => {
     world.debugPanelText = 'stale diagnostics';
     const preventDefault = vi.fn();
     for (const event of [
+      { code: 'KeyF', key: 'f' },
+      { code: 'KeyC', key: 'c' },
       { code: 'KeyH', key: 'h' },
       { code: 'KeyC', key: 'c', altKey: true },
       { code: 'KeyC', key: 'C', shiftKey: true },
     ]) input.emitKeyDown({ ...event, preventDefault } as unknown as KeyboardEvent);
+    expect(world.debugFrozen).toBe(false);
     expect(world.collisionDebugEnabled).toBe(false);
     expect(enemy.state.scared).toBe(false);
     expect(copy).not.toHaveBeenCalled();
@@ -73,7 +76,7 @@ describe('InputSystem', () => {
     input.setKeyDown('ArrowUp', true);
     system.update();
     const preventDefault = vi.fn();
-    for (const code of ['Space', 'Escape', 'KeyH', 'KeyC']) {
+    for (const code of ['Space', 'Escape', 'KeyH', 'KeyC', 'KeyF']) {
       input.emitKeyDown({ code, key: code, altKey: true, preventDefault } as unknown as KeyboardEvent);
     }
     expect(world.packet.direction.next).toBe('left');
@@ -134,14 +137,14 @@ describe('InputSystem', () => {
     expect(togglePause).toHaveBeenCalledTimes(0);
   });
 
-  it('toggles diagnostics mode on Option+KeyC and clears debug state when disabling', () => {
+  it('toggles diagnostics mode on plain KeyC and clears debug state when disabling', () => {
     const { input, world } = createHarness();
 
     const enablePreventDefault = vi.fn();
     input.emitKeyDown({
       code: 'KeyC',
       key: 'c',
-      altKey: true,
+      altKey: false,
       shiftKey: false,
       repeat: false,
       preventDefault: enablePreventDefault,
@@ -157,7 +160,7 @@ describe('InputSystem', () => {
     input.emitKeyDown({
       code: 'KeyC',
       key: 'c',
-      altKey: true,
+      altKey: false,
       shiftKey: false,
       repeat: false,
       preventDefault: disablePreventDefault,
@@ -169,7 +172,7 @@ describe('InputSystem', () => {
     expect(world.debugPanelText).toBe('');
   });
 
-  it('does not toggle diagnostics mode on plain KeyC', () => {
+  it('does not toggle diagnostics mode on Alt+KeyC', () => {
     const { input, world } = createHarness();
     world.collisionDebugEnabled = false;
     const preventDefault = vi.fn();
@@ -177,7 +180,7 @@ describe('InputSystem', () => {
     input.emitKeyDown({
       code: 'KeyC',
       key: 'c',
-      altKey: false,
+      altKey: true,
       shiftKey: false,
       repeat: false,
       preventDefault,
@@ -185,6 +188,27 @@ describe('InputSystem', () => {
 
     expect(preventDefault).not.toHaveBeenCalled();
     expect(world.collisionDebugEnabled).toBe(false);
+  });
+
+  it('toggles a development freeze without changing pause state', () => {
+    const { input, world, togglePause } = createHarness();
+    const preventDefault = vi.fn();
+
+    input.emitKeyDown({
+      code: 'KeyF', key: 'f', repeat: false, preventDefault,
+    } as unknown as KeyboardEvent);
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(world.debugFrozen).toBe(true);
+    expect(world.isMoving).toBe(true);
+    expect(togglePause).not.toHaveBeenCalled();
+
+    input.emitKeyDown({
+      code: 'KeyF', key: 'f', repeat: false, preventDefault,
+    } as unknown as KeyboardEvent);
+    expect(preventDefault).toHaveBeenCalledTimes(2);
+    expect(world.debugFrozen).toBe(false);
+    expect(world.isMoving).toBe(true);
+    expect(togglePause).not.toHaveBeenCalled();
   });
 
   it('keeps Shift+KeyC debug copy path active without toggling diagnostics mode', async () => {

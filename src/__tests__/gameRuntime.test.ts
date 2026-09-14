@@ -38,6 +38,7 @@ function createComposedGame() {
 
   const world = {
     isMoving: true,
+    debugFrozen: false,
     outcome: null as WorldState['outcome'],
     nextTick: vi.fn(),
   };
@@ -305,12 +306,13 @@ describe('GameRuntime', () => {
     runtime.destroy();
   });
 
-  it('pauses after the last power pickup and enemy capture without turning practice into a completed run', async () => {
-    const { composed, world, collectibles, spies } = createFinishingGame('power-pellet', 'dangerous', { x: 7, y: 7 });
+  it('keeps the power chase live until enemy capture without turning practice into a completed run', async () => {
+    const { composed, world, collectibles, spies } = createFinishingGame('power-pellet', 'dangerous', { x: 2, y: 6 });
     const movement = new MovementRules(16);
     const enemy = world.enemies[0];
     enemy.key = 'firewall';
-    movement.setEntityTile(enemy, { x: 8, y: 7 });
+    movement.setEntityTile(enemy, { x: 1, y: 1 });
+    enemy.movementBounds = { minX: 1, maxX: 2, minY: 1, maxY: 5 };
     composed.updateSystems.unshift(new EnemyMovementSystem(world, movement, new EnemyDecisionService(),
       new PortalService(world.collisionGrid), new SeededRandom(1)));
     composed.tutorial = new TutorialController('power', world, movement, collectibles);
@@ -323,14 +325,14 @@ describe('GameRuntime', () => {
     nextFrame?.(20);
     expect(collectibles.getPointCount()).toBe(0);
     expect(world.outcome).toBeNull();
-    expect(onStateChange.mock.lastCall?.[0]).toMatchObject({ paused: true, result: null,
-      tutorial: { phase: 'explanation' } });
+    expect(onStateChange.mock.lastCall?.[0]).toMatchObject({ paused: false, result: null,
+      tutorial: { phase: 'playing', marker: enemy.tile } });
     const timerCalls = spies.scheduler.update.mock.calls.length;
     nextFrame?.(60);
-    expect(spies.scheduler.update).toHaveBeenCalledTimes(timerCalls);
+    expect(spies.scheduler.update.mock.calls.length).toBeGreaterThan(timerCalls);
 
+    movement.setEntityTile(world.packet, { x: 2, y: 5 });
     movement.setEntityTile(enemy, world.packet.tile);
-    runtime.resume();
     nextFrame?.(80);
     expect(enemy.state.dead).toBe(true);
     for (let frame = 1; frame <= 28; frame += 1) nextFrame?.(80 + frame * 17);
@@ -342,7 +344,7 @@ describe('GameRuntime', () => {
     nextFrame?.(620);
     expect(world.isMoving).toBe(false);
     expect(onStateChange.mock.calls.map(([state]) => state.tutorial?.phase))
-      .toEqual(['introduction', 'playing', 'explanation', 'playing', 'success']);
+      .toEqual(['introduction', 'playing', 'playing', 'success']);
     expect(onStateChange.mock.calls.every(([state]) => state.result === null)).toBe(true);
     runtime.destroy();
   });
@@ -384,6 +386,39 @@ describe('GameRuntime', () => {
     expect(spies.scheduler.update).toHaveBeenCalledOnce();
     expect(spies.world.nextTick).toHaveBeenCalledOnce();
     expect(spies.render.mock.lastCall?.[0]).toBeLessThan(1);
+    runtime.destroy();
+  });
+
+  it('debug-freezes simulation and animation without entering pause', async () => {
+    const { composed, spies } = createComposedGame();
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime({
+      compose: vi.fn().mockResolvedValue(composed),
+    } as unknown as GameCompositionRoot, onStateChange);
+
+    await runtime.start();
+    nextFrame?.(1);
+    nextFrame?.(20);
+    spies.update.mockClear();
+    spies.scheduler.update.mockClear();
+    spies.world.nextTick.mockClear();
+    spies.render.mockClear();
+
+    spies.world.debugFrozen = true;
+    nextFrame?.(40);
+    nextFrame?.(60);
+    expect(spies.world.isMoving).toBe(true);
+    expect(spies.update).not.toHaveBeenCalled();
+    expect(spies.scheduler.update).not.toHaveBeenCalled();
+    expect(spies.world.nextTick).not.toHaveBeenCalled();
+    expect(spies.render).toHaveBeenLastCalledWith(1);
+    expect(onStateChange).toHaveBeenCalledExactlyOnceWith({ paused: false, result: null });
+
+    spies.world.debugFrozen = false;
+    nextFrame?.(80);
+    expect(spies.update).toHaveBeenCalledOnce();
+    expect(spies.scheduler.update).toHaveBeenCalledOnce();
+    expect(spies.world.nextTick).toHaveBeenCalledOnce();
     runtime.destroy();
   });
 

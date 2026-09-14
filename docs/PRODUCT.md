@@ -53,21 +53,19 @@ How to play places the basics on the left and an Enemies section on the right, s
 
 **Tutorial** appears immediately below **How to play** in the main menu and launches guided practice directly. How to play contains instructions and enemy information without a tutorial launch button. Practice uses the existing demo maze regardless of the configured game map, and never saves scores or records.
 
-Each lesson opens paused with a short explanation and **Try it**. During play, the lesson number, one objective, and a static cyan floor marker identify what to do. Lessons advance on actual gameplay milestones:
+Each lesson opens paused with a short explanation and **Try it**. During play, the lesson number, one objective, and cyan floor markers identify what to do. The movement lesson marks every remaining data bit; other lessons retain their single current target. Lessons advance on actual gameplay milestones:
 
 | Lesson | Milestone |
 | --- | --- |
-| Movement and data | Queue a corner turn and collect the marked data bit. |
-| Firewall | Move to safety while observing its fixed patrol. |
-| Portals | Teleport from the horizontal entrance at `(1,7)` to `(11,7)`. |
-| Power cores | Collect power, eat a scared enemy, and finish the intake animation. |
-| Virus | Reach the marker while Virus follows its chase route. |
-| Ping | Observe a successful scan, pause to explain its saved target, then move away. |
-| Spam | Observe a real split, pause to explain the copy, then reach safety. |
-| Lag | Pause on zone creation, then cross it and experience slowdown. |
-| Power suppression | Collect power beside a Lag zone; see the zone disappear and learn that power suppresses Ping, Spam, and Lag abilities. |
+| Movement and data | Start moving automatically and recover the marked data bits at `(1,1)`, `(1,11)`, `(6,5)`, and `(11,3)`. |
+| Meet Firewall | Collect the data bit at `(1,2)` while Firewall stays within its `(1,1)`–`(2,5)` top-left patrol. |
+| Meet Virus | Reach the data bit at `(11,11)` while Virus follows its chase route. |
+| Meet Ping | Start moving automatically, observe a successful scan, then recover the data bit at `(10,11)`. |
+| Meet Spam | Observe a real split, pause to explain the copy, then recover the data bit at `(11,1)`. |
+| Meet Lag | Pause on zone creation, preserve both characters' positions, then navigate back and cross it to experience slowdown. |
+| Turn the chase around | Learn that power clears Lag zones and suppresses Ping, Spam, and Lag abilities; collect the core at `(2,6)`, follow the Firewall highlight, eat it, and finish the intake animation. |
 
-Each lesson and retry creates fresh practice with the lesson's enemies and collectibles, normal movement speeds, and real ability timings. The practice camera fits the small demo maze to the viewport so the player can observe the staged enemies. Explanations within a lesson freeze its current scene. Success offers **Next lesson**, **Retry lesson**, and **Exit tutorial**; dangerous contact or an expired required effect freezes play and offers unlimited retries. Manual pause and focus handling remain available, but shortcuts or focus return cannot dismiss a checkpoint. Exiting or cancelling loading returns to the main menu with Tutorial focused. Completion offers **Start game**, **Replay tutorial**, and **Back to main menu**.
+Each lesson and retry creates fresh practice with the lesson's enemies and collectibles, normal movement speeds, and real ability timings. Every lesson starts the Packet moving in an intended open direction as soon as practice resumes; it stops only when maze collision blocks that direction until the player steers. The practice camera fits the small demo maze to the viewport so the player can observe the staged enemies. Cyan target boxes render over maze walls so their locations remain visible. Explanations within a lesson freeze its current scene. Success advances immediately to the next lesson without an outro; dangerous contact or an expired required effect freezes play and offers unlimited retries. Manual pause and focus handling remain available, but shortcuts or focus return cannot dismiss a checkpoint. Exiting or cancelling loading returns to the main menu with Tutorial focused. Completion of the final lesson offers **Start game**, **Replay tutorial**, and **Back to main menu**.
 
 ## Controls and pause
 
@@ -82,7 +80,7 @@ Pausing freezes movement and gameplay timers and places a dark scrim over the fu
 
 Switching away from the window or tab pauses an active game; returning resumes it only if losing focus caused the pause and no explicit pause/menu interaction followed. A manually paused game stays paused. Completed runs cannot be resumed by controls or focus changes.
 
-Development builds additionally support collision inspection and FPS/frame-time panels with `Alt+C`, copying diagnostic text with `Shift+C`, and toggling enemy scared state with `H` during normal play. Production excludes these tools and shortcuts. The guided tutorial remains available in both environments.
+Development builds additionally support collision inspection and FPS/frame-time panels with `C`, copying diagnostic text with `Shift+C`, freezing simulation and animation without opening the pause menu with `F`, skipping directly to the next tutorial lesson with `N`, and toggling enemy scared state with `H` during normal play. Production excludes these tools and shortcuts. The guided tutorial remains available in both environments.
 
 ## Presentation
 

@@ -156,16 +156,10 @@ export function MenuScreens({
             break;
         case 'tutorial': {
             if (!tutorial) break;
-            const next =
-                TUTORIAL_LESSONS[
-                    TUTORIAL_LESSONS.findIndex((lesson) => lesson.id === tutorial.lesson) + 1
-                ];
             body = (
                 <>
-                    {(tutorial.phase === 'success' || tutorial.phase === 'retry') && (
-                        <p className="packet-eyebrow">
-                            {tutorial.phase === 'success' ? 'Lesson complete' : 'Try that again'}
-                        </p>
+                    {tutorial.phase === 'retry' && (
+                        <p className="packet-eyebrow">Try that again</p>
                     )}
                     <p className="packet-copy">{tutorial.message}</p>
                 </>
@@ -177,12 +171,7 @@ export function MenuScreens({
                             {tutorial.phase === 'introduction' ? 'Try it' : 'Continue'}
                         </MenuButton>
                     )}
-                    {tutorial.phase === 'success' && (
-                        <MenuButton action="next-lesson" variant="primary" onClick={s.nextLesson}>
-                            {next ? 'Next lesson' : 'Finish tutorial'}
-                        </MenuButton>
-                    )}
-                    {tutorial.phase !== 'introduction' && (
+                    {(tutorial.phase === 'explanation' || tutorial.phase === 'retry') && (
                         <MenuButton
                             action="retry-lesson"
                             onClick={s.retrySession}
@@ -195,7 +184,9 @@ export function MenuScreens({
                 </>
             );
             footer = (
-                <p className="packet-note">The maze is paused. Practice scores are not saved.</p>
+                <p className="packet-note">
+                    The maze is paused. Press Enter to continue. Practice scores are not saved.
+                </p>
             );
             break;
         }

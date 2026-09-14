@@ -86,4 +86,23 @@ describe('enemy navigation', () => {
     for (let step = 0; step < 16; step += 1) enemyMovement.update();
     expect(enemy.tile).toEqual({ x: 1, y: 3 });
   });
+
+  it('keeps an authored Firewall inside its movement bounds while patrolling and scared', () => {
+    const { world, enemyMovement } = createEnemyWorld(['#####', '#...#', '#...#', '#...#', '#####'], [
+      { key: 'firewall', tile: { x: 1, y: 1 }, direction: 'down' },
+    ], { x: 3, y: 3 });
+    const enemy = world.enemies[0];
+    enemy.movementBounds = { minX: 1, maxX: 2, minY: 1, maxY: 3 };
+
+    for (const scared of [false, true]) {
+      enemy.state.scared = scared;
+      for (let step = 0; step < 160; step += 1) {
+        enemyMovement.update();
+        expect(enemy.tile.x).toBeGreaterThanOrEqual(1);
+        expect(enemy.tile.x).toBeLessThanOrEqual(2);
+        expect(enemy.tile.y).toBeGreaterThanOrEqual(1);
+        expect(enemy.tile.y).toBeLessThanOrEqual(3);
+      }
+    }
+  });
 });

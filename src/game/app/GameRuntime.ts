@@ -224,12 +224,14 @@ export class GameRuntime implements PacketGame {
     this.resume();
   }
 
+  /** Advances active simulation or holds it at an exact frame while paused or debug-frozen. */
   private readonly update = (deltaMs: number): void => {
     if (!this.composed || this.destroyed) {
       return;
     }
 
-    if (!this.composed.world.isMoving) {
+    if (!this.composed.world.isMoving || this.composed.world.debugFrozen) {
+      if (this.composed.world.debugFrozen) this.presentationReady = false;
       this.composed.updateSystems.forEach((system) => {
         if (system.runsWhenPaused) {
           system.update(deltaMs);

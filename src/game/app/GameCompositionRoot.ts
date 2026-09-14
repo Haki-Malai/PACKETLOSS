@@ -180,7 +180,7 @@ export class GameCompositionRoot {
       const debugSystem = IS_DEV && DevelopmentDebugSystem
         ? new DevelopmentDebugSystem(world, camera, this.options.onDebugChange) : null;
       renderSystem = new RenderSystem(world, renderer, camera, collectibleSystem, assets,
-        tutorial ? () => tutorial.getSnapshot().marker : undefined);
+        tutorial ? () => tutorial.getMarkerTiles() : undefined);
 
       const updateSystems = [
         inputSystem,
