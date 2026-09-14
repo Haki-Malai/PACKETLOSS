@@ -17,6 +17,7 @@ import { TimerSchedulerAdapter } from '../infrastructure/adapters/TimerScheduler
 import { TiledMapRepository } from '../infrastructure/map/TiledMapRepository';
 import { ArcadeAssets } from '../infrastructure/three/ArcadeAssets';
 import { toRandomSource } from '../shared/random/RandomSource';
+import { SeededRandom } from '../shared/random/SeededRandom';
 import { AnimationSystem } from '../systems/AnimationSystem';
 import { CameraSystem } from '../systems/CameraSystem';
 import { CollectibleSystem } from '../systems/CollectibleSystem';
@@ -29,6 +30,8 @@ import { HudSystem } from '../systems/HudSystem';
 import { InputSystem } from '../systems/InputSystem';
 import { PacketMovementSystem } from '../systems/PacketMovementSystem';
 import { RenderSystem } from '../systems/RenderSystem';
+import { prepareTutorialWorld, TutorialController } from '../tutorial/TutorialController';
+import type { TutorialLessonId } from '../tutorial/TutorialLesson';
 import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
 import { ComposedGame, RuntimeControl } from './contracts';
 
@@ -37,6 +40,7 @@ const ENEMY_KEYS: EnemyKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
 export interface GameCompositionOptions {
   mountId?: string;
   mapVariant?: MapVariant;
+  tutorialLesson?: TutorialLessonId;
   rng?: (() => number) | { next(): number; int(maxExclusive: number): number };
 }
 
@@ -51,8 +55,8 @@ export class GameCompositionRoot {
     }
 
     const mapRepository = new TiledMapRepository();
-    const rng = toRandomSource(this.options.rng ?? Math.random);
-    const mapVariant = this.options.mapVariant ?? 'default';
+    const rng = this.options.tutorialLesson ? new SeededRandom(1) : toRandomSource(this.options.rng ?? Math.random);
+    const mapVariant = this.options.tutorialLesson ? 'demo' : this.options.mapVariant ?? 'default';
     const { mapJsonPath } = resolveMapPathsForVariant(mapVariant);
     const map = await this.loadMapForVariant(mapRepository, mapVariant, mapJsonPath);
     signal?.throwIfAborted();
@@ -135,6 +139,9 @@ export class GameCompositionRoot {
         enemies,
         enemyJailBounds,
       });
+      const tutorialPoints = this.options.tutorialLesson
+        ? prepareTutorialWorld(this.options.tutorialLesson, world, movementRules)
+        : undefined;
 
       const camera = new Camera3D();
       renderer = new ThreeRendererAdapter(canvas);
@@ -143,25 +150,32 @@ export class GameCompositionRoot {
 
       const portalService = new PortalService(collisionGrid, map.portalPairs ?? []);
       const enemyDecisions = new EnemyDecisionService();
+      const gameplayRng = this.options.tutorialLesson ? new SeededRandom(1) : rng;
 
-      const inputSystem = new InputSystem(input, world, runtimeControl);
-      const enemyAbilitySystem = new EnemyAbilitySystem(world, movementRules, portalService, rng);
+      const inputSystem = new InputSystem(input, world, runtimeControl, !this.options.tutorialLesson);
+      const enemyAbilitySystem = new EnemyAbilitySystem(world, movementRules, portalService, gameplayRng);
       const packetSystem = new PacketMovementSystem(world, movementRules, portalService);
-      const enemyReleaseSystem = new EnemyReleaseSystem(world, movementRules, jailService, scheduler, rng);
-      const enemyMovementSystem = new EnemyMovementSystem(world, movementRules, enemyDecisions, portalService, rng);
+      const enemyReleaseSystem = this.options.tutorialLesson
+        ? null
+        : new EnemyReleaseSystem(world, movementRules, jailService, scheduler, rng);
+      const enemyMovementSystem = new EnemyMovementSystem(world, movementRules, enemyDecisions, portalService, gameplayRng);
       const enemyPacketCollisionSystem = new EnemyPacketCollisionSystem(world, movementRules, SPEED.enemy);
       const animationSystem = new AnimationSystem(world, SPEED.enemy);
-      const cameraSystem = new CameraSystem(world, camera, renderer, canvas);
-      const collectibleSystem = new CollectibleSystem(world);
+      const cameraSystem = new CameraSystem(world, camera, renderer, canvas, !!this.options.tutorialLesson);
+      const collectibleSystem = new CollectibleSystem(world, tutorialPoints);
+      const tutorial = this.options.tutorialLesson
+        ? new TutorialController(this.options.tutorialLesson, world, movementRules, collectibleSystem)
+        : undefined;
       const hudSystem = new HudSystem(mount, () => runtimeControl.pause());
       const debugSystem = new DebugOverlaySystem(world, camera);
-      renderSystem = new RenderSystem(world, renderer, camera, collectibleSystem, assets);
+      renderSystem = new RenderSystem(world, renderer, camera, collectibleSystem, assets,
+        tutorial ? () => tutorial.getSnapshot().marker : undefined);
 
       const updateSystems = [
         inputSystem,
         enemyAbilitySystem,
         packetSystem,
-        enemyReleaseSystem,
+        ...(enemyReleaseSystem ? [enemyReleaseSystem] : []),
         enemyMovementSystem,
         enemyPacketCollisionSystem,
         animationSystem,
@@ -183,6 +197,7 @@ export class GameCompositionRoot {
         updateSystems,
         renderSystems,
         getRemainingPointCount: () => collectibleSystem.getPointCount(),
+        ...(tutorial ? { tutorial } : {}),
         destroy: () => {
           canvas?.remove();
         },

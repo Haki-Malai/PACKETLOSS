@@ -6,6 +6,7 @@ import { Camera3D } from '../../engine/camera3d';
 import { clamp, lerp } from '../../engine/math';
 import { ENEMY_CONFIG, ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_ANIMATION, PACKET_PORTAL_BLINK } from '../../config/constants';
 import { EnemyEntity } from '../domain/entities/EnemyEntity';
+import type { TilePosition } from '../domain/valueObjects/TilePosition';
 import { WorldState } from '../domain/world/WorldState';
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { ArcadeAssets } from '../infrastructure/three/ArcadeAssets';
@@ -15,6 +16,7 @@ import { EnemyEatPresentation } from '../infrastructure/three/EnemyEatPresentati
 import { MazeScene } from '../infrastructure/three/MazeScene';
 import { createEatEffectMesh, sampleEatEffect, setPointTransform } from '../infrastructure/three/PickupPresentation';
 import { addGameplayLighting } from '../infrastructure/three/ScenePresentation';
+import { TutorialMarker } from '../infrastructure/three/TutorialMarker';
 import { samplePickupPulse } from '../shared/pickupEffects';
 import { ENEMY_EAT_DURATION_MS } from '../shared/enemyEating';
 import { CollectibleKind, CollectibleSystem, EatEffect } from './CollectibleSystem';
@@ -36,6 +38,7 @@ export class RenderSystem {
   private readonly points = new Map<CollectibleKind, InstancedMesh>();
   private readonly effects = new Map<EatEffect, Mesh<BufferGeometry, MeshBasicMaterial>>();
   private readonly enemyEffects = new EnemyEffects();
+  private readonly tutorialMarker: TutorialMarker | undefined;
   private readonly pointMatrix = new Matrix4();
   private readonly powerPoints: Array<{ x: number; y: number }> = [];
   private lastPointCount = -1;
@@ -55,12 +58,18 @@ export class RenderSystem {
     private readonly camera: Camera3D,
     private readonly collectibles: CollectibleSystem,
     private readonly assets: ArcadeAssets,
+    private readonly getTutorialMarker?: () => Readonly<TilePosition> | null,
   ) {
     this.presentation = new EntityPresentation(world);
     addGameplayLighting(this.scene);
     this.maze = new MazeScene(world);
     this.debug = new CollisionDebugScene(world);
     this.scene.add(this.maze.group, this.debug.group, this.enemyEffects.group);
+    if (getTutorialMarker) {
+      this.tutorialMarker = new TutorialMarker(world.tileSize);
+      this.tutorialMarker.sync(getTutorialMarker());
+      this.scene.add(this.tutorialMarker.group);
+    }
 
     this.packet = this.assets.createPacket();
     this.pickupTarget = this.packet.getObjectByName('pickup-target')!;
@@ -182,6 +191,7 @@ export class RenderSystem {
     this.syncEffects();
     this.syncEnemyEating();
     this.enemyEffects.sync(this.world.enemyEffects, this.world.lagZones);
+    this.tutorialMarker?.sync(this.getTutorialMarker?.() ?? null);
     this.debug.sync();
     this.renderer.render(this.scene, this.camera.camera);
   }
@@ -198,6 +208,7 @@ export class RenderSystem {
     this.enemyEating.clear();
     this.cancelledEnemyEating.clear();
     this.enemyEffects.dispose();
+    this.tutorialMarker?.dispose();
     this.assets.dispose();
     this.scene.clear();
     this.renderer.dispose();

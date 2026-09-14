@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Vector3 } from 'three';
 import { CAMERA } from '../config/constants';
+import { Camera3D } from '../engine/camera3d';
 import { CameraSystem } from '../game/systems/CameraSystem';
+import { createHarnessMap } from './helpers/mechanicsDomainMapFactory';
 
 describe('CameraSystem', () => {
   let resizeHandler: (() => void) | undefined;
@@ -78,6 +81,39 @@ describe('CameraSystem', () => {
 
     expect(renderer.resize).toHaveBeenNthCalledWith(2, 1440, 900);
     expect(camera.setViewport).toHaveBeenNthCalledWith(2, 800, 600);
+    expect(camera.setZoom).toHaveBeenCalledExactlyOnceWith(CAMERA.zoom);
+    expect(camera.snapToFollowTarget).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the whole tutorial maze visible after portrait and landscape resizing and staged movement', () => {
+    const map = createHarnessMap('demo-map');
+    const world = { map, packet: { x: 104, y: 120 } };
+    const camera = new Camera3D();
+    const canvas = { width: 320, height: 568 } as HTMLCanvasElement;
+    const renderer = { resize: vi.fn() };
+    const system = new CameraSystem(world as never, camera, renderer as never, canvas, true);
+    system.start();
+
+    for (const [width, height] of [[320, 568], [640, 240], [1280, 720]]) {
+      canvas.width = width;
+      canvas.height = height;
+      resizeHandler?.();
+      const beforeMove = camera.getRenderPosition();
+      world.packet.x = 56;
+      world.packet.y = 88;
+      system.update();
+      expect(camera.getRenderPosition()).toEqual(beforeMove);
+      expect(camera.getRenderPosition(0)).toEqual(camera.getRenderPosition(1));
+      expect(camera.getZoom()).toBeLessThanOrEqual(CAMERA.zoom);
+      camera.present();
+      for (const [x, z] of [[0, 0], [map.widthInPixels, 0], [0, map.heightInPixels],
+        [map.widthInPixels, map.heightInPixels]]) {
+        const screen = new Vector3(x, 0, z).project(camera.camera);
+        expect(Math.abs(screen.x)).toBeLessThan(1);
+        expect(Math.abs(screen.y)).toBeLessThan(1);
+      }
+    }
+    system.destroy();
   });
 
   it('forwards update calls and removes resize listener on destroy', () => {

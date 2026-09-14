@@ -49,6 +49,26 @@ How to play places the basics on the left and an Enemies section on the right, s
 - **Settings:** Sound is disabled and marked **Coming soon**; no audio is loaded or played. Menu motion defaults to the system preference, with Reduced and Full overrides. Fullscreen is available where supported, reflects the browser's current state, and is not saved as a preference.
 - **Storage:** nickname, motion preference, and records use versioned local storage. Invalid or unavailable storage falls back to defaults or in-memory state with a brief save-status message. Clearing browser data removes the saved profile and records; there is no backend, account, or synchronization across devices.
 
+## Guided tutorial
+
+**Try Out** appears immediately below Pause in How to play. It starts from title-menu help; during a run it is disabled with “Return to the main menu to try the tutorial.” Practice uses the existing demo maze regardless of the configured game map, and never saves scores or records.
+
+Each lesson opens paused with a short explanation and **Try it**. During play, the lesson number, one objective, and a static cyan floor marker identify what to do. Lessons advance on actual gameplay milestones:
+
+| Lesson | Milestone |
+| --- | --- |
+| Movement and pellets | Queue a corner turn and collect the marked pellet. |
+| Firewall | Move to safety while observing its fixed patrol. |
+| Portals | Teleport from the horizontal entrance at `(1,7)` to `(11,7)`. |
+| Power pellets | Collect power, eat a scared enemy, and finish the intake animation. |
+| Virus | Reach the marker while Virus follows its chase route. |
+| Ping | Observe a successful scan, pause to explain its saved target, then move away. |
+| Spam | Observe a real split, pause to explain the copy, then reach safety. |
+| Lag | Pause on zone creation, then cross it and experience slowdown. |
+| Power suppression | Collect power beside a Lag zone; see the zone disappear and learn that power suppresses Ping, Spam, and Lag abilities. |
+
+Each lesson and retry creates fresh practice with the lesson's enemies and collectibles, normal movement speeds, and real ability timings. The practice camera fits the small demo maze to the viewport so the player can observe the staged enemies. Explanations within a lesson freeze its current scene. Success offers **Next lesson**, **Retry lesson**, and **Exit tutorial**; dangerous contact or an expired required effect freezes play and offers unlimited retries. Manual pause and focus handling remain available, but shortcuts or focus return cannot dismiss a checkpoint. Exiting returns to How to play with Try Out focused. Completion offers **Start game**, **Replay tutorial**, and **Back to How to play**.
+
 ## Controls and pause
 
 | Action | Desktop | Mobile |

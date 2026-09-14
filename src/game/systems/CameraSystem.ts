@@ -19,6 +19,7 @@ export class CameraSystem {
     private readonly camera: CameraLike,
     private readonly renderer: RendererViewport,
     private readonly canvas: HTMLCanvasElement,
+    private readonly fitMaze = false,
   ) {}
 
   start(): void {
@@ -30,6 +31,7 @@ export class CameraSystem {
     this.camera.snapToFollowTarget();
     this.onResize = () => {
       this.handleResize();
+      if (this.fitMaze) this.camera.snapToFollowTarget();
     };
     window.addEventListener('resize', this.onResize);
   }
@@ -52,5 +54,10 @@ export class CameraSystem {
     const viewportHeight = Number.isFinite(this.renderer.height) ? this.renderer.height : this.canvas.height;
 
     this.camera.setViewport(viewportWidth, viewportHeight);
+    if (this.fitMaze) {
+      this.camera.setZoom(Math.min(CAMERA.zoom,
+        viewportWidth / (this.world.map.widthInPixels + 32),
+        viewportHeight / (this.world.map.heightInPixels + 32)));
+    }
   }
 }

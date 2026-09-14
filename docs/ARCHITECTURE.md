@@ -189,6 +189,14 @@ Runtime options accept `onStateChange(state: RuntimeState)`. `RuntimeState` carr
 
 The previous `startGameApp`/`stopGameApp` API was intentionally removed.
 
+### Tutorial practice
+
+The optional `tutorialLesson` launch option selects a guided lesson. `RuntimeState` additionally carries an optional immutable tutorial snapshot with its lesson and phase (`introduction`, `playing`, `explanation`, `success`, or `retry`); the public `PacketGame` lifecycle methods are unchanged. The shell creates a fresh runtime for each lesson or retry, retains the current lesson on a loading failure, and uses its normal startup-generation guards on cancellation. Explanatory substeps resume the same frozen runtime. Tutorial sessions bypass ordinary results and record persistence.
+
+Tutorial composition always loads the existing demo map without editing its assets. Fixed seeds, explicit spawns, active enemy selection, and explicit collectible lists—including empty lists—are applied before constructing the renderer. Practice omits automatic jail releases, disables the debug power shortcut, and uses normal movement speeds and ability timings. A renderer-independent tutorial controller runs after simulation updates to recognize real movement, collection, teleports, scans, splits, and slowdown. Dangerous contact takes precedence over success; required-effect expiry offers retry. Runtime and shell both gate resume at terminal checkpoints.
+
+`RenderSystem` optionally receives a callback returning the current target tile. Only tutorial scenes allocate `TutorialMarker`, a static cyan floor bracket with its own geometry and material. Rendering synchronizes the target even while simulation is paused and disposes marker resources with the scene. `CameraSystem` fits the complete demo maze with a margin for practice, including after resize; normal gameplay keeps its following camera. The shell's active objective is outside its hidden menu layer and does not intercept gameplay gestures; explanation and checkpoint panels reuse `MenuPanel`, focus handling, and shared visual tokens.
+
 ## State and Data Flow
 - `TiledMapRepository` loads and parses maze JSON into `WorldMapData`.
 - `CollisionGrid` exposes safe tile/collision reads.

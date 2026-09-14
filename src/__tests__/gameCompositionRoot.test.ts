@@ -1,15 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CAMERA } from '../config/constants';
+import { Camera3D } from '../engine/camera3d';
 import { GameCompositionRoot } from '../game/app/GameCompositionRoot';
 import { BrowserInputAdapter } from '../game/infrastructure/adapters/BrowserInputAdapter';
 import { ThreeRendererAdapter } from '../game/infrastructure/adapters/ThreeRendererAdapter';
 import { TiledMapRepository } from '../game/infrastructure/map/TiledMapRepository';
 import { ArcadeAssets } from '../game/infrastructure/three/ArcadeAssets';
 import { AnimationSystem } from '../game/systems/AnimationSystem';
+import { CameraSystem } from '../game/systems/CameraSystem';
+import { EnemyReleaseSystem } from '../game/systems/EnemyReleaseSystem';
 import { RenderSystem } from '../game/systems/RenderSystem';
 import { getGameState, resetGameState } from '../state/gameState';
 import { createCharacterAssets } from './fixtures/characterFixtures';
 import { createCollisionTile, createMapFixture } from './fixtures/renderFixtures';
 import { FakeDocument } from './helpers/fakeDom';
+import { createHarnessMap } from './helpers/mechanicsDomainMapFactory';
 
 vi.mock('../game/infrastructure/adapters/ThreeRendererAdapter', () => ({ ThreeRendererAdapter: vi.fn() }));
 vi.mock('../game/infrastructure/adapters/BrowserInputAdapter', () => ({ BrowserInputAdapter: vi.fn() }));
@@ -131,6 +136,8 @@ describe('GameCompositionRoot startup', () => {
     const render = composed.renderSystems.find((system) => system instanceof RenderSystem)!;
     const animationIndex = composed.updateSystems.findIndex((system) => system instanceof AnimationSystem);
     expect(composed.updateSystems[animationIndex + 1]).toBe(render);
+    expect(composed.updateSystems.some((system) => system instanceof EnemyReleaseSystem)).toBe(true);
+    expect(composed.tutorial).toBeUndefined();
     expect(mount.children).toHaveLength(1);
     expect(render.scene.getObjectByName('binary-000')).toBeDefined();
     expect(composed.world.enemies.filter((enemy) => enemy.active).map((enemy) => enemy.key))
@@ -138,6 +145,40 @@ describe('GameCompositionRoot startup', () => {
     const copies = composed.world.enemies.filter((enemy) => enemy.isCopy);
     expect(copies).toHaveLength(3);
     expect(copies.every((enemy) => !enemy.active && !enemy.state.soonFree && enemy.displayWidth === 8.8)).toBe(true);
+    render.destroy?.();
+    composed.destroy();
+    expect(rendererDispose).toHaveBeenCalledOnce();
+    expect(mount.children).toHaveLength(0);
+  });
+
+  it('forces the demo for practice and preserves an explicitly empty lesson without releasing enemies', async () => {
+    const { mount } = prepareComposition();
+    const map = createHarnessMap('demo-map');
+    const loadMap = vi.spyOn(TiledMapRepository.prototype, 'loadMap').mockResolvedValue(map);
+    vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(createCharacterAssets());
+    vi.stubGlobal('window', { innerWidth: 320, innerHeight: 568, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+    const setZoom = vi.spyOn(Camera3D.prototype, 'setZoom');
+    const rendererDispose = vi.fn();
+    vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
+      return { dispose: rendererDispose, resize: vi.fn(), width: 320, height: 568 } as unknown as ThreeRendererAdapter;
+    });
+    const rng = vi.fn(() => 0.9);
+    const composed = await new GameCompositionRoot({ mapVariant: 'default', tutorialLesson: 'portal', rng })
+      .compose(runtimeControl);
+
+    expect(loadMap).toHaveBeenCalledWith('assets/mazes/default/demo.json');
+    expect(rng).not.toHaveBeenCalled();
+    expect(composed.world.map).toBe(map);
+    expect(composed.tutorial?.getSnapshot()).toMatchObject({ lesson: 'portal', phase: 'introduction' });
+    expect(composed.getRemainingPointCount()).toBe(0);
+    expect(composed.updateSystems.some((system) => system instanceof EnemyReleaseSystem)).toBe(false);
+    expect(composed.world.enemies.every((enemy) => !enemy.active)).toBe(true);
+    const camera = composed.updateSystems.find((system) => system instanceof CameraSystem)!;
+    camera.start();
+    expect(setZoom.mock.lastCall?.[0]).toBeLessThan(CAMERA.zoom);
+    camera.destroy();
+
+    const render = composed.renderSystems.find((system) => system instanceof RenderSystem)!;
     render.destroy?.();
     composed.destroy();
     expect(rendererDispose).toHaveBeenCalledOnce();

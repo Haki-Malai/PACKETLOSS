@@ -38,6 +38,7 @@ export class InputSystem {
     private readonly input: BrowserInputAdapter,
     private readonly world: WorldState,
     private readonly pauseController: PauseController,
+    private readonly allowPowerShortcut = true,
   ) {}
 
   start(): void {
@@ -77,7 +78,7 @@ export class InputSystem {
       return;
     }
 
-    if (event.code === 'KeyH') {
+    if (event.code === 'KeyH' && this.allowPowerShortcut) {
       const shouldEnableScared = this.world.enemies.some((enemy) => enemy.active && !enemy.state.scared);
       if (shouldEnableScared) {
         setActiveEnemiesScaredWindow(this.world, ENEMY_SCARED_DURATION_MS);

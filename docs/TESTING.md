@@ -42,6 +42,15 @@ Run the relevant test first, then `pnpm test:all` before handing off code change
 
 These scenarios protect observable behavior; avoid snapshots of decorative geometry or CSS. Run `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` for the menu/run-flow change. Authored scenarios alone do not establish that these checks passed.
 
+## Guided tutorial regression scenarios
+
+- Exercise all nine lessons through real domain systems on the demo maze: queued turn plus pickup, patrol and chase movement, the actual horizontal teleport, completed scared-enemy intake, a successful saved-target scan, a real split, slowed movement through a live zone, and power clearing zones while suppressing abilities. Premature actions must not complete lessons; dangerous contact wins over success, and required power/zone expiry offers retry.
+- Check fresh practice on each lesson/retry, fixed scenario setup before renderer construction, explicit empty collectibles, omitted automatic releases, and unchanged configured maps for normal games. Tutorial completion and abandonment must never persist a record or produce normal run results.
+- Exercise Try Out immediately below Pause, title-help launch, the disabled control and explanation during a run, same-lesson loading retry, cancellation and obsolete callbacks, disposal, unlimited retry, completion actions, and focus restored to Try Out on exit. Check manual and focus-caused pauses, held-input clearing, and checkpoint immunity to Escape, Space, and focus return.
+- Keep marker coverage at the renderer boundary: current tile placement, visibility and target updates while paused, no marker for normal play, and exact resource disposal. `pnpm test src/__tests__/renderTutorialMarker.test.ts` runs that focused check.
+
+Run `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` after implementation. Browser QA remains deferred until explicitly requested; then check tutorial objective readability, marker visibility around pellets, touch gestures, short screens, focus, and reduced motion through the complete flow. Domain and renderer tests do not establish browser usability.
+
 ## Visual checks and debugging
 
 Enemy regression scenarios cover fixed patrols despite player movement, shortest routes through portals, Ping range and saved targets, bounded Spam spawning and slot reuse, and Lag expiry/non-stacking slowdown. Include fractional speed changes near turns and collectibles, power-point ability suppression, paused effects, inactive-copy visibility, and five-model loading cancellation. Asset Lab scenarios should rewind ability demonstrations without accumulating copies or effect resources. Authored tests are not evidence of passing checks until they are executed.
@@ -54,7 +63,7 @@ When visual checks are authorized, inspect the shared standard/wide frames, top-
 
 - `Alt+C` (`Option+C` on macOS) toggles the collision overlay and FPS/frame-time panel.
 - `Shift+C` copies the collision debug panel text.
-- `H` toggles the scared state of active enemies for debugging.
+- `H` toggles the scared state of active enemies for debugging during normal play; it is disabled in tutorial practice.
 
 After editing the demo Tiled map, run `pnpm map:demo:convert` and `pnpm test` to check the generated map and its gameplay rules.
 
