@@ -39,6 +39,28 @@ VITE_GAME_ENV=DEMO pnpm dev
 
 After editing its Tiled map, run `pnpm map:demo:convert` to regenerate the demo JSON.
 
+## Deployment
+
+Successful CI on `dev` deploys to `https://dev.packetloss.hakimalai.com/`;
+successful CI on `main` deploys to `https://packetloss.hakimalai.com/`.
+Both builds use `/` as their asset base. Development includes debug tools and
+the gallery at `/dev/assets`; production excludes them. Pull requests never deploy.
+Run CI manually on either branch to retest and redeploy its current commit.
+
+The reusable `deploy-aws.yml` workflow uses the matching GitHub environment's
+`AWS_REGION`, `AWS_ROLE_ARN`, `S3_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID`, `SITE_URL`,
+`BUILD_MODE`, and `VITE_GAME_ENV` variables. Terraform in `hm-infra` owns these
+environments, branch restrictions, AWS resources, DNS, and cost alerts. Build
+variables are public; do not put secrets in `VITE_*` variables. AWS authentication
+uses a separate OIDC role for each stage, without stored AWS access keys.
+
+Assets upload before `index.html`; earlier hashed bundles remain available for
+open sessions. CloudFront invalidation completes before the deployment finishes.
+`/deployment.json` identifies the published commit and stage. See the
+[`hm-infra` deployment runbook](https://github.com/Haki-Malai/hm-infra/blob/main/docs/packetloss.md) for migration,
+cost controls, verification, and rollback. The workflow replaces GitHub Pages
+publishing and must be present on both deployment branches before migration.
+
 ## Project layout
 
 - `src/main.tsx` mounts the React title/menu shell; starting a run initializes the game.

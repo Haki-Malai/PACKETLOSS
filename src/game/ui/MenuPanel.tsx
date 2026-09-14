@@ -1,8 +1,12 @@
 import {
     createContext,
+    useEffect,
     useContext,
     useId,
+    useRef,
+    useState,
     type ComponentProps,
+    type KeyboardEvent as ReactKeyboardEvent,
     type ReactNode,
     type Ref,
 } from 'react';
@@ -41,6 +45,155 @@ export const buttonLayout =
 export const fieldLayout = 'flex min-w-0 flex-col gap-2 text-[0.85rem] text-packet-muted';
 export const inputLayout =
     'min-h-12 w-full rounded-none border border-packet-line bg-packet-raised px-3 py-2.5 text-packet-text';
+
+export type SelectOption<Value extends string> = {
+    value: Value;
+    label: string;
+};
+
+export function CustomSelect<Value extends string>({
+    ariaLabel,
+    value,
+    options,
+    onChange,
+    className = '',
+    control,
+    disabled = false,
+    placement = 'bottom',
+}: {
+    ariaLabel: string;
+    value: Value;
+    options: readonly SelectOption<Value>[];
+    onChange: (_value: Value) => void;
+    className?: string;
+    control?: string;
+    disabled?: boolean;
+    placement?: 'top' | 'bottom';
+}) {
+    const root = useRef<HTMLDivElement>(null);
+    const trigger = useRef<HTMLButtonElement>(null);
+    const listboxId = useId();
+    const selectedIndex = Math.max(
+        0,
+        options.findIndex((option) => option.value === value)
+    );
+    const [open, setOpen] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(selectedIndex);
+    const isOpen = open && !disabled;
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        /** Closes the list when a pointer interaction starts outside the control. */
+        function closeOnOutsidePointer(event: PointerEvent) {
+            if (!root.current?.contains(event.target as Node)) setOpen(false);
+        }
+
+        document.addEventListener('pointerdown', closeOnOutsidePointer, true);
+        return () => document.removeEventListener('pointerdown', closeOnOutsidePointer, true);
+    }, [isOpen]);
+
+    /** Opens the list with its current selection highlighted. */
+    function openList() {
+        setActiveIndex(selectedIndex);
+        setOpen(true);
+    }
+
+    /** Moves the active option through the list without committing a new value. */
+    function moveActive(offset: number) {
+        setActiveIndex((index) => (index + offset + options.length) % options.length);
+    }
+
+    /** Commits an option, closes the list, and returns focus to the trigger. */
+    function choose(index: number) {
+        const option = options[index];
+        if (option.value !== value) onChange(option.value);
+        setOpen(false);
+        trigger.current?.focus({ preventScroll: true });
+    }
+
+    /** Implements select-like keyboard interaction while focus remains on the combobox. */
+    function handleKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+        if (event.key === 'Escape' && isOpen) {
+            event.preventDefault();
+            setOpen(false);
+            return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            if (isOpen) choose(activeIndex);
+            else openList();
+            return;
+        }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (isOpen) moveActive(event.key === 'ArrowDown' ? 1 : -1);
+            else openList();
+            return;
+        }
+        if (isOpen && (event.key === 'Home' || event.key === 'End')) {
+            event.preventDefault();
+            setActiveIndex(event.key === 'Home' ? 0 : options.length - 1);
+        }
+    }
+
+    return (
+        <div
+            ref={root}
+            className={`packet-select ${className}`}
+            data-open={isOpen || undefined}
+            data-placement={placement}
+            onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+            }}
+        >
+            <button
+                ref={trigger}
+                type="button"
+                className="packet-select-trigger"
+                role="combobox"
+                aria-label={ariaLabel}
+                aria-controls={listboxId}
+                aria-expanded={isOpen}
+                aria-haspopup="listbox"
+                aria-activedescendant={isOpen ? `${listboxId}-option-${activeIndex}` : undefined}
+                data-control={control}
+                disabled={disabled}
+                onClick={() => {
+                    if (isOpen) setOpen(false);
+                    else openList();
+                }}
+                onKeyDown={handleKeyDown}
+            >
+                <span className="packet-select-value">
+                    {options[selectedIndex]?.label ?? value}
+                </span>
+                <span className="packet-select-chevron" aria-hidden="true" />
+            </button>
+            {isOpen && (
+                <ul className="packet-select-list" id={listboxId} role="listbox">
+                    {options.map((option, index) => (
+                        <li
+                            key={option.value}
+                            id={`${listboxId}-option-${index}`}
+                            className="packet-select-option"
+                            role="option"
+                            aria-selected={option.value === value}
+                            data-active={index === activeIndex || undefined}
+                            data-value={option.value}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onMouseEnter={() => setActiveIndex(index)}
+                            onClick={() => choose(index)}
+                        >
+                            <span className="packet-select-marker" aria-hidden="true" />
+                            {option.label}
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+}
 
 export function MenuColumns({ children }: { children: ReactNode }) {
     return (

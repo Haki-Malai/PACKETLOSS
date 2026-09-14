@@ -125,19 +125,23 @@ describe('React asset gallery', () => {
         expect(inspector.getByRole<HTMLButtonElement>('button', { name: 'Play' }).disabled).toBe(
             true
         );
-        await user.selectOptions(screen.getByRole('combobox', { name: 'Tile rotation' }), '90');
+        expect(document.querySelector('select')).toBeNull();
+        await user.click(screen.getByRole('combobox', { name: 'Tile rotation' }));
+        await user.click(screen.getByRole('option', { name: '90°' }));
         await user.click(screen.getByRole('checkbox', { name: 'Flip X' }));
         expect(preview.view.select).toHaveBeenLastCalledWith(
             expect.objectContaining({ id: 'wall' }),
             { rotation: 90, flipX: true, flipY: false }
         );
-        await user.selectOptions(screen.getByRole('combobox', { name: 'Camera' }), 'orbit');
+        await user.click(screen.getByRole('combobox', { name: 'Camera' }));
+        await user.click(screen.getByRole('option', { name: 'Orbit' }));
         expect(preview.view.setCameraMode).toHaveBeenLastCalledWith('orbit');
         await user.click(screen.getByRole('checkbox', { name: 'Tile guide' }));
         await user.click(screen.getByRole('button', { name: 'Zoom in' }));
         expect(preview.view.setTileGuide).toHaveBeenLastCalledWith(true);
         expect(preview.view.zoomBy).toHaveBeenLastCalledWith(1.25);
-        await user.selectOptions(screen.getByRole('combobox', { name: 'Category' }), 'Player');
+        await user.click(screen.getByRole('combobox', { name: 'Category' }));
+        await user.click(screen.getByRole('option', { name: 'Player' }));
         expect(screen.getByText('No assets match this search.')).toBeDefined();
         expect(inspector.getByRole('heading', { name: 'Corner wall' })).toBeDefined();
         expect(getGameState()).toEqual({ score: 370, lives: 2 });
@@ -163,9 +167,8 @@ describe('React asset gallery', () => {
         });
         await frame(400);
         expect(preview.view.render).toHaveBeenLastCalledWith(900);
-        fireEvent.change(screen.getByRole('combobox', { name: 'Speed' }), {
-            target: { value: '2' },
-        });
+        fireEvent.click(screen.getByRole('combobox', { name: 'Speed' }));
+        fireEvent.click(screen.getByRole('option', { name: '2×' }));
         fireEvent.click(screen.getByRole('button', { name: 'Replay' }));
         await frame(500);
         await frame(550);

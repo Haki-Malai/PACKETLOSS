@@ -136,7 +136,7 @@ Cross-cutting utilities.
 
 Development entrypoints retain an `IS_DEV` build-time guard as well as the UI context check. This lets the bundler remove the gallery, debug panels, diagnostic systems, collision inspection scene, and `DebugInput` shortcut/clipboard implementation from production. Hiding controls through React context alone would leave their code in the bundle. Pointer inspection state is collected only in development.
 
-The Pages workflow supports only `dev` and `prod`. It builds `dev` with `--mode development` and `prod` with production mode. It supplies each target's absolute Pages base URL and writes a development gallery entry HTML file so direct navigation and reload work on the static host. The next publication removes the retired `int` directory from the shared `gh-pages` branch. A development build still uses optimized React; Vite build mode is separate from `NODE_ENV` ([Vite environment guide](https://v4.vitejs.dev/guide/env-and-mode.html)).
+The AWS deployment workflow supports only `dev` and `prod`. CI maps the `dev` branch to a development build at `https://dev.packetloss.hakimalai.com/` and `main` to a production build at `https://packetloss.hakimalai.com/`. Both build at the domain root with `--base /`; there is no `/prod` publication path or redirect. CloudFront rewrites only the development gallery routes `/dev/assets` and `/dev/assets/` to the root entry point for direct navigation and reload. A development build still uses optimized React; Vite build mode is separate from `NODE_ENV` ([Vite environment guide](https://v4.vitejs.dev/guide/env-and-mode.html)).
 
 ## Development Asset Gallery
 
