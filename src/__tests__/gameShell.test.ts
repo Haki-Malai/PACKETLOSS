@@ -108,31 +108,27 @@ afterEach(async () => {
 });
 
 describe('GameShell', () => {
-  it('places Try Out after Pause in the basics column and disables it during a run', async () => {
+  it('places Tutorial below How to play in the main menu and keeps help free of practice controls', async () => {
     const page = setup();
+    const help = page.action('help');
+    const buttons = help.parentElement!.children;
+    expect(buttons[buttons.indexOf(help) + 1]).toBe(page.action('tutorial'));
+    expect(page.action('tutorial').textContent).toBe('Tutorial');
     page.action('help').click();
-    const basics = page.find('.packet-basics');
-    const practice = page.action('try-out').parentElement!;
-    expect(basics.children.indexOf(practice)).toBeGreaterThan(basics.children.indexOf(page.find('.packet-help')));
-    expect(page.action('try-out').disabled).toBe(false);
+    expect(page.root.querySelector('[data-action="try-out"],[data-action="tutorial"]')).toBeNull();
     expect(page.createGame).not.toHaveBeenCalled();
     page.action('back').click();
     page.action('start').click();
     await flushStart();
     page.games[0].emit({ paused: true, result: null });
     page.action('help').click();
-    const button = page.action('try-out');
-    expect(button.disabled).toBe(true);
-    expect(button.getAttribute('aria-describedby')).toBe('packet-practice-note');
-    expect(page.find('#packet-practice-note').textContent).toBe('Return to the main menu to try the tutorial.');
-    button.click();
+    expect(page.root.querySelector('[data-action="try-out"],[data-action="tutorial"]')).toBeNull();
     expect(page.createGame).toHaveBeenCalledTimes(1);
   });
 
   it('opens practice paused on the demo map and keeps live objectives outside the menu', async () => {
     const page = setup([], 'default');
-    page.action('help').click();
-    page.action('try-out').click();
+    page.action('tutorial').click();
     await flushStart();
     const game = page.games[0];
     expect(game.options).toMatchObject({ mapVariant: 'demo', tutorialLesson: 'movement' });
@@ -156,7 +152,7 @@ describe('GameShell', () => {
     expect(page.screen()).toBe('paused');
     expect(objective.hidden).toBe(true);
     page.action('help').click();
-    expect(page.action('try-out').disabled).toBe(true);
+    expect(page.root.querySelector('[data-action="try-out"],[data-action="tutorial"]')).toBeNull();
     page.action('back').click();
     expect(page.screen()).toBe('paused');
     expect(game.resume).toHaveBeenCalledOnce();
@@ -166,8 +162,7 @@ describe('GameShell', () => {
 
   it.each(['success', 'retry'] as const)('keeps a %s checkpoint paused through keyboard shortcuts', async (phase) => {
     const page = setup();
-    page.action('help').click();
-    page.action('try-out').click();
+    page.action('tutorial').click();
     await flushStart();
     page.games[0].emit(tutorialState('movement', phase));
     page.key('Escape');
@@ -183,8 +178,7 @@ describe('GameShell', () => {
 
   it('advances all lessons with fresh runtimes, ignores obsolete callbacks, and starts the configured normal map', async () => {
     const page = setup([], 'default');
-    page.action('help').click();
-    page.action('try-out').click();
+    page.action('tutorial').click();
     await flushStart();
     for (const [index, lesson] of TUTORIAL_LESSONS.entries()) {
       const game = page.games[index];
@@ -199,6 +193,7 @@ describe('GameShell', () => {
       }
     }
     expect(page.screen()).toBe('tutorial-complete');
+    expect(page.action('exit-tutorial').textContent).toBe('Back to main menu');
     expect(page.store.getRecentRecords('demo')).toEqual([]);
     expect(page.store.getRecentRecords('default')).toEqual([]);
     expect(page.storage.setItem).not.toHaveBeenCalled();
@@ -209,11 +204,10 @@ describe('GameShell', () => {
     expect(page.screen()).toBe('playing');
   });
 
-  it('retries a failed lesson startup and returns to help with focus on exit', async () => {
+  it('retries a failed lesson startup and returns to the main menu with Tutorial focused on exit', async () => {
     const loading = pendingStart();
     const page = setup([Promise.resolve(), loading.promise]);
-    page.action('help').click();
-    page.action('try-out').click();
+    page.action('tutorial').click();
     await flushStart();
     page.games[0].emit(tutorialState('movement', 'success'));
     page.action('next-lesson').click();
@@ -224,25 +218,22 @@ describe('GameShell', () => {
     await flushStart();
     expect(page.games[2].options.tutorialLesson).toBe('firewall');
     page.action('exit-tutorial').click();
-    expect(page.screen()).toBe('help');
-    expect(page.document.activeElement).toBe(page.action('try-out'));
-    expect(page.games[2].destroy).toHaveBeenCalledOnce();
-    page.action('back').click();
     expect(page.screen()).toBe('title');
+    expect(page.document.activeElement).toBe(page.action('tutorial'));
+    expect(page.games[2].destroy).toHaveBeenCalledOnce();
   });
 
   it('cancels a loading tutorial without accepting later startup or result callbacks', async () => {
     const loading = pendingStart();
     const page = setup([loading.promise]);
-    page.action('help').click();
-    page.action('try-out').click();
+    page.action('tutorial').click();
     const cancelled = page.games[0];
     page.action('exit-tutorial').click();
     cancelled.emit({ ...tutorialState('movement', 'success'), result: loss });
     loading.resolve();
     await flushStart();
-    expect(page.screen()).toBe('help');
-    expect(page.document.activeElement).toBe(page.action('try-out'));
+    expect(page.screen()).toBe('title');
+    expect(page.document.activeElement).toBe(page.action('tutorial'));
     expect(cancelled.destroy).toHaveBeenCalledOnce();
     expect(page.storage.setItem).not.toHaveBeenCalled();
   });
@@ -651,7 +642,7 @@ describe('GameShell', () => {
     expect(page.key('Tab').defaultPrevented).toBe(true);
     expect(page.document.activeElement).toBe(page.action('start'));
     page.key('Tab', undefined, true);
-    expect(page.document.activeElement).toBe(page.action('help'));
+    expect(page.document.activeElement).toBe(page.action('tutorial'));
     page.key('Tab');
     expect(page.document.activeElement).toBe(page.action('start'));
     page.action('start').click();

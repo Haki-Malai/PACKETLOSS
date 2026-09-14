@@ -37,7 +37,7 @@ Collecting the last data pickup ends the run with **MAZE CLEARED**, including th
 
 ## Menus, settings, and local records
 
-The title screen appears before gameplay is initialized. Its PACKETLOSS wordmark is a small Three.js scene using the actual map's dark extruded letters, gold outlines, lighting, and camera angle. One random letter briefly dims at occasional intervals, echoing the Packet's signal flicker. The wordmark renders only on opening, resizing, and flicker transitions, with a readable text fallback if WebGL is unavailable, and releases its resources when leaving the title. Reduced motion leaves every letter steady, and hidden tabs stop the effect. The logo and subtle maze-line decoration frame Start game, Profile & records, Settings, and How to play. The screen also shows the current nickname and local best. Starting a run shows loading status; a loading failure offers Retry and Main menu.
+The title screen appears before gameplay is initialized. Its PACKETLOSS wordmark is a small Three.js scene using the actual map's dark extruded letters, gold outlines, lighting, and camera angle. One random letter briefly dims at occasional intervals, echoing the Packet's signal flicker. The wordmark renders only on opening, resizing, and flicker transitions, with a readable text fallback if WebGL is unavailable, and releases its resources when leaving the title. Reduced motion leaves every letter steady, and hidden tabs stop the effect. The logo and subtle maze-line decoration frame Start game, Profile & records, Settings, How to play, and Tutorial. The screen also shows the current nickname and local best. Starting a run shows loading status; a loading failure offers Retry and Main menu.
 
 The pause menu offers Resume, Restart, Settings, How to play, and Main menu. Restart or Main menu requires confirmation when abandoning an unfinished run. Completed results need no confirmation. Restarting creates a fresh run; returning to the title releases the current game.
 
@@ -51,7 +51,7 @@ How to play places the basics on the left and an Enemies section on the right, s
 
 ## Guided tutorial
 
-**Try Out** appears immediately below Pause in How to play. It starts from title-menu help; during a run it is disabled with “Return to the main menu to try the tutorial.” Practice uses the existing demo maze regardless of the configured game map, and never saves scores or records.
+**Tutorial** appears immediately below **How to play** in the main menu and launches guided practice directly. How to play contains instructions and enemy information without a tutorial launch button. Practice uses the existing demo maze regardless of the configured game map, and never saves scores or records.
 
 Each lesson opens paused with a short explanation and **Try it**. During play, the lesson number, one objective, and a static cyan floor marker identify what to do. Lessons advance on actual gameplay milestones:
 
@@ -67,7 +67,7 @@ Each lesson opens paused with a short explanation and **Try it**. During play, t
 | Lag | Pause on zone creation, then cross it and experience slowdown. |
 | Power suppression | Collect power beside a Lag zone; see the zone disappear and learn that power suppresses Ping, Spam, and Lag abilities. |
 
-Each lesson and retry creates fresh practice with the lesson's enemies and collectibles, normal movement speeds, and real ability timings. The practice camera fits the small demo maze to the viewport so the player can observe the staged enemies. Explanations within a lesson freeze its current scene. Success offers **Next lesson**, **Retry lesson**, and **Exit tutorial**; dangerous contact or an expired required effect freezes play and offers unlimited retries. Manual pause and focus handling remain available, but shortcuts or focus return cannot dismiss a checkpoint. Exiting returns to How to play with Try Out focused. Completion offers **Start game**, **Replay tutorial**, and **Back to How to play**.
+Each lesson and retry creates fresh practice with the lesson's enemies and collectibles, normal movement speeds, and real ability timings. The practice camera fits the small demo maze to the viewport so the player can observe the staged enemies. Explanations within a lesson freeze its current scene. Success offers **Next lesson**, **Retry lesson**, and **Exit tutorial**; dangerous contact or an expired required effect freezes play and offers unlimited retries. Manual pause and focus handling remain available, but shortcuts or focus return cannot dismiss a checkpoint. Exiting or cancelling loading returns to the main menu with Tutorial focused. Completion offers **Start game**, **Replay tutorial**, and **Back to main menu**.
 
 ## Controls and pause
 
