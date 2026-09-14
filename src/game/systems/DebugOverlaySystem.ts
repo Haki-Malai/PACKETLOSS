@@ -1,5 +1,6 @@
 import { WorldState } from '../domain/world/WorldState';
 import { TilePosition } from '../domain/valueObjects/TilePosition';
+import { EMPTY_DEBUG, type DebugSnapshot } from '../shared/events/DebugSnapshot';
 
 interface CameraLike {
   screenToWorld(screenX: number, screenY: number): { x: number; y: number };
@@ -7,21 +8,29 @@ interface CameraLike {
 
 export class DebugOverlaySystem {
   readonly runsWhenPaused = true;
-  private collisionPanel?: HTMLPreElement;
-  private runtimePanel?: HTMLPreElement;
   private lastRenderTimestampMs: number | null = null;
   private smoothedFps: number | null = null;
   private panelsVisible: boolean | null = null;
 
+  /**
+   * Connects world diagnostics to the UI without owning DOM elements.
+   *
+   * @param world - Runtime state to inspect and update with diagnostic text.
+   * @param camera - Converts pointer coordinates into world positions.
+   * @param onChange - Optional receiver for diagnostic snapshots and visibility resets.
+   */
   constructor(
     private readonly world: WorldState,
     private readonly camera: CameraLike,
+    private readonly onChange?: (_snapshot: DebugSnapshot) => void,
   ) {}
 
+  /** Clears diagnostics displayed by a previous run before this system starts reporting. */
   start(): void {
-    this.createPanels();
+    this.onChange?.(EMPTY_DEBUG);
   }
 
+  /** Maps the current pointer to an in-bounds debug tile while collision inspection is enabled. */
   update(): void {
     if (!this.world.collisionDebugEnabled) {
       this.world.hoveredDebugTile = null;
@@ -45,20 +54,14 @@ export class DebugOverlaySystem {
     this.world.hoveredDebugTile = { x: tileX, y: tileY };
   }
 
+  /** Publishes tile and frame diagnostics, clearing the overlay and timing when debug is disabled. */
   render(): void {
-    if (!this.collisionPanel || !this.runtimePanel) {
-      return;
-    }
-
     if (!this.world.collisionDebugEnabled) {
       if (this.panelsVisible === false) {
         return;
       }
       this.panelsVisible = false;
-      this.collisionPanel.style.display = 'none';
-      this.collisionPanel.textContent = '';
-      this.runtimePanel.style.display = 'none';
-      this.runtimePanel.textContent = '';
+      this.onChange?.(EMPTY_DEBUG);
       this.world.debugPanelText = '';
       this.lastRenderTimestampMs = null;
       this.smoothedFps = null;
@@ -67,8 +70,6 @@ export class DebugOverlaySystem {
 
     if (this.panelsVisible !== true) {
       this.panelsVisible = true;
-      this.collisionPanel.style.display = 'block';
-      this.runtimePanel.style.display = 'block';
     }
 
     if (!this.world.hoveredDebugTile) {
@@ -77,72 +78,19 @@ export class DebugOverlaySystem {
       this.world.debugPanelText = this.getTileDebugInfo(this.world.hoveredDebugTile);
     }
 
-    this.collisionPanel.textContent = this.world.debugPanelText;
-    this.runtimePanel.textContent = this.getRuntimeDebugText();
+    this.onChange?.({ enabled: true, collisionText: this.world.debugPanelText, runtimeText: this.getRuntimeDebugText() });
   }
 
+  /** Clears published diagnostics and resets frame timing for system disposal. */
   destroy(): void {
-    this.collisionPanel?.remove();
-    this.runtimePanel?.remove();
-    this.collisionPanel = undefined;
-    this.runtimePanel = undefined;
+    this.world.debugPanelText = '';
+    this.onChange?.(EMPTY_DEBUG);
     this.lastRenderTimestampMs = null;
     this.smoothedFps = null;
     this.panelsVisible = null;
   }
 
-  private createPanels(): void {
-    this.collisionPanel = this.createCollisionPanel();
-    this.runtimePanel = this.createRuntimePanel();
-    document.body.append(this.runtimePanel, this.collisionPanel);
-  }
-
-  private createCollisionPanel(): HTMLPreElement {
-    const panelId = 'collision-debug-panel';
-    document.getElementById(panelId)?.remove();
-
-    const panel = document.createElement('pre');
-    panel.id = panelId;
-    panel.style.position = 'fixed';
-    panel.style.left = '8px';
-    panel.style.top = '52px';
-    panel.style.margin = '0';
-    panel.style.padding = '6px 8px';
-    panel.style.color = '#ffffff';
-    panel.style.background = 'rgba(0, 0, 0, 0.78)';
-    panel.style.font = '12px/1.35 monospace';
-    panel.style.whiteSpace = 'pre';
-    panel.style.pointerEvents = 'none';
-    panel.style.zIndex = '9999';
-    panel.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-    panel.style.borderRadius = '4px';
-    panel.style.display = 'none';
-    return panel;
-  }
-
-  private createRuntimePanel(): HTMLPreElement {
-    const panelId = 'runtime-debug-panel';
-    document.getElementById(panelId)?.remove();
-
-    const panel = document.createElement('pre');
-    panel.id = panelId;
-    panel.style.position = 'fixed';
-    panel.style.left = '8px';
-    panel.style.top = '8px';
-    panel.style.margin = '0';
-    panel.style.padding = '6px 8px';
-    panel.style.color = '#ffffff';
-    panel.style.background = 'rgba(0, 0, 0, 0.78)';
-    panel.style.font = '12px/1.35 monospace';
-    panel.style.whiteSpace = 'pre';
-    panel.style.pointerEvents = 'none';
-    panel.style.zIndex = '9999';
-    panel.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-    panel.style.borderRadius = '4px';
-    panel.style.display = 'none';
-    return panel;
-  }
-
+  /** Samples elapsed render time and formats smoothed FPS, using placeholders before a valid delta. */
   private getRuntimeDebugText(): string {
     const currentTimestampMs = this.getTimestampMs();
     let frameTimeMs: number | null = null;
@@ -170,6 +118,7 @@ export class DebugOverlaySystem {
     ].join('\n');
   }
 
+  /** Reads time in milliseconds, preferring the high-resolution clock when available. */
   private getTimestampMs(): number {
     if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
       return performance.now();
@@ -178,6 +127,12 @@ export class DebugOverlaySystem {
     return Date.now();
   }
 
+  /**
+   * Formats a tile's collision flags and authored transform for the debug overlay.
+   *
+   * @param tilePosition - Tile-grid coordinates to inspect.
+   * @returns Multiline diagnostic text, including an explicit empty-tile description.
+   */
   private getTileDebugInfo(tilePosition: TilePosition): string {
     const tile = this.world.map.tiles[tilePosition.y]?.[tilePosition.x];
     const collision = this.world.collisionGrid.getTileAt(tilePosition.x, tilePosition.y);

@@ -82,11 +82,13 @@ Pausing freezes movement and gameplay timers and places a dark scrim over the fu
 
 Switching away from the window or tab pauses an active game; returning resumes it only if losing focus caused the pause and no explicit pause/menu interaction followed. A manually paused game stays paused. Completed runs cannot be resumed by controls or focus changes.
 
+Development builds additionally support collision inspection and FPS/frame-time panels with `Alt+C`, copying diagnostic text with `Shift+C`, and toggling enemy scared state with `H` during normal play. Production excludes these tools and shortcuts. The guided tutorial remains available in both environments.
+
 ## Presentation
 
 ### Canonical HTML visual contract
 
-Every new or changed HTML interface must match the 3D scene and reuse the shared CSS tokens and Tailwind-backed styles in `src/game/ui/gameUi.css`. Menu interfaces also reuse the constructors and header/body/actions/footer slots in `src/game/ui/MenuPanel.ts`. Apply this to menus, the HUD, loading/error states, and future changes to development tools.
+Every new or changed HTML interface must match the 3D scene and reuse the shared CSS tokens and Tailwind 4 utilities and styles in `src/game/ui/gameUi.css`. Menu interfaces also reuse the React components and header/body/actions/footer slots in `src/game/ui/MenuPanel.tsx`. Apply this to menus, the HUD, loading/error states, and future changes to development tools.
 
 - Use near-black surfaces (`#02040b`, `#050912`), muted pink (`#b579a1`), cyan (`#419da9`), and gold (`#b9a36b`). Reserve brighter cyan for primary actions and keyboard focus; keep body text readable against the dark surfaces.
 - Use Orbitron headings with readable supporting text, square corners, thin outlines, and small corner-bracket details. Keep decoration restrained and controls clearly labelled.
@@ -97,6 +99,10 @@ Every new or changed HTML interface must match the 3D scene and reuse the shared
 - Panels stay in place and fade in without vertical movement. Buttons lift 2 pixels on hover or keyboard focus and depress 1 pixel when pressed; the primary action's border brightens over 10 seconds and dims over the next 10 seconds while idle. Keep these responses subtle, with no repeated button movement while idle, and disable their motion with the reduced-motion setting.
 - Every shared menu frame includes simultaneous faint sweeps along its top and bottom edges in opposite directions, plus a small pulse of square pixels in its bottom corner. Both sweeps share one animation so their movement and fading stay synchronized. Use the panel's shared accent for its corner brackets and signal decoration: cyan normally, pink for loss, and gold for a clear. Keep these effects outside the content, hidden from assistive technology, and static under reduced motion; reuse `MenuPanel` and CSS keyframes instead of creating timers for individual screens.
 - Provide visible keyboard focus, focus containment/restoration for menus, touch targets of at least 44 pixels, mobile safe-area spacing, and scrolling on short viewports. Decoration must not block interaction or reduce text readability.
+
+The development asset gallery keeps its library/inspector layout and controls while sharing the game palette, Orbitron headings, square corners, and accessible controls. Debug text panels use the same palette and outlines.
+
+The HTML UI uses React and Tailwind 4 and requires Safari 16.4+, Chrome 111+, or Firefox 128+, alongside the existing WebGL 2 requirement.
 
 ### 3D scene
 

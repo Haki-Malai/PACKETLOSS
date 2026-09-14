@@ -1,6 +1,6 @@
 # Testing
 
-Tests use Vitest in a Node environment and live in `src/__tests__/`. They cover movement and collision rules, enemies and collectibles, portals and map parsing, input and pause behavior, the runtime, camera, rendering, and HUD adapters. Browser dependencies are stubbed where needed.
+Tests use Vitest and live in `src/__tests__/`. They cover movement and collision rules, enemies and collectibles, portals and map parsing, input and pause behavior, the runtime, camera, rendering, and React overlays. Domain and renderer tests stay in the Node environment, with browser/WebGL boundaries stubbed where needed. React shell, HUD, startup, and asset-gallery tests opt into jsdom per file and use React Testing Library. UI actions use bubbling DOM events or user-event; async runtime notifications and lazy imports settle inside `act`. Strict Mode tests verify repeated effect setup/cleanup, cancellation, and subscription disposal.
 
 ## Commands
 
@@ -61,11 +61,21 @@ For menus, additionally inspect the shared scene palette and typography, the tit
 
 When visual checks are authorized, inspect the shared standard/wide frames, top-right Back controls, and help/profile columns at widths of at least 800 pixels and stacked below that, including short-screen scrolling. Confirm all five help portraits show their current models and idle motion clearly at 80 pixels, keep static fallbacks while loading, and leave their adjacent names and descriptions readable. Check that ambient animation continues across menu navigation, remains visible in wide-panel gutters, and becomes static under Reduced or the system preference. These scenarios do not imply completed browser validation.
 
+These shortcuts are available only in the local development server or an explicit `--mode development` build; production ignores them:
+
 - `Alt+C` (`Option+C` on macOS) toggles the collision overlay and FPS/frame-time panel.
 - `Shift+C` copies the collision debug panel text.
 - `H` toggles the scared state of active enemies for debugging during normal play; it is disabled in tutorial practice.
 
 After editing the demo Tiled map, run `pnpm map:demo:convert` and `pnpm test` to check the generated map and its gameplay rules.
+
+## React migration checks
+
+- Keep canvas mounting independent of React overlays; starting/restarting a game must not remove the HUD or menu hosts.
+- Exercise live score/lives changes and subscription cleanup, plus diagnostic text publication, disabling, and reset between runs.
+- Exercise gallery filtering/selection, playback and seeking, camera/transform controls, loading failure/retry, hidden-tab timing, cancelled thumbnails, and unmount. Stub preview sessions in UI tests; retain the existing real preview scene/session/viewport tests for resource ownership.
+- Check development/production behavior at the app and runtime boundaries: production must omit the gallery route/link, debug panels and callbacks, diagnostic systems, and collision geometry. Debug shortcuts must do nothing while ordinary movement and pause continue to work. An explicit development build must expose the gallery under a nested deployment base URL.
+- A production build must omit the gallery, diagnostic panels/systems, collision inspection scene, and debug shortcut/clipboard code, and include Tailwind utilities for the shared theme and responsive layouts. Inspect emitted JavaScript as well as testing runtime guards. The build uses Tailwind 4's PostCSS integration; ESLint and Prettier use `src/tailwind.css` as their theme entrypoint.
 
 ## Development asset gallery
 

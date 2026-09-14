@@ -3,6 +3,7 @@ import {
   Mesh, MeshBasicMaterial, Object3D, Scene,
 } from 'three';
 import { Camera3D } from '../../engine/camera3d';
+import { IS_DEV } from '../../config/environment';
 import { clamp, lerp } from '../../engine/math';
 import { ENEMY_CONFIG, ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_ANIMATION, PACKET_PORTAL_BLINK } from '../../config/constants';
 import { EnemyEntity } from '../domain/entities/EnemyEntity';
@@ -27,7 +28,7 @@ export class RenderSystem {
   readonly scene = new Scene();
   private readonly presentation: EntityPresentation;
   private readonly maze: MazeScene;
-  private readonly debug: CollisionDebugScene;
+  private readonly debug: CollisionDebugScene | undefined;
   private readonly packet: Group;
   private readonly packetShadow: Mesh;
   private readonly pickupTarget: Object3D;
@@ -52,6 +53,7 @@ export class RenderSystem {
   private previousEnemyEatRemainingMs = 0;
   private destroyed = false;
 
+  /** Creates scene resources, allocating collision inspection geometry only in development. */
   constructor(
     private readonly world: WorldState,
     private readonly renderer: Pick<ThreeRendererAdapter, 'render' | 'dispose' | 'pixelRatio'>,
@@ -63,8 +65,9 @@ export class RenderSystem {
     this.presentation = new EntityPresentation(world);
     addGameplayLighting(this.scene);
     this.maze = new MazeScene(world);
-    this.debug = new CollisionDebugScene(world);
-    this.scene.add(this.maze.group, this.debug.group, this.enemyEffects.group);
+    this.debug = IS_DEV ? new CollisionDebugScene(world) : undefined;
+    this.scene.add(this.maze.group, this.enemyEffects.group);
+    if (this.debug) this.scene.add(this.debug.group);
     if (getTutorialMarker) {
       this.tutorialMarker = new TutorialMarker(world.tileSize);
       this.tutorialMarker.sync(getTutorialMarker());
@@ -134,6 +137,7 @@ export class RenderSystem {
     }
   }
 
+  /** Presents interpolated gameplay and optional development diagnostics without advancing simulation. */
   render(alpha = 1): void {
     if (this.destroyed) return;
     this.camera.present(alpha, this.renderer.pixelRatio);
@@ -192,15 +196,16 @@ export class RenderSystem {
     this.syncEnemyEating();
     this.enemyEffects.sync(this.world.enemyEffects, this.world.lagZones);
     this.tutorialMarker?.sync(this.getTutorialMarker?.() ?? null);
-    this.debug.sync();
+    this.debug?.sync();
     this.renderer.render(this.scene, this.camera.camera);
   }
 
+  /** Releases scene, diagnostic, asset, and renderer resources once when the run is disposed. */
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
     this.maze.dispose();
-    this.debug.dispose();
+    this.debug?.dispose();
     this.points.forEach((mesh) => mesh.dispose());
     this.effects.forEach((mesh) => mesh.material.dispose());
     this.effects.clear();

@@ -1,14 +1,14 @@
 import {
   COARSE_POINTER_MEDIA_QUERY,
-  ENEMY_SCARED_DURATION_MS,
   MOBILE_SWIPE_AXIS_LOCK_RATIO,
   MOBILE_SWIPE_THRESHOLD_PX,
   MOBILE_TAP_MAX_DELTA_PX,
 } from '../../config/constants';
-import { clearAllEnemyScaredWindow, setActiveEnemiesScaredWindow } from '../domain/services/EnemyScaredStateService';
+import { IS_DEV } from '../../config/environment';
 import type { Direction } from '../domain/valueObjects/Direction';
 import { WorldState } from '../domain/world/WorldState';
 import { BrowserInputAdapter, isInteractiveInputTarget, PointerState } from '../infrastructure/adapters/BrowserInputAdapter';
+import { handleDebugKeyDown } from './DebugInput';
 
 interface PauseController {
   togglePause(): void;
@@ -66,6 +66,7 @@ export class InputSystem {
     this.activeTouchGesture = null;
   }
 
+  /** Routes active gameplay keys, with inspection and cheat shortcuts available only in development. */
   private handleKeyDown(event: KeyboardEvent): void {
     if (event.repeat || event.defaultPrevented || isInteractiveInputTarget(event.target)
       || !this.world.isMoving || this.world.outcome) {
@@ -78,35 +79,7 @@ export class InputSystem {
       return;
     }
 
-    if (event.code === 'KeyH' && this.allowPowerShortcut) {
-      const shouldEnableScared = this.world.enemies.some((enemy) => enemy.active && !enemy.state.scared);
-      if (shouldEnableScared) {
-        setActiveEnemiesScaredWindow(this.world, ENEMY_SCARED_DURATION_MS);
-        this.world.enemyEatChainCount = 0;
-      } else {
-        clearAllEnemyScaredWindow(this.world);
-      }
-      return;
-    }
-
-    if (event.code === 'KeyC') {
-      if (event.altKey) {
-        event.preventDefault();
-        this.world.collisionDebugEnabled = !this.world.collisionDebugEnabled;
-        if (!this.world.collisionDebugEnabled) {
-          this.world.hoveredDebugTile = null;
-          this.world.debugPanelText = '';
-        }
-        return;
-      }
-
-      if (event.shiftKey) {
-        event.preventDefault();
-        void this.copyDebugPanelText();
-        return;
-      }
-      return;
-    }
+    if (IS_DEV) handleDebugKeyDown(this.world, event, this.allowPowerShortcut);
 
     if (BROWSER_SCROLL_KEYS.has(event.code)) {
       event.preventDefault();
@@ -117,9 +90,10 @@ export class InputSystem {
     return event.code === 'Escape' || event.code === 'Space' || PAUSE_EVENT_KEYS.has(event.key);
   }
 
+  /** Tracks swipe intent and, in development, the pointer position used by collision inspection. */
   private handlePointerMove(pointer: PointerState): void {
     if (!this.world.isMoving || this.world.outcome) return;
-    this.world.pointerScreen = { x: pointer.x, y: pointer.y };
+    if (IS_DEV) this.world.pointerScreen = { x: pointer.x, y: pointer.y };
 
     const gesture = this.getActiveGesture(pointer.pointerId);
     if (!gesture || gesture.hasCommittedSwipe || this.hasDirectionalKeyboardInput()) {
@@ -135,9 +109,10 @@ export class InputSystem {
     gesture.hasCommittedSwipe = true;
   }
 
+  /** Starts touch gestures or pauses mouse play, recording inspection coordinates in development. */
   private handlePointerDown(pointer: PointerState): void {
     if (!this.world.isMoving || this.world.outcome) return;
-    this.world.pointerScreen = { x: pointer.x, y: pointer.y };
+    if (IS_DEV) this.world.pointerScreen = { x: pointer.x, y: pointer.y };
 
     if (!this.isTouchLikePointer(pointer)) {
       this.pauseController.togglePause();
@@ -255,44 +230,5 @@ export class InputSystem {
     }
 
     return !!window.matchMedia?.(COARSE_POINTER_MEDIA_QUERY).matches;
-  }
-
-  private async copyDebugPanelText(): Promise<void> {
-    const text = this.world.debugPanelText;
-    if (!text) {
-      return;
-    }
-
-    const copied = await this.copyTextToClipboard(text);
-    if (!copied) {
-      this.world.debugPanelText = `${text}\ncopy failed (browser blocked clipboard access)`;
-    }
-  }
-
-  private async copyTextToClipboard(text: string): Promise<boolean> {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        return true;
-      }
-    } catch {
-      // Ignore clipboard API errors and try fallback copy method.
-    }
-
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.setAttribute('readonly', 'true');
-      textarea.style.position = 'fixed';
-      textarea.style.left = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      const copied = document.execCommand('copy');
-      textarea.remove();
-      return copied;
-    } catch {
-      return false;
-    }
   }
 }
