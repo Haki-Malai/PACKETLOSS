@@ -114,6 +114,7 @@ function createWorld(): WorldState {
     enemies: [],
     lagZones: [],
     enemyEffects: [],
+    debugFrozen: false,
     collisionDebugEnabled: false,
     hoveredDebugTile: null,
     debugPanelText: '',

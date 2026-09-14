@@ -171,14 +171,15 @@ jobs:
       - name: Build
         env:
           DEPLOY_ENV: ${{ needs.resolve_target.outputs.env_path }}
-          REPO_NAME: ${{ github.event.repository.name }}
         run: |
           set -euo pipefail
           build_mode=production
+          base_path="/"
           if [[ "$DEPLOY_ENV" == "dev" ]]; then
             build_mode=development
+            base_path="/dev/"
           fi
-          pnpm run build --mode "$build_mode" --base "/$REPO_NAME/$DEPLOY_ENV/"
+          pnpm run build --mode "$build_mode" --base "$base_path"
           if [[ "$DEPLOY_ENV" == "dev" ]]; then
             mkdir -p dist/dev/assets
             cp dist/index.html dist/dev/assets/index.html
@@ -243,28 +244,18 @@ jobs:
             find "$worktree_dir" -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
           fi
 
-          # Retire the integration site when publishing either supported environment.
-          rm -rf "$worktree_dir/int" "$worktree_dir/$ENV_PATH"
-          mkdir -p "$worktree_dir/$ENV_PATH"
-          cp -R "$artifact_root"/. "$worktree_dir/$ENV_PATH"/
+          if [[ "$ENV_PATH" == "dev" ]]; then
+            rm -rf "$worktree_dir/int" "$worktree_dir/dev"
+            mkdir -p "$worktree_dir/dev"
+            cp -R "$artifact_root"/. "$worktree_dir/dev"/
+          else
+            find "$worktree_dir" -mindepth 1 -maxdepth 1 \
+              ! -name ".git" ! -name "dev" -exec rm -rf {} +
+            cp -R "$artifact_root"/. "$worktree_dir"/
+          fi
 
+          printf '%s\n' 'packetloss.hakimalai.com' > "$worktree_dir/CNAME"
           touch "$worktree_dir/.nojekyll"
-          cat > "$worktree_dir/index.html" <<'EOF'
-          <!doctype html>
-          <html lang="en">
-            <head>
-              <meta charset="utf-8" />
-              <meta http-equiv="refresh" content="0; url=./prod/" />
-              <title>Redirecting to production</title>
-              <script>
-                window.location.replace("./prod/");
-              </script>
-            </head>
-            <body>
-              Redirecting to <a href="./prod/">production</a>.
-            </body>
-          </html>
-          EOF
 
           git -C "$worktree_dir" add -A
           if git -C "$worktree_dir" diff --cached --quiet; then
@@ -277,9 +268,15 @@ jobs:
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Deployment summary
+        env:
+          ENV_PATH: ${{ needs.resolve_target.outputs.env_path }}
         run: |
+          published_path="/"
+          if [[ "$ENV_PATH" == "dev" ]]; then
+            published_path="/dev/"
+          fi
           if [[ "${{ steps.publish.outputs.changed }}" == "true" ]]; then
-            echo "Published /${{ needs.resolve_target.outputs.env_path }}/ from ${{ needs.resolve_target.outputs.target_sha }}."
+            echo "Published ${published_path} from ${{ needs.resolve_target.outputs.target_sha }}."
           else
             echo "No content changes detected; skipped push."
           fi

@@ -39,7 +39,7 @@ export class EnemyDecisionService {
       if (path?.length === 0 && enemy.key === 'ping') enemy.pingTarget = null;
       if (path?.length === 0 && enemy.key === 'virus') return null;
     }
-    const steps = navigation.getSteps(enemy.tile);
+    const steps = this.getSteps(enemy, navigation);
     const forward = steps.filter((step) => step.direction !== OPPOSITE_DIRECTION[enemy.direction]);
     const choices = forward.length > 0 ? forward : steps;
     return choices.length > 0 ? choices[rng.int(choices.length)].direction : null;
@@ -48,7 +48,7 @@ export class EnemyDecisionService {
   private choosePatrolDirection(enemy: EnemyEntity, navigation: EnemyNavigationService): Direction | null {
     let patrol = this.patrols.get(enemy);
     if (!patrol) {
-      patrol = { route: navigation.createPatrol(enemy.tile, enemy.direction), index: 0 };
+      patrol = { route: navigation.createPatrol(enemy.tile, enemy.direction, enemy.movementBounds ?? undefined), index: 0 };
       this.patrols.set(enemy, patrol);
     }
     if (patrol.route.length === 0) return null;
@@ -62,6 +62,15 @@ export class EnemyDecisionService {
     }
     patrol.index = (patrol.index + 1) % patrol.route.length;
     return step.direction;
+  }
+
+  /** Keeps tutorial-authored enemies inside their optional tile bounds. */
+  private getSteps(enemy: EnemyEntity, navigation: EnemyNavigationService): NavigationStep[] {
+    const bounds = enemy.movementBounds;
+    return navigation.getSteps(enemy.tile).filter((step) => !bounds || (
+      step.destination.x >= bounds.minX && step.destination.x <= bounds.maxX &&
+      step.destination.y >= bounds.minY && step.destination.y <= bounds.maxY
+    ));
   }
 
   chooseDirectionAtCenter(

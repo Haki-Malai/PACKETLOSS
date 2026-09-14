@@ -264,26 +264,62 @@ describe('GameShell', () => {
         expect(game.resume).toHaveBeenCalledTimes(2);
     });
 
-    it.each(['success', 'retry'] as const)(
-        'keeps a %s checkpoint paused through keyboard shortcuts',
-        async (phase) => {
-            const page = setup();
-            fireEvent.click(page.action('tutorial'));
-            await flushStart();
-            page.games[0].emit(tutorialState('movement', phase));
-            page.key('Escape');
-            page.key(' ', page.find('[role="dialog"]'));
-            expect(page.screen()).toBe('tutorial');
-            expect(page.games[0].resume).not.toHaveBeenCalled();
-            fireEvent.click(page.action('retry-lesson'));
-            await flushStart();
-            expect(page.games[0].destroy).toHaveBeenCalledOnce();
-            expect(page.games[1].options.tutorialLesson).toBe('movement');
-            expect(page.screen()).toBe('tutorial');
-        }
-    );
+    it('uses Enter to continue tutorial explanations and retry failed lessons', async () => {
+        const page = setup();
+        fireEvent.click(page.action('tutorial'));
+        await flushStart();
+        const movement = page.games[0];
+        const panel = page.find('[role="dialog"]');
 
-    it('advances all lessons with fresh runtimes, ignores obsolete callbacks, and starts the configured normal map', async () => {
+        expect(page.key('Enter', panel).defaultPrevented).toBe(true);
+        expect(movement.resume).toHaveBeenCalledOnce();
+
+        movement.emit(tutorialState('movement', 'explanation'));
+        expect(page.key('Enter', page.find('[role="dialog"]')).defaultPrevented).toBe(true);
+        expect(movement.resume).toHaveBeenCalledTimes(2);
+
+        movement.emit(tutorialState('movement', 'retry'));
+        expect(page.key('Enter', page.find('[role="dialog"]')).defaultPrevented).toBe(true);
+        await flushStart();
+        expect(movement.destroy).toHaveBeenCalledOnce();
+        expect(page.games[1].options.tutorialLesson).toBe('movement');
+    });
+
+    it('uses the development N shortcut to skip active practice to the next lesson', async () => {
+        const page = setup();
+        fireEvent.click(page.action('tutorial'));
+        await flushStart();
+        const movement = page.games[0];
+        movement.emit(tutorialState('movement', 'playing'));
+        const event = new KeyboardEvent('keydown', {
+            key: 'n', code: 'KeyN', repeat: false, bubbles: true, cancelable: true,
+        });
+
+        fireEvent(page.find('canvas'), event);
+        expect(event.defaultPrevented).toBe(true);
+        await flushStart();
+        expect(movement.pause).toHaveBeenCalledOnce();
+        expect(movement.destroy).toHaveBeenCalledOnce();
+        expect(page.games[1].options.tutorialLesson).toBe('firewall');
+    });
+
+    it('keeps a retry checkpoint paused through keyboard shortcuts', async () => {
+        const page = setup();
+        fireEvent.click(page.action('tutorial'));
+        await flushStart();
+        page.games[0].emit(tutorialState('movement', 'retry'));
+        page.key('Escape');
+        page.key(' ', page.find('[role="dialog"]'));
+        expect(page.screen()).toBe('tutorial');
+        expect(page.games[0].resume).not.toHaveBeenCalled();
+        fireEvent.click(page.action('retry-lesson'));
+        await flushStart();
+        expect(page.games[0].destroy).toHaveBeenCalledOnce();
+        expect(page.games[1].options.tutorialLesson).toBe('movement');
+        expect(page.screen()).toBe('tutorial');
+    });
+
+    it('automatically advances all lessons with fresh runtimes and starts the configured normal map', async () => {
         const page = setup([], 'default');
         fireEvent.click(page.action('tutorial'));
         await flushStart();
@@ -291,7 +327,6 @@ describe('GameShell', () => {
             const game = page.games[index];
             expect(game.options.tutorialLesson).toBe(lesson.id);
             game.emit(tutorialState(lesson.id, 'success'));
-            fireEvent.click(page.action('next-lesson'));
             await flushStart();
             if (index < TUTORIAL_LESSONS.length - 1) {
                 expect(game.destroy).toHaveBeenCalledOnce();
@@ -321,7 +356,6 @@ describe('GameShell', () => {
         fireEvent.click(page.action('tutorial'));
         await flushStart();
         page.games[0].emit(tutorialState('movement', 'success'));
-        fireEvent.click(page.action('next-lesson'));
         loading.reject(new Error('Lesson could not load'));
         await flushStart();
         expect(page.screen()).toBe('error');

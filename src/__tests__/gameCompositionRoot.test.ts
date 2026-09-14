@@ -159,7 +159,7 @@ describe('GameCompositionRoot startup', () => {
     expect(mount.children).toHaveLength(0);
   });
 
-  it('forces the demo for practice and preserves an explicitly empty lesson without releasing enemies', async () => {
+  it('forces the demo and authored Ping pickup for practice without automatic releases', async () => {
     const { mount } = prepareComposition();
     const map = createHarnessMap('demo-map');
     const loadMap = vi.spyOn(TiledMapRepository.prototype, 'loadMap').mockResolvedValue(map);
@@ -171,16 +171,16 @@ describe('GameCompositionRoot startup', () => {
       return { dispose: rendererDispose, resize: vi.fn(), width: 320, height: 568 } as unknown as ThreeRendererAdapter;
     });
     const rng = vi.fn(() => 0.9);
-    const composed = await new GameCompositionRoot({ mapVariant: 'default', tutorialLesson: 'portal', rng })
+    const composed = await new GameCompositionRoot({ mapVariant: 'default', tutorialLesson: 'ping', rng })
       .compose(runtimeControl);
 
     expect(loadMap).toHaveBeenCalledWith('assets/mazes/default/demo.json');
     expect(rng).not.toHaveBeenCalled();
     expect(composed.world.map).toBe(map);
-    expect(composed.tutorial?.getSnapshot()).toMatchObject({ lesson: 'portal', phase: 'introduction' });
-    expect(composed.getRemainingPointCount()).toBe(0);
+    expect(composed.tutorial?.getSnapshot()).toMatchObject({ lesson: 'ping', phase: 'introduction' });
+    expect(composed.getRemainingPointCount()).toBe(1);
     expect(composed.updateSystems.some((system) => system instanceof EnemyReleaseSystem)).toBe(false);
-    expect(composed.world.enemies.every((enemy) => !enemy.active)).toBe(true);
+    expect(composed.world.enemies.filter((enemy) => enemy.active).map((enemy) => enemy.key)).toEqual(['ping']);
     const camera = composed.updateSystems.find((system) => system instanceof CameraSystem)!;
     camera.start();
     expect(setZoom.mock.lastCall?.[0]).toBeLessThan(CAMERA.zoom);

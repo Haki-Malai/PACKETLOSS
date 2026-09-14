@@ -8,7 +8,7 @@ import type { WorldState } from '../domain/world/WorldState';
 /**
  * Handles development shortcuts after normal input guards have accepted the event.
  *
- * @param world - Active game state to inspect or apply the power shortcut to.
+ * @param world - Active game state to inspect, freeze, or apply the power shortcut to.
  * @param event - Keyboard event from the gameplay surface.
  * @param allowPowerShortcut - Disables the power cheat during tutorial practice.
  */
@@ -28,20 +28,25 @@ export function handleDebugKeyDown(
     return;
   }
 
+  if (event.code === 'KeyF' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    event.preventDefault();
+    world.debugFrozen = !world.debugFrozen;
+    return;
+  }
+
   if (event.code === 'KeyC') {
-    if (event.altKey) {
+    if (event.shiftKey) {
+      event.preventDefault();
+      void copyDebugPanelText(world);
+      return;
+    }
+    if (!event.altKey && !event.ctrlKey && !event.metaKey) {
       event.preventDefault();
       world.collisionDebugEnabled = !world.collisionDebugEnabled;
       if (!world.collisionDebugEnabled) {
         world.hoveredDebugTile = null;
         world.debugPanelText = '';
       }
-      return;
-    }
-
-    if (event.shiftKey) {
-      event.preventDefault();
-      void copyDebugPanelText(world);
     }
   }
 }

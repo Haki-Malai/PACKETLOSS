@@ -10,13 +10,25 @@ import { useGameSession, type GameShellOptions } from './useGameSession';
 export function GameShell(options: GameShellOptions) {
     const { isDev } = useEnvironment();
     const session = useGameSession(options);
-    const { state, store, claimPause, resume, back, exitTutorial, mainMenu } = session;
+    const {
+        state,
+        store,
+        claimPause,
+        resume,
+        back,
+        exitTutorial,
+        mainMenu,
+        nextLesson,
+        retrySession,
+        pause,
+    } = session;
     const root = useRef<HTMLDivElement>(null);
     const surface = useRef<HTMLDivElement>(null);
     const ui = useRef<HTMLElement>(null);
     const menuViewport = useRef<HTMLDivElement>(null);
     const panel = useRef<HTMLDivElement>(null);
     const playing = state.screen === 'playing';
+    const tutorialPhase = state.tutorial?.phase;
 
     useLayoutEffect(() => {
         if (playing) {
@@ -35,8 +47,29 @@ export function GameShell(options: GameShellOptions) {
     }, [playing, state.navigation, state.focusTarget]);
 
     useEffect(() => {
-        /** Traps menu focus and handles back/resume shortcuts while preserving control input. */
+        /** Handles the dev lesson skip, then traps menu focus and routes menu shortcuts. */
         function handleKeyDown(event: KeyboardEvent) {
+            if (
+                IS_DEV &&
+                isDev &&
+                state.ready &&
+                state.tutorialLesson &&
+                ['playing', 'tutorial', 'paused'].includes(state.screen) &&
+                event.code === 'KeyN' &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.shiftKey &&
+                !event.repeat &&
+                !event.defaultPrevented
+            ) {
+                const target = event.target as HTMLElement | null;
+                if (target?.closest('input,select,textarea,[contenteditable="true"]')) return;
+                event.preventDefault();
+                pause();
+                nextLesson();
+                return;
+            }
             if (playing || event.defaultPrevented) return;
             claimPause();
             if (event.key === 'Tab') {
@@ -70,6 +103,17 @@ export function GameShell(options: GameShellOptions) {
                     if (state.tutorialLesson) exitTutorial();
                     else mainMenu();
                 }
+            } else if (event.key === 'Enter' && state.screen === 'tutorial') {
+                const target = event.target as HTMLElement | null;
+                if (target?.closest('button,input,select,textarea,a,[contenteditable="true"]'))
+                    return;
+                if (tutorialPhase === 'introduction' || tutorialPhase === 'explanation') {
+                    event.preventDefault();
+                    resume();
+                } else if (tutorialPhase === 'retry') {
+                    event.preventDefault();
+                    retrySession();
+                }
             } else if ((event.code === 'Space' || event.key === ' ') && state.screen === 'paused') {
                 const target = event.target as HTMLElement | null;
                 if (target?.closest('button,input,select,textarea,a,[contenteditable="true"]'))
@@ -82,13 +126,19 @@ export function GameShell(options: GameShellOptions) {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [
         playing,
+        isDev,
+        state.ready,
         state.screen,
         state.tutorialLesson,
+        tutorialPhase,
         claimPause,
         resume,
         back,
         exitTutorial,
         mainMenu,
+        nextLesson,
+        retrySession,
+        pause,
     ]);
 
     const lesson = state.tutorial && getTutorialLesson(state.tutorial.lesson);
@@ -100,7 +150,7 @@ export function GameShell(options: GameShellOptions) {
         >
             <div ref={surface} inert={!playing} className="absolute inset-0">
                 <div id="packet-scene" className="absolute inset-0" />
-                {state.ready && <Hud onPause={session.pause} />}
+                {state.ready && <Hud onPause={pause} />}
             </div>
             <MenuInteraction value={claimPause}>
                 <section

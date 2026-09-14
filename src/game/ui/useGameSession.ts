@@ -130,7 +130,7 @@ export function useGameSession(options: GameShellOptions) {
 
     /**
      * Maps runtime notifications to menus and persists each completed normal run once.
-     * Tutorial notifications update practice state without saving a run record.
+     * Tutorial notifications update practice state without saving a run record and advance successes immediately.
      *
      * @param runtime - State reported by the current game.
      * @param id - Identifier captured when this run started.
@@ -140,6 +140,10 @@ export function useGameSession(options: GameShellOptions) {
         const view = current.current;
         if (view.tutorialLesson) {
             if (!runtime.tutorial || runtime.tutorial.lesson !== view.tutorialLesson) return;
+            if (runtime.tutorial.phase === 'success') {
+                nextLesson();
+                return;
+            }
             update({ tutorial: runtime.tutorial });
             if (runtime.tutorial.phase !== 'playing') show('tutorial');
             else if (runtime.paused) {

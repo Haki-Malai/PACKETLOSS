@@ -1,5 +1,5 @@
 import { Direction, DIRECTION_VECTORS } from '../valueObjects/Direction';
-import { TilePosition } from '../valueObjects/TilePosition';
+import { TileBounds, TilePosition } from '../valueObjects/TilePosition';
 import { CollisionGrid } from '../world/CollisionGrid';
 import { canMove } from './MovementRules';
 import { PortalService } from './PortalService';
@@ -21,6 +21,10 @@ interface NavigationPath {
 
 function tileKey(tile: TilePosition): string {
   return `${tile.x},${tile.y}`;
+}
+
+function isWithinBounds(tile: Readonly<TilePosition>, bounds: Readonly<TileBounds>): boolean {
+  return tile.x >= bounds.minX && tile.x <= bounds.maxX && tile.y >= bounds.minY && tile.y <= bounds.maxY;
 }
 
 export class EnemyNavigationService {
@@ -108,7 +112,8 @@ export class EnemyNavigationService {
     return null;
   }
 
-  createPatrol(start: TilePosition, heading: Direction): NavigationStep[] {
+  /** Creates a repeatable right-hand patrol, optionally constrained to an inclusive tile area. */
+  createPatrol(start: TilePosition, heading: Direction, bounds?: Readonly<TileBounds>): NavigationStep[] {
     const seen = new Map<string, number>();
     const route: NavigationStep[] = [];
     let tile = { ...start };
@@ -118,7 +123,7 @@ export class EnemyNavigationService {
       const repeatedAt = seen.get(stateKey);
       if (repeatedAt !== undefined) return route.slice(repeatedAt);
       seen.set(stateKey, route.length);
-      const steps = this.getSteps(tile);
+      const steps = this.getSteps(tile).filter((step) => !bounds || isWithinBounds(step.destination, bounds));
       const headingIndex = NAVIGATION_DIRECTIONS.indexOf(direction);
       const turnOrder = [1, 0, 3, 2];
       const next = turnOrder.map((offset) => NAVIGATION_DIRECTIONS[(headingIndex + offset) % 4])

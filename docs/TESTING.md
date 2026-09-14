@@ -44,10 +44,10 @@ These scenarios protect observable behavior; avoid snapshots of decorative geome
 
 ## Guided tutorial regression scenarios
 
-- Exercise all nine lessons through real domain systems on the demo maze: queued turn plus pickup, patrol and chase movement, the actual horizontal teleport, completed scared-enemy intake, a successful saved-target scan, a real split, slowed movement through a live zone, and power clearing zones while suppressing abilities. Premature actions must not complete lessons; dangerous contact wins over success, and required power/zone expiry offers retry.
+- Exercise all seven lessons through real domain systems on the demo maze: a valid automatic start in every lesson, turns plus the four sparse movement pickups and their markers, both Firewall checkpoints constrained to `(1,1)`–`(2,5)`, the power core at `(2,6)`, the Virus target at `(11,11)`, the Spam target at `(11,1)`, chase movement, completed scared-enemy intake, chase guidance covering power suppression, a successful saved-target scan, a real split, and slowed movement through a live zone. Premature actions must not complete lessons; dangerous contact wins over success, and required power/zone expiry offers retry.
 - Check fresh practice on each lesson/retry, fixed scenario setup before renderer construction, explicit empty collectibles, omitted automatic releases, and unchanged configured maps for normal games. Tutorial completion and abandonment must never persist a record or produce normal run results.
-- Exercise Tutorial immediately below How to play in the main menu, direct tutorial launch, absence of practice controls in help, same-lesson loading retry, cancellation and obsolete callbacks, disposal, unlimited retry, completion actions, and return to the main menu with Tutorial focused on exit. Check manual and focus-caused pauses, held-input clearing, and checkpoint immunity to Escape, Space, and focus return.
-- Keep marker coverage at the renderer boundary: current tile placement, visibility and target updates while paused, no marker for normal play, and exact resource disposal. `pnpm test src/__tests__/renderTutorialMarker.test.ts` runs that focused check.
+- Exercise Tutorial immediately below How to play in the main menu, direct tutorial launch, absence of practice controls in help, automatic success advancement without lesson outros, same-lesson loading retry, cancellation and obsolete callbacks, disposal, unlimited retry, final completion actions, and return to the main menu with Tutorial focused on exit. Check manual and focus-caused pauses, held-input clearing, and checkpoint immunity to Escape, Space, and focus return.
+- Keep marker coverage at the renderer boundary: current tile placement, depth-independent visibility over maze walls, target updates while paused, no marker for normal play, and exact resource disposal. `pnpm test src/__tests__/renderTutorialMarker.test.ts` runs that focused check.
 
 Run `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` after implementation. Browser QA remains deferred until explicitly requested; then check tutorial objective readability, marker visibility around collectibles, touch gestures, short screens, focus, and reduced motion through the complete flow. Domain and renderer tests do not establish browser usability.
 
@@ -63,8 +63,10 @@ When visual checks are authorized, inspect the shared standard/wide frames, top-
 
 These shortcuts are available only in the local development server or an explicit `--mode development` build; production ignores them:
 
-- `Alt+C` (`Option+C` on macOS) toggles the collision overlay and FPS/frame-time panel.
+- `C` toggles the collision overlay and FPS/frame-time panel.
 - `Shift+C` copies the collision debug panel text.
+- `F` freezes or unfreezes simulation and animation without opening the pause menu.
+- `N` skips directly to the next guided-tutorial lesson.
 - `H` toggles the scared state of active enemies for debugging during normal play; it is disabled in tutorial practice.
 
 After editing the demo Tiled map, run `pnpm map:demo:convert` and `pnpm test` to check the generated map and its gameplay rules.

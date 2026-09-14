@@ -60,7 +60,7 @@ export class RenderSystem {
     private readonly camera: Camera3D,
     private readonly collectibles: CollectibleSystem,
     private readonly assets: ArcadeAssets,
-    private readonly getTutorialMarker?: () => Readonly<TilePosition> | null,
+    private readonly getTutorialMarkers?: () => readonly Readonly<TilePosition>[],
   ) {
     this.presentation = new EntityPresentation(world);
     addGameplayLighting(this.scene);
@@ -68,9 +68,9 @@ export class RenderSystem {
     this.debug = IS_DEV ? new CollisionDebugScene(world) : undefined;
     this.scene.add(this.maze.group, this.enemyEffects.group);
     if (this.debug) this.scene.add(this.debug.group);
-    if (getTutorialMarker) {
+    if (getTutorialMarkers) {
       this.tutorialMarker = new TutorialMarker(world.tileSize);
-      this.tutorialMarker.sync(getTutorialMarker());
+      this.tutorialMarker.sync(getTutorialMarkers());
       this.scene.add(this.tutorialMarker.group);
     }
 
@@ -195,7 +195,7 @@ export class RenderSystem {
     this.syncEffects();
     this.syncEnemyEating();
     this.enemyEffects.sync(this.world.enemyEffects, this.world.lagZones);
-    this.tutorialMarker?.sync(this.getTutorialMarker?.() ?? null);
+    this.tutorialMarker?.sync(this.getTutorialMarkers?.() ?? []);
     this.debug?.sync();
     this.renderer.render(this.scene, this.camera.camera);
   }
