@@ -39,7 +39,13 @@ export class CollectibleSystem {
   private readonly pointsByTile = new Map<string, CollectiblePoint>();
   private readonly eatEffects: EatEffect[] = [];
 
-  constructor(private readonly world: WorldState) {
+  constructor(private readonly world: WorldState, points?: readonly CollectiblePoint[]) {
+    if (points) {
+      points.forEach((point) => {
+        this.pointsByTile.set(tileKey(point.tile), { ...point, tile: { ...point.tile } });
+      });
+      return;
+    }
     const mapCollectibles = this.buildMapAuthoredCollectibles();
     if (mapCollectibles.size > 0) {
       mapCollectibles.forEach((point, key) => {

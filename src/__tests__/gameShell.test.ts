@@ -6,6 +6,7 @@ import { GameShell } from '../game/ui/GameShell';
 import { mountEnemyPortraits } from '../game/ui/EnemyPortraits';
 import { mountTitleWordmark } from '../game/ui/TitleWordmark';
 import { FakeDocument, FakeElement } from './helpers/fakeDom';
+import { TUTORIAL_LESSONS, type TutorialLessonId, type TutorialPhase } from '../game/tutorial/TutorialLesson';
 
 vi.mock('../game/ui/TitleWordmark', () => ({ mountTitleWordmark: vi.fn() }));
 vi.mock('../game/ui/EnemyPortraits', () => ({ mountEnemyPortraits: vi.fn() }));
@@ -29,7 +30,7 @@ async function flushStart(): Promise<void> {
   await Promise.resolve();
 }
 
-function setup(starts: Promise<void>[] = []) {
+function setup(starts: Promise<void>[] = [], mapVariant: 'default' | 'demo' = 'demo') {
   const document = new FakeDocument();
   const window = new EventTarget();
   vi.stubGlobal('document', document);
@@ -59,7 +60,7 @@ function setup(starts: Promise<void>[] = []) {
     games.push(game);
     return game;
   });
-  const shell = new GameShell(root as unknown as HTMLElement, { mapVariant: 'demo', store, createGame });
+  const shell = new GameShell(root as unknown as HTMLElement, { mapVariant, store, createGame });
   shells.push(shell);
 
   function find(selector: string): FakeElement {
@@ -83,6 +84,18 @@ function setup(starts: Promise<void>[] = []) {
   return { root, document, window, shell, store, storage, games, createGame, find, action, key, screen };
 }
 
+function tutorialState(
+  lesson: TutorialLessonId = 'movement',
+  phase: TutorialPhase = 'introduction',
+  paused = phase !== 'playing',
+): RuntimeState {
+  return {
+    paused,
+    result: null,
+    tutorial: { lesson, phase, message: 'A paused explanation.', objective: 'Reach the marked pellet.', marker: null },
+  };
+}
+
 beforeEach(() => {
   vi.mocked(mountTitleWordmark).mockReset().mockReturnValue(() => {});
   vi.mocked(mountEnemyPortraits).mockReset().mockReturnValue(() => {});
@@ -95,6 +108,145 @@ afterEach(async () => {
 });
 
 describe('GameShell', () => {
+  it('places Try Out after Pause in the basics column and disables it during a run', async () => {
+    const page = setup();
+    page.action('help').click();
+    const basics = page.find('.packet-basics');
+    const practice = page.action('try-out').parentElement!;
+    expect(basics.children.indexOf(practice)).toBeGreaterThan(basics.children.indexOf(page.find('.packet-help')));
+    expect(page.action('try-out').disabled).toBe(false);
+    expect(page.createGame).not.toHaveBeenCalled();
+    page.action('back').click();
+    page.action('start').click();
+    await flushStart();
+    page.games[0].emit({ paused: true, result: null });
+    page.action('help').click();
+    const button = page.action('try-out');
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-describedby')).toBe('packet-practice-note');
+    expect(page.find('#packet-practice-note').textContent).toBe('Return to the main menu to try the tutorial.');
+    button.click();
+    expect(page.createGame).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens practice paused on the demo map and keeps live objectives outside the menu', async () => {
+    const page = setup([], 'default');
+    page.action('help').click();
+    page.action('try-out').click();
+    await flushStart();
+    const game = page.games[0];
+    expect(game.options).toMatchObject({ mapVariant: 'demo', tutorialLesson: 'movement' });
+    expect(page.screen()).toBe('tutorial');
+    expect(page.find('.packet-tutorial-objective').hidden).toBe(true);
+    page.key('Escape');
+    expect(game.resume).not.toHaveBeenCalled();
+    page.action('try-lesson').click();
+    expect(game.resume).toHaveBeenCalledOnce();
+    game.emit(tutorialState('movement', 'playing'));
+    const objective = page.find('.packet-tutorial-objective');
+    expect(page.screen()).toBe('playing');
+    expect(objective.hidden).toBe(false);
+    expect(page.find('[data-screen]').contains(objective)).toBe(false);
+    expect(objective.getAttribute('aria-live')).toBe('polite');
+    const announcedCopy = objective.children[1];
+    const movingMarker = tutorialState('movement', 'playing');
+    game.emit({ ...movingMarker, tutorial: { ...movingMarker.tutorial!, marker: { x: 8, y: 7 } } });
+    expect(objective.children[1]).toBe(announcedCopy);
+    game.emit(tutorialState('movement', 'playing', true));
+    expect(page.screen()).toBe('paused');
+    expect(objective.hidden).toBe(true);
+    page.action('help').click();
+    expect(page.action('try-out').disabled).toBe(true);
+    page.action('back').click();
+    expect(page.screen()).toBe('paused');
+    expect(game.resume).toHaveBeenCalledOnce();
+    page.action('resume').click();
+    expect(game.resume).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['success', 'retry'] as const)('keeps a %s checkpoint paused through keyboard shortcuts', async (phase) => {
+    const page = setup();
+    page.action('help').click();
+    page.action('try-out').click();
+    await flushStart();
+    page.games[0].emit(tutorialState('movement', phase));
+    page.key('Escape');
+    page.key(' ', page.find('[role="dialog"]'));
+    expect(page.screen()).toBe('tutorial');
+    expect(page.games[0].resume).not.toHaveBeenCalled();
+    page.action('retry-lesson').click();
+    await flushStart();
+    expect(page.games[0].destroy).toHaveBeenCalledOnce();
+    expect(page.games[1].options.tutorialLesson).toBe('movement');
+    expect(page.screen()).toBe('tutorial');
+  });
+
+  it('advances all lessons with fresh runtimes, ignores obsolete callbacks, and starts the configured normal map', async () => {
+    const page = setup([], 'default');
+    page.action('help').click();
+    page.action('try-out').click();
+    await flushStart();
+    for (const [index, lesson] of TUTORIAL_LESSONS.entries()) {
+      const game = page.games[index];
+      expect(game.options.tutorialLesson).toBe(lesson.id);
+      game.emit(tutorialState(lesson.id, 'success'));
+      page.action('next-lesson').click();
+      await flushStart();
+      if (index < TUTORIAL_LESSONS.length - 1) {
+        expect(game.destroy).toHaveBeenCalledOnce();
+        game.emit(tutorialState(lesson.id, 'retry'));
+        expect(page.find('[data-tutorial-phase]').getAttribute('data-tutorial-phase')).toBe('introduction');
+      }
+    }
+    expect(page.screen()).toBe('tutorial-complete');
+    expect(page.store.getRecentRecords('demo')).toEqual([]);
+    expect(page.store.getRecentRecords('default')).toEqual([]);
+    expect(page.storage.setItem).not.toHaveBeenCalled();
+    page.action('start').click();
+    await flushStart();
+    expect(page.games[TUTORIAL_LESSONS.length].options).toMatchObject({ mapVariant: 'default' });
+    expect(page.games[TUTORIAL_LESSONS.length].options.tutorialLesson).toBeUndefined();
+    expect(page.screen()).toBe('playing');
+  });
+
+  it('retries a failed lesson startup and returns to help with focus on exit', async () => {
+    const loading = pendingStart();
+    const page = setup([Promise.resolve(), loading.promise]);
+    page.action('help').click();
+    page.action('try-out').click();
+    await flushStart();
+    page.games[0].emit(tutorialState('movement', 'success'));
+    page.action('next-lesson').click();
+    loading.reject(new Error('Lesson could not load'));
+    await flushStart();
+    expect(page.screen()).toBe('error');
+    page.action('retry').click();
+    await flushStart();
+    expect(page.games[2].options.tutorialLesson).toBe('firewall');
+    page.action('exit-tutorial').click();
+    expect(page.screen()).toBe('help');
+    expect(page.document.activeElement).toBe(page.action('try-out'));
+    expect(page.games[2].destroy).toHaveBeenCalledOnce();
+    page.action('back').click();
+    expect(page.screen()).toBe('title');
+  });
+
+  it('cancels a loading tutorial without accepting later startup or result callbacks', async () => {
+    const loading = pendingStart();
+    const page = setup([loading.promise]);
+    page.action('help').click();
+    page.action('try-out').click();
+    const cancelled = page.games[0];
+    page.action('exit-tutorial').click();
+    cancelled.emit({ ...tutorialState('movement', 'success'), result: loss });
+    loading.resolve();
+    await flushStart();
+    expect(page.screen()).toBe('help');
+    expect(page.document.activeElement).toBe(page.action('try-out'));
+    expect(cancelled.destroy).toHaveBeenCalledOnce();
+    expect(page.storage.setItem).not.toHaveBeenCalled();
+  });
+
   it('keeps one ambient layer across menu navigation, settings changes, gameplay and results', async () => {
     const page = setup();
     await vi.dynamicImportSettled();

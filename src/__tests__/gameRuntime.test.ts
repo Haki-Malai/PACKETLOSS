@@ -4,10 +4,15 @@ import { ComposedGame, RuntimeState } from '../game/app/contracts';
 import { GameCompositionRoot } from '../game/app/GameCompositionRoot';
 import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import { PacketEntity } from '../game/domain/entities/PacketEntity';
+import { EnemyDecisionService } from '../game/domain/services/EnemyDecisionService';
 import { MovementRules } from '../game/domain/services/MovementRules';
+import { PortalService } from '../game/domain/services/PortalService';
 import { WorldState } from '../game/domain/world/WorldState';
+import { SeededRandom } from '../game/shared/random/SeededRandom';
 import { CollectibleSystem } from '../game/systems/CollectibleSystem';
+import { EnemyMovementSystem } from '../game/systems/EnemyMovementSystem';
 import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
+import { TutorialController } from '../game/tutorial/TutorialController';
 import { getGameState, resetGameState } from '../state/gameState';
 import { createCollisionTile, createMapFixture } from './fixtures/pointLayoutFixtures';
 
@@ -63,12 +68,13 @@ function createComposedGame() {
   };
 }
 
-function createFinishingGame(kind: 'pellet' | 'power-pellet', enemyState?: 'dangerous' | 'scared') {
-  const { composed } = createComposedGame();
-  const { map, collisionGrid } = createMapFixture([[createCollisionTile(), createCollisionTile()]]);
-  map.collectibleObjects = [{ type: kind, x: 8, y: 8 }];
+function createFinishingGame(kind: 'pellet' | 'power-pellet', enemyState?: 'dangerous' | 'scared', pointTile = { x: 0, y: 0 }) {
+  const { composed, spies } = createComposedGame();
+  const { map, collisionGrid } = createMapFixture(Array.from({ length: pointTile.y + 1 },
+    () => Array.from({ length: pointTile.x + 2 }, () => createCollisionTile())));
+  map.collectibleObjects = [{ type: kind, x: pointTile.x * 16 + 8, y: pointTile.y * 16 + 8 }];
   const movement = new MovementRules(16);
-  const packet = new PacketEntity({ x: 0, y: 0 }, 10, 10);
+  const packet = new PacketEntity(pointTile, 10, 10);
   movement.setEntityTile(packet, packet.tile);
   const enemy = new EnemyEntity({
     key: 'virus', tile: packet.tile, direction: 'left', speed: 1, displayWidth: 10, displayHeight: 10,
@@ -85,7 +91,7 @@ function createFinishingGame(kind: 'pellet' | 'power-pellet', enemyState?: 'dang
   composed.world = world;
   composed.updateSystems = [collisions, collectibles];
   composed.getRemainingPointCount = () => collectibles.getPointCount();
-  return { composed, world, collectibles };
+  return { composed, world, collectibles, spies };
 }
 
 describe('GameRuntime', () => {
@@ -262,6 +268,82 @@ describe('GameRuntime', () => {
     nextFrame?.(50);
     expect(spies.world.isMoving).toBe(true);
     expect(onStateChange).toHaveBeenCalledExactlyOnceWith({ paused: false, result: null });
+    runtime.destroy();
+  });
+
+  it('starts practice frozen and holds a real dangerous encounter for a lesson retry without a result', async () => {
+    const { composed, world, collectibles, spies } = createFinishingGame('pellet', 'dangerous');
+    composed.tutorial = new TutorialController('firewall', world, new MovementRules(16), collectibles);
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime({ compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot,
+      onStateChange);
+    await runtime.start();
+    nextFrame?.(1);
+    nextFrame?.(40);
+    emitWindowEvent('blur');
+    emitWindowEvent('focus');
+    expect(world.packet.deathAnimationRemainingMs).toBe(0);
+    expect(spies.scheduler.update).not.toHaveBeenCalled();
+    expect(spies.scheduler.setPaused).toHaveBeenLastCalledWith(true);
+    expect(onStateChange.mock.lastCall?.[0]).toMatchObject({ paused: true, result: null,
+      tutorial: { lesson: 'firewall', phase: 'introduction' } });
+
+    runtime.resume();
+    nextFrame?.(60);
+    expect(world.packet.deathAnimationRemainingMs).toBe(900);
+    expect(collectibles.getPointCount()).toBe(1);
+    expect(onStateChange.mock.lastCall?.[0]).toMatchObject({ paused: true, result: null,
+      tutorial: { phase: 'retry' } });
+    runtime.resume();
+    emitWindowEvent('blur');
+    emitWindowEvent('focus');
+    nextFrame?.(100);
+    expect(world.packet.deathAnimationRemainingMs).toBe(900);
+    expect(world.isMoving).toBe(false);
+    expect(onStateChange.mock.calls.map(([state]) => state.tutorial?.phase))
+      .toEqual(['introduction', 'playing', 'retry']);
+    runtime.destroy();
+  });
+
+  it('pauses after the last power pickup and enemy capture without turning practice into a completed run', async () => {
+    const { composed, world, collectibles, spies } = createFinishingGame('power-pellet', 'dangerous', { x: 7, y: 7 });
+    const movement = new MovementRules(16);
+    const enemy = world.enemies[0];
+    enemy.key = 'firewall';
+    movement.setEntityTile(enemy, { x: 8, y: 7 });
+    composed.updateSystems.unshift(new EnemyMovementSystem(world, movement, new EnemyDecisionService(),
+      new PortalService(world.collisionGrid), new SeededRandom(1)));
+    composed.tutorial = new TutorialController('power', world, movement, collectibles);
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime({ compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot,
+      onStateChange);
+    await runtime.start();
+    runtime.resume();
+    nextFrame?.(1);
+    nextFrame?.(20);
+    expect(collectibles.getPointCount()).toBe(0);
+    expect(world.outcome).toBeNull();
+    expect(onStateChange.mock.lastCall?.[0]).toMatchObject({ paused: true, result: null,
+      tutorial: { phase: 'explanation' } });
+    const timerCalls = spies.scheduler.update.mock.calls.length;
+    nextFrame?.(60);
+    expect(spies.scheduler.update).toHaveBeenCalledTimes(timerCalls);
+
+    movement.setEntityTile(enemy, world.packet.tile);
+    runtime.resume();
+    nextFrame?.(80);
+    expect(enemy.state.dead).toBe(true);
+    for (let frame = 1; frame <= 28; frame += 1) nextFrame?.(80 + frame * 17);
+    expect(onStateChange.mock.lastCall?.[0]).toMatchObject({ paused: true, result: null,
+      tutorial: { phase: 'success' } });
+    runtime.resume();
+    emitWindowEvent('blur');
+    emitWindowEvent('focus');
+    nextFrame?.(620);
+    expect(world.isMoving).toBe(false);
+    expect(onStateChange.mock.calls.map(([state]) => state.tutorial?.phase))
+      .toEqual(['introduction', 'playing', 'explanation', 'playing', 'success']);
+    expect(onStateChange.mock.calls.every(([state]) => state.result === null)).toBe(true);
     runtime.destroy();
   });
 

@@ -7,6 +7,12 @@ import {
     type MenuMotion,
 } from '../infrastructure/adapters/LocalProfileStore';
 import { createMenuPanel, element, menuButton, type MenuPanel } from './MenuPanel';
+import {
+    getTutorialLesson,
+    TUTORIAL_LESSONS,
+    type TutorialLessonId,
+    type TutorialSnapshot,
+} from '../tutorial/TutorialLesson';
 
 type Screen =
     | 'title'
@@ -18,6 +24,8 @@ type Screen =
     | 'help'
     | 'profile'
     | 'confirm'
+    | 'tutorial'
+    | 'tutorial-complete'
     | 'error';
 
 interface GameShellOptions {
@@ -40,6 +48,7 @@ export class GameShell {
     private readonly viewport = element('div', 'game-viewport');
     private readonly ui = element('section', 'packet-ui');
     private readonly menuViewport = element('div', 'packet-menu-viewport');
+    private readonly tutorialObjective = element('aside', 'packet-tutorial-objective');
     private readonly store: LocalProfileStore;
     private disposeMenuPreview: (() => void) | null = null;
     private game: PacketGame | null = null;
@@ -54,6 +63,8 @@ export class GameShell {
     } | null = null;
     private panel: HTMLElement | null = null;
     private result: RunResult | null = null;
+    private tutorialLesson: TutorialLessonId | null = null;
+    private tutorial: TutorialSnapshot | null = null;
     private newBest = false;
     private errorMessage = '';
     private generation = 0;
@@ -66,9 +77,12 @@ export class GameShell {
         this.store = options.store ?? new LocalProfileStore();
         this.viewport.id = 'packet-scene';
         this.ui.setAttribute('aria-label', 'Game menu');
+        this.tutorialObjective.setAttribute('role', 'status');
+        this.tutorialObjective.setAttribute('aria-live', 'polite');
+        this.tutorialObjective.hidden = true;
         this.ui.append(this.createAmbient(), this.menuViewport);
         this.root.classList.add('game-shell');
-        this.root.replaceChildren(this.viewport, this.ui);
+        this.root.replaceChildren(this.viewport, this.ui, this.tutorialObjective);
         this.applyMotion();
         this.ui.addEventListener('pointerdown', this.claimPause, true);
         window.addEventListener('keydown', this.handleKeyDown);
@@ -88,6 +102,7 @@ export class GameShell {
         window.removeEventListener('keydown', this.handleKeyDown);
         document.removeEventListener('fullscreenchange', this.handleFullscreenChange);
         this.ui.remove();
+        this.tutorialObjective.remove();
         this.viewport.remove();
         this.root.classList.remove('game-shell');
         this.root.removeAttribute('data-menu-motion');
@@ -97,30 +112,46 @@ export class GameShell {
         if (this.screen !== 'playing') this.game?.pause();
     };
 
-    private startRun(): void {
+    private startRun(tutorialLesson?: TutorialLessonId): void {
         if (this.destroyed || this.screen === 'loading') return;
         const generation = ++this.generation;
         this.game?.destroy();
         this.game = null;
         this.result = null;
+        this.tutorialLesson = tutorialLesson ?? null;
+        this.tutorial = tutorialLesson
+            ? {
+                  lesson: tutorialLesson,
+                  phase: 'introduction',
+                  objective: getTutorialLesson(tutorialLesson).objective,
+                  message: getTutorialLesson(tutorialLesson).introduction,
+                  marker: null,
+              }
+            : null;
         this.newBest = false;
         const id =
             globalThis.crypto?.randomUUID?.() ??
             `${Date.now()}-${generation}-${Math.random().toString(36).slice(2)}`;
         const nickname = this.store.getNickname();
         this.show('loading');
-        void this.initializeRun(generation, id, nickname).catch((error: unknown) =>
+        void this.initializeRun(generation, id, nickname, tutorialLesson).catch((error: unknown) =>
             this.failStartup(error, generation)
         );
     }
 
-    private async initializeRun(generation: number, id: string, nickname: string): Promise<void> {
+    private async initializeRun(
+        generation: number,
+        id: string,
+        nickname: string,
+        tutorialLesson?: TutorialLessonId
+    ): Promise<void> {
         const createGame =
             this.options.createGame ?? (await import('../app/createPacketGame')).createPacketGame;
         if (this.destroyed || this.generation !== generation) return;
         const game = createGame({
             mountId: this.viewport.id,
-            mapVariant: this.options.mapVariant,
+            mapVariant: tutorialLesson ? 'demo' : this.options.mapVariant,
+            ...(tutorialLesson ? { tutorialLesson } : {}),
             onStateChange: (state) => {
                 if (!this.destroyed && this.generation === generation)
                     this.receiveState(state, id, nickname);
@@ -129,7 +160,7 @@ export class GameShell {
         this.game = game;
         await game.start();
         if (!this.destroyed && this.generation === generation && this.screen === 'loading')
-            this.show('playing');
+            this.show(tutorialLesson ? 'tutorial' : 'playing');
     }
 
     private failStartup(error: unknown, generation: number): void {
@@ -143,6 +174,19 @@ export class GameShell {
     }
 
     private receiveState(state: RuntimeState, id: string, nickname: string): void {
+        if (this.tutorialLesson) {
+            if (!state.tutorial || state.tutorial.lesson !== this.tutorialLesson) return;
+            const previous = this.tutorial;
+            this.tutorial = state.tutorial;
+            if (state.tutorial.phase !== 'playing') {
+                this.show('tutorial');
+            } else if (state.paused) {
+                if (this.screen === 'playing' || this.screen === 'loading') this.show('paused');
+            } else if (this.screen !== 'playing' || previous?.objective !== state.tutorial.objective) {
+                this.show('playing');
+            }
+            return;
+        }
         if (state.result) {
             if (this.result) return;
             this.result = state.result;
@@ -168,14 +212,35 @@ export class GameShell {
         this.game?.destroy();
         this.game = null;
         this.result = null;
+        this.tutorialLesson = null;
+        this.tutorial = null;
         this.viewport.replaceChildren();
         this.show('title');
     }
 
     private resume(): void {
         if (!this.game || this.result) return;
+        if (this.tutorial?.phase === 'success' || this.tutorial?.phase === 'retry') return;
         this.game.resume();
-        if (this.screen !== 'playing') this.show('playing');
+        if (!this.tutorialLesson && this.screen !== 'playing') this.show('playing');
+    }
+
+    private exitTutorial(): void {
+        this.generation += 1;
+        this.game?.destroy();
+        this.game = null;
+        this.result = null;
+        this.tutorialLesson = null;
+        this.tutorial = null;
+        this.viewport.replaceChildren();
+        this.parentScreen = 'title';
+        this.returnAction = 'help';
+        this.show('help');
+        this.ui.querySelector<HTMLElement>('[data-action="try-out"]')?.focus();
+    }
+
+    private retrySession(): void {
+        this.startRun(this.tutorialLesson ?? undefined);
     }
 
     private submenu(screen: 'settings' | 'help' | 'profile', action: string): void {
@@ -241,6 +306,19 @@ export class GameShell {
         this.disposeMenuPreview = null;
         this.screen = screen;
         this.ui.hidden = screen === 'playing';
+        this.tutorialObjective.hidden = screen !== 'playing' || !this.tutorial;
+        if (this.tutorial && screen === 'playing') {
+            const lesson = getTutorialLesson(this.tutorial.lesson);
+            const number = TUTORIAL_LESSONS.findIndex((entry) => entry.id === lesson.id) + 1;
+            this.tutorialObjective.replaceChildren(
+                element(
+                    'p',
+                    'packet-eyebrow',
+                    `Practice · ${number} / ${TUTORIAL_LESSONS.length} · ${lesson.title}`
+                ),
+                element('p', 'packet-copy', this.tutorial.objective)
+            );
+        }
         this.viewport.inert = screen !== 'playing';
         this.ui.setAttribute('data-screen', screen);
         this.ui.setAttribute('data-backdrop', this.game ? 'scene' : 'title');
@@ -268,6 +346,11 @@ export class GameShell {
             loading: ['Connecting', 'Loading the maze'],
             error: ['Signal interrupted', 'Unable to start'],
             confirm: ['One more thing', 'Are you sure?'],
+            tutorial: [
+                `Practice · Lesson ${TUTORIAL_LESSONS.findIndex((lesson) => lesson.id === this.tutorialLesson) + 1} of ${TUTORIAL_LESSONS.length}`,
+                this.tutorialLesson ? getTutorialLesson(this.tutorialLesson).title : 'Try Out',
+            ],
+            'tutorial-complete': ['Practice complete', 'READY TO PLAY'],
         };
         const [eyebrow, title] = titles[screen];
         const panel = createMenuPanel({
@@ -303,11 +386,36 @@ export class GameShell {
             case 'profile':
                 this.renderProfile(panel);
                 break;
+            case 'tutorial':
+                this.renderTutorial(panel);
+                break;
+            case 'tutorial-complete':
+                panel.body.append(
+                    element(
+                        'p',
+                        'packet-copy',
+                        'You have tried every mechanic. Take your signal into the full maze when you are ready.'
+                    )
+                );
+                panel.actions.append(
+                    this.button('Start game', 'start', () => this.startRun(), 'packet-primary'),
+                    this.button('Replay tutorial', 'replay-tutorial', () =>
+                        this.startRun('movement')
+                    ),
+                    this.button('Back to How to play', 'exit-tutorial', () => this.exitTutorial())
+                );
+                break;
             case 'loading':
                 panel.body.append(
-                    element('p', 'packet-copy packet-loading', 'Preparing your run…')
+                    element(
+                        'p',
+                        'packet-copy packet-loading',
+                        this.tutorialLesson
+                            ? 'Preparing your practice lesson…'
+                            : 'Preparing your run…'
+                    )
                 );
-                panel.actions.append(this.button('Main menu', 'main-menu', () => this.mainMenu()));
+                panel.actions.append(this.sessionExitButton());
                 panel.body.querySelector('.packet-loading')?.setAttribute('role', 'status');
                 break;
             case 'error': {
@@ -315,8 +423,8 @@ export class GameShell {
                 error.setAttribute('role', 'alert');
                 panel.body.append(error);
                 panel.actions.append(
-                    this.button('Retry', 'retry', () => this.startRun(), 'packet-primary'),
-                    this.button('Main menu', 'main-menu', () => this.mainMenu())
+                    this.button('Retry', 'retry', () => this.retrySession(), 'packet-primary'),
+                    this.sessionExitButton()
                 );
                 break;
             }
@@ -390,6 +498,24 @@ export class GameShell {
     }
 
     private renderPause(panel: MenuPanel): void {
+        if (this.tutorialLesson) {
+            panel.body.append(element('p', 'packet-copy', this.tutorial?.objective));
+            panel.actions.append(
+                this.button('Resume', 'resume', () => this.resume(), 'packet-primary'),
+                this.button('Retry lesson', 'retry-lesson', () => this.retrySession()),
+                this.button('Settings', 'settings', () => this.submenu('settings', 'settings')),
+                this.button('How to play', 'help', () => this.submenu('help', 'help')),
+                this.sessionExitButton()
+            );
+            panel.footer.append(
+                element(
+                    'p',
+                    'packet-note',
+                    'Practice is not recorded. Retry this lesson as often as you like.'
+                )
+            );
+            return;
+        }
         panel.body.append(element('p', 'packet-copy', 'Take a breath. The maze can wait.'));
         panel.actions.append(
             this.button('Resume', 'resume', () => this.resume(), 'packet-primary'),
@@ -412,6 +538,65 @@ export class GameShell {
         );
         panel.footer.append(
             element('p', 'packet-note', 'Escape to resume · Space activates the focused button')
+        );
+    }
+
+    private sessionExitButton(): HTMLButtonElement {
+        return this.tutorialLesson
+            ? this.button('Exit tutorial', 'exit-tutorial', () => this.exitTutorial())
+            : this.button('Main menu', 'main-menu', () => this.mainMenu());
+    }
+
+    private renderTutorial(panel: MenuPanel): void {
+        const tutorial = this.tutorial;
+        if (!tutorial) return;
+        panel.root.setAttribute('data-tutorial-phase', tutorial.phase);
+        if (tutorial.phase === 'success' || tutorial.phase === 'retry') {
+            panel.body.append(
+                element(
+                    'p',
+                    'packet-eyebrow',
+                    tutorial.phase === 'success' ? 'Lesson complete' : 'Try that again'
+                )
+            );
+        }
+        panel.body.append(element('p', 'packet-copy', tutorial.message));
+        if (tutorial.phase === 'introduction' || tutorial.phase === 'explanation') {
+            panel.actions.append(
+                this.button(
+                    tutorial.phase === 'introduction' ? 'Try it' : 'Continue',
+                    'try-lesson',
+                    () => this.resume(),
+                    'packet-primary'
+                )
+            );
+        } else if (tutorial.phase === 'success') {
+            const next =
+                TUTORIAL_LESSONS[
+                    TUTORIAL_LESSONS.findIndex((lesson) => lesson.id === tutorial.lesson) + 1
+                ];
+            panel.actions.append(
+                this.button(
+                    next ? 'Next lesson' : 'Finish tutorial',
+                    'next-lesson',
+                    () => (next ? this.startRun(next.id) : this.show('tutorial-complete')),
+                    'packet-primary'
+                )
+            );
+        }
+        if (tutorial.phase !== 'introduction') {
+            panel.actions.append(
+                this.button(
+                    'Retry lesson',
+                    'retry-lesson',
+                    () => this.retrySession(),
+                    tutorial.phase === 'retry' ? 'packet-primary' : ''
+                )
+            );
+        }
+        panel.actions.append(this.sessionExitButton());
+        panel.footer.append(
+            element('p', 'packet-note', 'The maze is paused. Practice scores are not saved.')
         );
     }
 
@@ -550,6 +735,27 @@ export class GameShell {
             instructions.append(element('dt', '', label), element('dd', '', text));
         }
         basics.append(heading, instructions);
+        const practice = element('div', 'packet-practice-entry');
+        const tryOut = this.button(
+            'Try Out',
+            'try-out',
+            () => {
+                if (!this.game && !this.tutorialLesson) this.startRun('movement');
+            },
+            'packet-primary'
+        );
+        tryOut.disabled = Boolean(this.game || this.tutorialLesson);
+        const practiceNote = element(
+            'p',
+            'packet-note',
+            tryOut.disabled
+                ? 'Return to the main menu to try the tutorial.'
+                : 'Learn each mechanic in a guided practice maze. Pause, try it, and retry as often as you like.'
+        );
+        practiceNote.id = 'packet-practice-note';
+        tryOut.setAttribute('aria-describedby', practiceNote.id);
+        practice.append(tryOut, practiceNote);
+        basics.append(practice);
         const enemies = this.enemyGuide();
         layout.append(basics, enemies);
         panel.body.append(layout);
@@ -728,7 +934,11 @@ export class GameShell {
             event.preventDefault();
             if (this.screen === 'paused') this.resume();
             else if (['settings', 'help', 'profile', 'confirm'].includes(this.screen)) this.back();
-            else if (['loading', 'error', 'result'].includes(this.screen)) this.mainMenu();
+            else if (this.screen === 'tutorial-complete') this.exitTutorial();
+            else if (['loading', 'error', 'result'].includes(this.screen)) {
+                if (this.tutorialLesson) this.exitTutorial();
+                else this.mainMenu();
+            }
         } else if ((event.code === 'Space' || event.key === ' ') && this.screen === 'paused') {
             const target = event.target as HTMLElement | null;
             if (target?.closest('button,input,select,textarea,a,[contenteditable="true"]')) return;

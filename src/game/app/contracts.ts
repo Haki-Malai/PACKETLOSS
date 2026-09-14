@@ -2,6 +2,8 @@ import { WorldState } from '../domain/world/WorldState';
 import { BrowserInputAdapter } from '../infrastructure/adapters/BrowserInputAdapter';
 import { RendererViewport } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { TimerSchedulerAdapter } from '../infrastructure/adapters/TimerSchedulerAdapter';
+import type { TutorialController } from '../tutorial/TutorialController';
+import type { TutorialSnapshot } from '../tutorial/TutorialLesson';
 
 export interface RunResult {
   outcome: 'lost' | 'cleared';
@@ -15,6 +17,7 @@ export interface RunResult {
 export interface RuntimeState {
   paused: boolean;
   result: RunResult | null;
+  tutorial?: TutorialSnapshot;
 }
 
 export interface PacketGame {
@@ -51,5 +54,6 @@ export interface ComposedGame {
   updateSystems: UpdateCapableSystem[];
   renderSystems: RenderCapableSystem[];
   getRemainingPointCount(): number;
+  tutorial?: TutorialController;
   destroy: () => void;
 }

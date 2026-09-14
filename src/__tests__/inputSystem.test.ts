@@ -1,8 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { WorldState } from '../game/domain/world/WorldState';
 import { createHarness } from './fixtures/inputFixtures';
+import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
+import type { BrowserInputAdapter } from '../game/infrastructure/adapters/BrowserInputAdapter';
+import { InputSystem } from '../game/systems/InputSystem';
 
 describe('InputSystem', () => {
+  it.each([true, false])('enables debug power only when its shortcut is allowed (%s)', (allowPowerShortcut) => {
+    const { input, world, system: original } = createHarness();
+    original.destroy();
+    const togglePause = vi.fn<() => void>();
+    const enemy = new EnemyEntity({
+      key: 'lag', tile: { x: 2, y: 2 }, direction: 'right', speed: 0.5,
+      displayWidth: 11, displayHeight: 11,
+    });
+    enemy.state.free = true;
+    world.enemies = [enemy];
+    world.enemyScaredTimers = new Map();
+    world.enemyScaredWarnings = new Map();
+    world.lagZones = [{ tile: { x: 1, y: 2 }, x: 24, y: 40, radius: 8, ageMs: 0, durationMs: 4000 }];
+    const system = new InputSystem(input as unknown as BrowserInputAdapter, world, { togglePause }, allowPowerShortcut);
+    system.start();
+    input.emitKeyDown({ code: 'KeyH', key: 'h', preventDefault: vi.fn() } as unknown as KeyboardEvent);
+    expect(enemy.state.scared).toBe(allowPowerShortcut);
+    expect(world.lagZones).toHaveLength(allowPowerShortcut ? 0 : 1);
+    input.emitKeyDown({ code: 'Escape', key: 'Escape', preventDefault: vi.fn() } as unknown as KeyboardEvent);
+    expect(togglePause).toHaveBeenCalledOnce();
+    system.destroy();
+  });
+
   it.each(['paused', 'lost', 'cleared'] as const)('ignores movement, pause and debug keys while %s', (state) => {
     const { input, world, togglePause, system } = createHarness();
     if (state === 'paused') world.isMoving = false;

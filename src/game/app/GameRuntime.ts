@@ -56,6 +56,11 @@ export class GameRuntime implements PacketGame {
       composed.updateSystems.forEach((system) => {
         system.start?.();
       });
+      if (composed.tutorial) {
+        composed.world.isMoving = false;
+        composed.scheduler.setPaused(true);
+        composed.input.reset();
+      }
       this.loop.start();
       this.notifyState();
     } catch (error) {
@@ -76,11 +81,13 @@ export class GameRuntime implements PacketGame {
 
   resume(): void {
     this.pausedByFocusLoss = false;
+    if (this.composed?.tutorial && !this.composed.tutorial.resume()) return;
     this.setPaused(false);
   }
 
   private setPaused(paused: boolean): void {
-    if (!this.composed || this.composed.world.outcome || this.composed.world.isMoving === !paused) return;
+    if (!this.composed || (!this.composed.tutorial && this.composed.world.outcome)
+      || this.composed.world.isMoving === !paused) return;
     this.presentationReady = false;
     this.composed.world.isMoving = !paused;
     this.composed.input.reset();
@@ -90,7 +97,11 @@ export class GameRuntime implements PacketGame {
 
   private notifyState(): void {
     if (!this.composed || this.destroyed) return;
-    this.onStateChange?.({ paused: !this.composed.world.isMoving, result: this.result });
+    this.onStateChange?.({
+      paused: !this.composed.world.isMoving,
+      result: this.result,
+      ...(this.composed.tutorial ? { tutorial: this.composed.tutorial.getSnapshot() } : {}),
+    });
   }
 
   destroy(): void {
@@ -230,6 +241,9 @@ export class GameRuntime implements PacketGame {
     this.composed.renderSystems.forEach((system) => {
       system.capturePreviousState?.();
     });
+    const tutorial = this.composed.tutorial;
+    const tutorialSnapshot = tutorial?.getSnapshot();
+    tutorial?.beforeUpdate();
     this.composed.world.nextTick();
     this.elapsedMs += deltaMs;
     this.composed.scheduler.update(deltaMs);
@@ -237,7 +251,15 @@ export class GameRuntime implements PacketGame {
     this.composed.updateSystems.forEach((system) => {
       system.update(deltaMs);
     });
-    this.finishRunIfComplete();
+    if (tutorial) {
+      tutorial.update(deltaMs);
+      if (tutorial.getSnapshot() !== tutorialSnapshot) {
+        if (tutorial.getSnapshot().phase === 'playing') this.notifyState();
+        else this.pause();
+      }
+    } else {
+      this.finishRunIfComplete();
+    }
     if (!this.composed) return;
     this.presentationReady = this.composed.world.isMoving;
   };
