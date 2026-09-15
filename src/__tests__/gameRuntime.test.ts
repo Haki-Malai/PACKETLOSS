@@ -270,8 +270,12 @@ describe('GameRuntime', () => {
     spies.scheduler.update.mockClear();
     spies.update.mockClear();
     nextFrame?.(40);
-    expect(spies.scheduler.update).toHaveBeenLastCalledWith((1000 / 60) * 1.25);
-    expect(spies.update).toHaveBeenLastCalledWith((1000 / 60) * 1.25);
+    expect(spies.scheduler.update).toHaveBeenCalledTimes(2);
+    expect(spies.scheduler.update.mock.calls[0]?.[0]).toBeCloseTo(1000 / 60);
+    expect(spies.scheduler.update.mock.calls[1]?.[0]).toBeCloseTo((1000 / 60) * 0.25);
+    expect(spies.update).toHaveBeenCalledTimes(2);
+    expect(spies.update.mock.calls[0]?.[0]).toBeCloseTo(1000 / 60);
+    expect(spies.update.mock.calls[1]?.[0]).toBeCloseTo((1000 / 60) * 0.25);
 
     remaining = 0;
     nextFrame?.(60);

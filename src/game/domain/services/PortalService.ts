@@ -65,6 +65,14 @@ export class PortalService {
     return !this.isDestinationFullyBlocking(context.portalLink, collisionGrid);
   }
 
+  /** Returns the remaining outward travel before teleportation, or null outside a usable portal exit. */
+  getDistanceToTeleport(entity: PortalTrackedEntity, collisionGrid: CollisionGrid, tileSize = 16): number | null {
+    const context = this.resolvePortalContext(entity);
+    if (!context || this.isDestinationFullyBlocking(context.portalLink, collisionGrid)) return null;
+    const safeTileSize = Number.isFinite(tileSize) && tileSize > 0 ? tileSize : 16;
+    return Math.max(0, safeTileSize / 2 - this.resolveOutwardOffset(entity.moved, context.direction));
+  }
+
   getTransition(tile: TilePosition, direction: Direction, collisionGrid: CollisionGrid): TilePosition | null {
     const link = this.portalPairs.get(tileKey(tile));
     if (!link || link.outwardDirection !== direction || this.isDestinationFullyBlocking(link, collisionGrid)) {

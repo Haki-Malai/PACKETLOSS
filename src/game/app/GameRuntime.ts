@@ -1,5 +1,6 @@
 import { FixedStepLoop } from '../../engine/loop';
 import { LEVEL_MULTIPLIER_STEP } from '../../config/constants';
+import { MOVEMENT_STEP_MS } from '../domain/services/MovementRules';
 import { getGameState } from '../../state/gameState';
 import {
   ComposedGame,
@@ -263,7 +264,7 @@ export class GameRuntime implements PacketGame {
     this.resume();
   }
 
-  /** Advances active simulation or holds it at an exact frame while paused or debug-frozen. */
+  /** Advances scaled gameplay in bounded slices while frame-owned systems run once. */
   private readonly update = (deltaMs: number): void => {
     if (!this.composed || this.destroyed) {
       return;
@@ -282,27 +283,37 @@ export class GameRuntime implements PacketGame {
     this.composed.renderSystems.forEach((system) => {
       system.capturePreviousState?.();
     });
-    const tutorial = this.composed.tutorial;
-    const tutorialSnapshot = tutorial?.getSnapshot();
-    tutorial?.beforeUpdate();
-    this.composed.world.nextTick();
     this.elapsedMs += deltaMs;
     const simulationDeltaMs = deltaMs * this.composed.world.levelMultiplier;
-    this.composed.scheduler.update(simulationDeltaMs);
+    const beforeSystems = this.composed.updateSystems.filter((system) => system.updatePhase === 'beforeSimulation');
+    const simulationSystems = this.composed.updateSystems.filter((system) => !system.updatePhase || system.updatePhase === 'simulation');
+    const afterSystems = this.composed.updateSystems.filter((system) => system.updatePhase === 'afterSimulation');
+    beforeSystems.forEach((system) => system.update(deltaMs));
 
-    this.composed.updateSystems.forEach((system) => {
-      system.update(simulationDeltaMs);
-    });
-    if (tutorial) {
-      tutorial.update(simulationDeltaMs);
-      if (tutorial.getSnapshot() !== tutorialSnapshot) {
+    let remainingMs = simulationDeltaMs;
+    while (remainingMs > Number.EPSILON && this.composed?.world.isMoving) {
+      const maximumSliceMs = Math.min(remainingMs, MOVEMENT_STEP_MS);
+      const sliceMs = simulationSystems.reduce((boundaryMs, system) => {
+        const candidate = system.getSimulationBoundaryMs?.(boundaryMs) ?? boundaryMs;
+        return candidate > Number.EPSILON ? Math.min(boundaryMs, candidate) : boundaryMs;
+      }, maximumSliceMs);
+      const tutorial = this.composed.tutorial;
+      const tutorialSnapshot = tutorial?.getSnapshot();
+      tutorial?.beforeUpdate();
+      this.composed.world.nextTick();
+      this.composed.scheduler.update(sliceMs);
+      simulationSystems.forEach((system) => system.update(sliceMs));
+      tutorial?.update(sliceMs);
+      if (tutorial && tutorial.getSnapshot() !== tutorialSnapshot) {
         if (tutorial.getSnapshot().phase === 'playing') this.notifyState();
         else this.pause();
+      } else if (!tutorial) {
+        this.handleRunProgression();
       }
-    } else {
-      this.handleRunProgression();
+      remainingMs -= sliceMs;
     }
     if (!this.composed) return;
+    afterSystems.forEach((system) => system.update(deltaMs));
     this.presentationReady = this.composed.world.isMoving;
   };
 

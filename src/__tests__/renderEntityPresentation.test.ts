@@ -40,6 +40,25 @@ describe('RenderSystem entity presentation', () => {
     resetGameState();
   });
 
+  it('interpolates through intermediate corridor samples instead of cutting across a turn', () => {
+    const { world, packetModel, renderSystem } = createEntityHarness();
+    const startX = world.packet.x;
+    const startY = world.packet.y;
+    renderSystem.capturePreviousState();
+    world.packet.x += 4;
+    renderSystem.update(8);
+    world.packet.y += 4;
+    renderSystem.update(8);
+
+    renderSystem.render(0.25);
+    expect(packetModel.position.x).toBeCloseTo(startX + 2);
+    expect(packetModel.position.z).toBeCloseTo(startY);
+    renderSystem.render(0.75);
+    expect(packetModel.position.x).toBeCloseTo(startX + 4);
+    expect(packetModel.position.z).toBeCloseTo(startY + 2);
+    renderSystem.destroy();
+  });
+
   it('keeps the Packet and its shadow cut out after the final death timer reaches zero', () => {
     const { world, enemy, packetModel, renderSystem } = createEntityHarness();
     const movement = new MovementRules(world.tileSize);

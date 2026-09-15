@@ -6,7 +6,7 @@ PACKETLOSS is a work-in-progress maze arcade game for desktop and mobile browser
 
 ### Movement and mazes
 
-The Packet moves along the maze corridors. Direction inputs queue the next turn, which takes effect when the path allows it. Walls and maze boundaries constrain movement. Linked portals let the Packet and enemies travel between parts of the maze; the Packet briefly blinks and is protected from harmful enemy collisions after teleporting.
+The Packet moves along the maze corridors. Perpendicular direction inputs queue the next turn, which takes effect at the next center where the path allows it; reversing direction takes effect immediately within the current corridor. Walls and maze boundaries constrain movement. Linked portals let the Packet and enemies travel between parts of the maze; the Packet briefly blinks and is protected from harmful enemy collisions after teleporting.
 
 ### Data and scoring
 
@@ -15,7 +15,7 @@ The Packet moves along the maze corridors. Direction inputs queue the next turn,
 - Eating scared enemies awards increasing bonuses: 200, 400, 800, then 1,600 points.
 - A new power core refreshes the scared period and resets the enemy bonus chain.
 
-The first level uses these base awards and normal simulation speed. Continuing after a clear compounds both the entire gameplay simulation and every score award by 25% per level. Awards are calculated from their base value and rounded to the nearest integer when granted. Active play time remains wall-clock time rather than scaled simulation time.
+The first level uses these base awards and normal simulation speed. Continuing after a clear compounds both the entire gameplay simulation and every score award by 25% per level. Movement consumes the full scaled travel distance while still resolving each crossed center, so fractional multipliers do not round actor speed down. Awards are calculated from their base value and rounded to the nearest integer when granted. Active play time remains wall-clock time rather than scaled simulation time.
 
 Generated data bits fill every eligible reachable tile, including straight corridors and wider floor areas. Large power cores are scarce: 12 in the default maze and four in the demo. They favor outer corner bends, then well-separated interior bends, away from the player spawn, portal mouths, and jail entrances. Explicitly map-authored collectibles keep their authored positions.
 

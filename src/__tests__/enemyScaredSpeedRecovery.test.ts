@@ -99,33 +99,41 @@ describe('enemy scared speed recovery', () => {
     setEnemyScaredWindow(world, enemy, 1);
     animationSystem.update(0);
 
-    enemyMovement.update();
+    enemyMovement.update(STEP_MS);
     animationSystem.update(STEP_MS);
+    enemyMovement.update(STEP_MS * 0.25);
+    animationSystem.update(STEP_MS * 0.25);
 
     expect(enemy.state.scared).toBe(false);
-    expect(enemy.moved.x).toBe(0.625);
-    expect(enemy.speed).toBe(0.625);
+    expect(enemy.moved.x).toBe(0.75);
+    expect(enemy.speed).toBe(1);
 
-    enemyMovement.update();
-    expect(enemy.speed).toBe(1.25);
-    expect(enemy.moved.x).toBe(1.875);
+    enemyMovement.update(STEP_MS);
+    enemyMovement.update(STEP_MS * 0.25);
+    expect(enemy.speed).toBe(1);
+    expect(enemy.moved.x).toBe(2);
 
     let reachedNextCenter = false;
     let maxEnemyTileX = enemy.tile.x;
     for (let i = 0; i < 80; i += 1) {
-      enemyMovement.update();
-      animationSystem.update(STEP_MS);
-      maxEnemyTileX = Math.max(maxEnemyTileX, enemy.tile.x);
-
-      if (enemy.tile.x === 2 && enemy.moved.x === 0) {
-        expect(enemy.moved.y).toBe(0);
-        reachedNextCenter = true;
-        break;
+      let remainingMs = STEP_MS * 1.25;
+      while (remainingMs > Number.EPSILON) {
+        const sliceMs = enemyMovement.getSimulationBoundaryMs(Math.min(remainingMs, STEP_MS));
+        enemyMovement.update(sliceMs);
+        animationSystem.update(sliceMs);
+        remainingMs -= sliceMs;
+        maxEnemyTileX = Math.max(maxEnemyTileX, enemy.tile.x);
+        if (enemy.tile.x === 2 && enemy.moved.x === 0) {
+          expect(enemy.moved.y).toBe(0);
+          reachedNextCenter = true;
+          break;
+        }
       }
+      if (reachedNextCenter) break;
     }
 
     expect(reachedNextCenter).toBe(true);
-    enemyMovement.update();
+    enemyMovement.update(STEP_MS);
     expect(enemy.direction).toBe('left');
     expect(maxEnemyTileX).toBeLessThanOrEqual(2);
     expect(enemy.tile.x).not.toBe(3);

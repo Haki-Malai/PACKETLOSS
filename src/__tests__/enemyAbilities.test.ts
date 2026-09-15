@@ -109,12 +109,12 @@ describe('enemy abilities', () => {
     movement.syncEntityPosition(world.packet);
     // Overlapping field records must still apply only one slowdown.
     world.lagZones.push({ ...world.lagZones[0] });
-    packetMovement.update(0);
+    packetMovement.update();
     expect(world.packet.x).toBe(33.5);
     expect(world.packet.tile.x).toBe(1);
     abilities.update(4000);
     expect(world.lagZones).toHaveLength(0);
-    for (let tick = 0; tick < 7; tick += 1) packetMovement.update(0);
+    for (let tick = 0; tick < 7; tick += 1) packetMovement.update();
     expect(world.packet.tile).toEqual({ x: 2, y: 1 });
     expect(world.packet.moved).toEqual({ x: 0, y: 0 });
     collectibles.update(0);
