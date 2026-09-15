@@ -4,10 +4,11 @@ import {
     type LocalRunRecord,
 } from '../game/infrastructure/adapters/LocalProfileStore';
 
-const KEY = 'packetloss.profile.v1';
+const KEY = 'packetloss.profile.v2';
+const LEGACY_KEY = 'packetloss.profile.v1';
 
-function memoryStorage(initial?: string): Pick<Storage, 'getItem' | 'setItem'> {
-    const values = new Map<string, string>(initial === undefined ? [] : [[KEY, initial]]);
+function memoryStorage(initial?: string, key = KEY): Pick<Storage, 'getItem' | 'setItem'> {
+    const values = new Map<string, string>(initial === undefined ? [] : [[key, initial]]);
     return {
         getItem: vi.fn((key: string) => values.get(key) ?? null),
         setItem: vi.fn((key: string, value: string) => {
@@ -29,6 +30,7 @@ function run(overrides: Partial<LocalRunRecord> = {}): LocalRunRecord {
         pointsCollected: 12,
         totalPoints: 40,
         ...overrides,
+        levelsCleared: overrides.levelsCleared ?? 0,
     };
 }
 
@@ -59,6 +61,27 @@ describe('LocalProfileStore', () => {
         expect(reloaded.getNickname()).toBe('abcdefghijklmnop');
         reloaded.setNickname(' \t ');
         expect(new LocalProfileStore(storage).getNickname()).toBe('PLAYER');
+    });
+
+    it('migrates version-one records and infers historical cleared levels', () => {
+        const legacy = run({ outcome: 'cleared' });
+        const { levelsCleared: _levelsCleared, ...legacyRecord } = legacy;
+        const storage = memoryStorage(
+            JSON.stringify({
+                version: 1,
+                nickname: 'OLD',
+                motion: 'system',
+                records: [legacyRecord],
+            }),
+            LEGACY_KEY
+        );
+
+        const store = new LocalProfileStore(storage);
+
+        expect(store.getRecentRecords('default')).toMatchObject([
+            { outcome: 'cleared', levelsCleared: 1 },
+        ]);
+        expect(storage.setItem).toHaveBeenCalledWith(KEY, expect.any(String));
     });
 
     it('keeps top and recent runs independently, separates maps, and deduplicates IDs', () => {
@@ -138,34 +161,34 @@ describe('LocalProfileStore', () => {
 
     it.each([
         'invalid json',
-        JSON.stringify({ version: 2, nickname: 'OLD', motion: 'system', records: [] }),
-        JSON.stringify({ version: 1, nickname: 'OLD', motion: 'unknown', records: [] }),
+        JSON.stringify({ version: 3, nickname: 'OLD', motion: 'system', records: [] }),
+        JSON.stringify({ version: 2, nickname: 'OLD', motion: 'unknown', records: [] }),
         JSON.stringify({
-            version: 1,
+            version: 2,
             nickname: 'OLD',
             motion: 'system',
             records: [run({ score: -1 })],
         }),
         JSON.stringify({
-            version: 1,
+            version: 2,
             nickname: 'OLD',
             motion: 'system',
             records: [run({ elapsedMs: Infinity })],
         }),
         JSON.stringify({
-            version: 1,
+            version: 2,
             nickname: 'OLD',
             motion: 'system',
             records: [run({ completedAt: 'yesterday' })],
         }),
         JSON.stringify({
-            version: 1,
+            version: 2,
             nickname: 'OLD',
             motion: 'system',
             records: [{ ...run(), map: 'unknown' }],
         }),
         JSON.stringify({
-            version: 1,
+            version: 2,
             nickname: 'OLD',
             motion: 'system',
             records: [{ ...run(), outcome: 'unknown' }],

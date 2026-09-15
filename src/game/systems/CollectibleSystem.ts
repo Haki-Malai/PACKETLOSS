@@ -38,23 +38,28 @@ function getObjectNumberProperty(
 export class CollectibleSystem {
   private readonly pointsByTile = new Map<string, CollectiblePoint>();
   private readonly eatEffects: EatEffect[] = [];
+  private readonly initialPoints: readonly CollectiblePoint[];
 
   constructor(private readonly world: WorldState, points?: readonly CollectiblePoint[]) {
     if (points) {
       points.forEach((point) => {
         this.pointsByTile.set(tileKey(point.tile), { ...point, tile: { ...point.tile } });
       });
-      return;
-    }
-    const mapCollectibles = this.buildMapAuthoredCollectibles();
-    if (mapCollectibles.size > 0) {
-      mapCollectibles.forEach((point, key) => {
-        this.pointsByTile.set(key, point);
-      });
-      return;
+    } else {
+      const mapCollectibles = this.buildMapAuthoredCollectibles();
+      if (mapCollectibles.size > 0) {
+        mapCollectibles.forEach((point, key) => {
+          this.pointsByTile.set(key, point);
+        });
+      } else {
+        this.buildAlgorithmicCollectibles();
+      }
     }
 
-    this.buildAlgorithmicCollectibles();
+    this.initialPoints = Array.from(this.pointsByTile.values(), (point) => ({
+      ...point,
+      tile: { ...point.tile },
+    }));
   }
 
   update(deltaMs: number): void {
@@ -74,6 +79,16 @@ export class CollectibleSystem {
     return this.eatEffects;
   }
 
+  /** Restores the original collectible layout and clears effects from the completed level. */
+  refill(): number {
+    this.pointsByTile.clear();
+    this.eatEffects.length = 0;
+    this.initialPoints.forEach((point) => {
+      this.pointsByTile.set(tileKey(point.tile), { ...point, tile: { ...point.tile } });
+    });
+    return this.pointsByTile.size;
+  }
+
   private consumePointAtPacketTile(): void {
     if (this.world.outcome || this.world.packet.deathAnimationRemainingMs > 0) return;
     const key = tileKey(this.world.packet.tile);
@@ -84,7 +99,8 @@ export class CollectibleSystem {
 
     this.pointsByTile.delete(key);
 
-    const scoreDelta = point.kind === 'power' ? COLLECTIBLE_CONFIG[1].score : COLLECTIBLE_CONFIG[0].score;
+    const baseScore = point.kind === 'power' ? COLLECTIBLE_CONFIG[1].score : COLLECTIBLE_CONFIG[0].score;
+    const scoreDelta = Math.round(baseScore * this.world.levelMultiplier);
     addScore(scoreDelta);
     if (point.kind === 'power') {
       this.triggerScaredEnemyWindow();

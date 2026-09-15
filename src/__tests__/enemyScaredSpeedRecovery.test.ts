@@ -84,6 +84,7 @@ describe('enemy scared speed recovery', () => {
       enemies: [enemy],
       enemyJailBounds: { minX: 1, maxX: 3, y: 1 },
     });
+    world.levelMultiplier = 1.25;
 
     const enemyMovement = new EnemyMovementSystem(
       world,
@@ -102,12 +103,12 @@ describe('enemy scared speed recovery', () => {
     animationSystem.update(STEP_MS);
 
     expect(enemy.state.scared).toBe(false);
-    expect(enemy.moved.x).toBe(0.5);
-    expect(enemy.speed).toBe(0.5);
+    expect(enemy.moved.x).toBe(0.625);
+    expect(enemy.speed).toBe(0.625);
 
     enemyMovement.update();
-    expect(enemy.speed).toBe(SPEED.enemy);
-    expect(enemy.moved.x).toBe(1.5);
+    expect(enemy.speed).toBe(1.25);
+    expect(enemy.moved.x).toBe(1.875);
 
     let reachedNextCenter = false;
     let maxEnemyTileX = enemy.tile.x;

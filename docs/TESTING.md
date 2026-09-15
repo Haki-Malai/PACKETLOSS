@@ -31,14 +31,14 @@ Run the relevant test first, then `pnpm test:all` before handing off code change
 
 ## Run flow and menu regression scenarios
 
-- Use authored domain scenarios for nonfinal death/respawn, loss only after the final 900 ms death phase, hidden Packet at loss, final-collectible points and clear, collision-before-collection, and no automatic clear for initially empty maps.
-- Exercise the runtime's public state callback to check exactly one completed snapshot, active play timing, frozen terminal timers, and immunity to resume/focus events after completion. Preserve focused pause/resume, restart disposal, and cancelled-startup coverage.
-- Exercise observable menu actions with a stubbed game boundary: title without runtime initialization, repeated Start clicks, retry after load failure, cancellation and late callbacks, pause/settings/help navigation, confirmation before abandonment, and focus restoration. Verify menu typing/buttons do not trigger movement, pause, or debug shortcuts, and held keys/touches do not leak back into play.
+- Use authored domain scenarios for nonfinal death/respawn with the original enemy roster restored to jail, copy/effect retirement, loss only after the final scaled death phase, hidden Packet at loss, final-collectible points and clear checkpoint, collision-before-collection, and no automatic clear for initially empty maps.
+- Exercise the runtime's public state callback to check exactly one clear checkpoint, explicit same-runtime Continue, exact point refill, compounding 1.25 multipliers, cumulative level/data results, wall-clock active play timing, frozen checkpoint/terminal timers, and immunity to resume/focus events. Preserve focused pause/resume, restart disposal, and cancelled-startup coverage.
+- Exercise observable menu actions with a stubbed game boundary: title without runtime initialization, repeated Start clicks, retry after load failure, cancellation and late callbacks, pause/settings/help navigation, confirmation before abandonment, and focus restoration. Verify Enter activates the highlighted panel action, focused controls retain native behavior, menu typing/buttons do not trigger movement, pause, or debug shortcuts, and held keys/touches do not leak back into play.
 - Exercise the labelled top-right Back control and Escape from settings/help/profile, including parent focus restoration and continued pause. Keep explicit Resume, replay/main-menu, and Cancel/Confirm behaviors covered. Check that menu navigation retains the same ambient decoration while replacing panel content, and shell disposal removes it; do not assert decorative node counts or animation geometry.
 - Keep the title wordmark's renderer stubbed in menu tests and verify it receives the current motion setting after settings navigation. Separately exercise its real scene with a stubbed WebGL boundary: narrow/wide framing, resize without repeated scene allocation or a continuous animation loop, single-letter dimming and restoration, reduced-motion/hidden-tab cancellation, resource disposal, failed initialization, context loss, and text fallback. Navigation or disposal during its lazy import must not mount a stale canvas.
 - Keep enemy portraits stubbed in menu tests and verify help exposes basics plus all five enemy descriptions without starting/resuming gameplay. Leaving help during its lazy import must not mount previews into a replacement menu; leaving after mounting must dispose them once.
 - Exercise portrait loading and animation with stubbed rendering boundaries: one shared renderer copies all five views, idle time advances at a capped frame rate, Reduced is static, system preference changes take effect, and hidden tabs stop scheduling without advancing time. Check static fallbacks on failure, cancellation during asset loading, and cleanup of frames, listeners, and GPU resources.
-- Test local storage reload, malformed data, unavailable reads/writes, nickname trimming/default/length and rendering as text, per-map score ordering and limits, recent results, exactly-once completed-run persistence, and clearing records without clearing preferences. Abandoned runs must not be saved.
+- Test local storage reload and version-one migration, malformed data, unavailable reads/writes, nickname trimming/default/length and rendering as text, per-map score ordering and limits, recent results, exactly-once final-loss persistence, and clearing records without clearing preferences. Clear checkpoints and abandoned runs must not be saved.
 
 These scenarios protect observable behavior; avoid snapshots of decorative geometry or CSS. Run `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` for the menu/run-flow change. Authored scenarios alone do not establish that these checks passed.
 
@@ -67,7 +67,7 @@ These shortcuts are available only in the local development server or an explici
 - `Shift+C` copies the collision debug panel text.
 - `F` freezes or unfreezes simulation and animation without opening the pause menu.
 - `N` skips directly to the next guided-tutorial lesson.
-- `H` toggles the scared state of active enemies for debugging during normal play; it is disabled in tutorial practice.
+- `H` toggles a persistent scared-state override for active enemies during normal play; real power cores do not shorten it, and it is disabled in tutorial practice.
 
 After editing the demo Tiled map, run `pnpm map:demo:convert` and `pnpm test` to check the generated map and its gameplay rules.
 

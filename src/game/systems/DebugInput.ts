@@ -18,8 +18,8 @@ export function handleDebugKeyDown(
   allowPowerShortcut: boolean
 ): void {
   if (event.code === 'KeyH' && allowPowerShortcut) {
-    const shouldEnableScared = world.enemies.some((enemy) => enemy.active && !enemy.state.scared);
-    if (shouldEnableScared) {
+    world.debugPowerOverrideEnabled = !world.debugPowerOverrideEnabled;
+    if (world.debugPowerOverrideEnabled) {
       setActiveEnemiesScaredWindow(world, ENEMY_SCARED_DURATION_MS);
       world.enemyEatChainCount = 0;
     } else {

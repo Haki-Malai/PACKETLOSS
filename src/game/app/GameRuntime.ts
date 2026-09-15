@@ -1,6 +1,16 @@
 import { FixedStepLoop } from '../../engine/loop';
+import { LEVEL_MULTIPLIER_STEP } from '../../config/constants';
 import { getGameState } from '../../state/gameState';
-import { ComposedGame, PacketGame, RenderCapableSystem, RunResult, RuntimeControl, RuntimeState, UpdateCapableSystem } from './contracts';
+import {
+  ComposedGame,
+  LevelClearCheckpoint,
+  PacketGame,
+  RenderCapableSystem,
+  RunResult,
+  RuntimeControl,
+  RuntimeState,
+  UpdateCapableSystem,
+} from './contracts';
 import { GameCompositionRoot } from './GameCompositionRoot';
 
 export class GameRuntime implements PacketGame {
@@ -14,7 +24,10 @@ export class GameRuntime implements PacketGame {
   private starting: Promise<void> | null = null;
   private elapsedMs = 0;
   private totalPoints = 0;
+  private currentLevel = 1;
+  private levelsCleared = 0;
   private result: RunResult | null = null;
+  private levelClear: LevelClearCheckpoint | null = null;
   private readonly startupAbort = new AbortController();
 
   constructor(
@@ -47,7 +60,11 @@ export class GameRuntime implements PacketGame {
     this.composed = composed;
     this.elapsedMs = 0;
     this.totalPoints = composed.getRemainingPointCount();
+    this.currentLevel = 1;
+    this.levelsCleared = 0;
     this.result = null;
+    this.levelClear = null;
+    composed.world.levelMultiplier = 1;
 
     this.loop = new FixedStepLoop(this.update, this.render);
     this.started = true;
@@ -85,6 +102,27 @@ export class GameRuntime implements PacketGame {
     this.setPaused(false);
   }
 
+  /** Refills and resumes the same run after an acknowledged maze-clear checkpoint. */
+  continueLevel(): void {
+    if (!this.composed || this.destroyed || this.composed.tutorial || !this.levelClear || this.result) {
+      return;
+    }
+
+    const world = this.composed.world;
+    world.levelMultiplier *= LEVEL_MULTIPLIER_STEP;
+    const refilledPointCount = this.composed.resetLevel();
+    this.currentLevel += 1;
+    this.totalPoints += refilledPointCount;
+    this.levelClear = null;
+    world.outcome = null;
+    world.isMoving = true;
+    this.pausedByFocusLoss = false;
+    this.presentationReady = false;
+    this.composed.input.reset();
+    this.composed.scheduler.setPaused(false);
+    this.notifyState();
+  }
+
   private setPaused(paused: boolean): void {
     if (!this.composed || (!this.composed.tutorial && this.composed.world.outcome)
       || this.composed.world.isMoving === !paused) return;
@@ -100,6 +138,7 @@ export class GameRuntime implements PacketGame {
     this.onStateChange?.({
       paused: !this.composed.world.isMoving,
       result: this.result,
+      levelClear: this.levelClear,
       ...(this.composed.tutorial ? { tutorial: this.composed.tutorial.getSnapshot() } : {}),
     });
   }
@@ -248,30 +287,45 @@ export class GameRuntime implements PacketGame {
     tutorial?.beforeUpdate();
     this.composed.world.nextTick();
     this.elapsedMs += deltaMs;
-    this.composed.scheduler.update(deltaMs);
+    const simulationDeltaMs = deltaMs * this.composed.world.levelMultiplier;
+    this.composed.scheduler.update(simulationDeltaMs);
 
     this.composed.updateSystems.forEach((system) => {
-      system.update(deltaMs);
+      system.update(simulationDeltaMs);
     });
     if (tutorial) {
-      tutorial.update(deltaMs);
+      tutorial.update(simulationDeltaMs);
       if (tutorial.getSnapshot() !== tutorialSnapshot) {
         if (tutorial.getSnapshot().phase === 'playing') this.notifyState();
         else this.pause();
       }
     } else {
-      this.finishRunIfComplete();
+      this.handleRunProgression();
     }
     if (!this.composed) return;
     this.presentationReady = this.composed.world.isMoving;
   };
 
-  private finishRunIfComplete(): void {
-    if (!this.composed || this.result) return;
+  /** Publishes a nonterminal clear checkpoint or freezes the final loss result. */
+  private handleRunProgression(): void {
+    if (!this.composed || this.result || this.levelClear) return;
     const remaining = this.composed.getRemainingPointCount();
     const world = this.composed.world;
-    if (!world.outcome && this.totalPoints > 0 && remaining === 0) world.outcome = 'cleared';
-    if (!world.outcome) return;
+    if (!world.outcome && this.totalPoints > 0 && remaining === 0) {
+      world.outcome = 'cleared';
+      this.levelsCleared += 1;
+      this.levelClear = {
+        level: this.currentLevel,
+        ...getGameState(),
+        elapsedMs: Math.round(this.elapsedMs),
+        pointsCollected: this.totalPoints,
+        totalPoints: this.totalPoints,
+        nextMultiplier: world.levelMultiplier * LEVEL_MULTIPLIER_STEP,
+      };
+      this.freezeSimulation();
+      return;
+    }
+    if (world.outcome !== 'lost') return;
 
     this.result = {
       outcome: world.outcome,
@@ -279,7 +333,15 @@ export class GameRuntime implements PacketGame {
       elapsedMs: Math.round(this.elapsedMs),
       pointsCollected: this.totalPoints - remaining,
       totalPoints: this.totalPoints,
+      levelsCleared: this.levelsCleared,
     };
+    this.freezeSimulation();
+  }
+
+  /** Stops simulation, scheduler, and input at a clear checkpoint or terminal result. */
+  private freezeSimulation(): void {
+    if (!this.composed) return;
+    const world = this.composed.world;
     world.isMoving = false;
     this.pausedByFocusLoss = false;
     this.presentationReady = false;

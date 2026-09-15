@@ -6,6 +6,7 @@ import {
 import { TimerHandle } from '../../engine/timer';
 import { EnemyEntity } from '../domain/entities/EnemyEntity';
 import { EnemyJailService } from '../domain/services/EnemyJailService';
+import { restoreEnemyDebugPowerOverride } from '../domain/services/EnemyScaredStateService';
 import { MovementRules } from '../domain/services/MovementRules';
 import { Direction } from '../domain/valueObjects/Direction';
 import { RandomSource } from '../shared/random/RandomSource';
@@ -22,6 +23,12 @@ interface ReleaseProgress {
   releaseY: number;
 }
 
+interface InitialEnemyPlacement {
+  readonly tile: { readonly x: number; readonly y: number };
+  readonly direction: Direction;
+  readonly active: boolean;
+}
+
 type MoveOutcome = 'moved' | 'reached';
 const POSITION_EPSILON = 0.001;
 
@@ -29,6 +36,7 @@ export class EnemyReleaseSystem {
   private enemyReleaseTimers = new Map<EnemyEntity, TimerHandle>();
   private releaseProgressByEnemy = new Map<EnemyEntity, ReleaseProgress>();
   private nextReleaseSide: ReleaseSide = 'left';
+  private readonly initialPlacements = new Map<EnemyEntity, InitialEnemyPlacement>();
 
   constructor(
     private readonly world: WorldState,
@@ -36,8 +44,17 @@ export class EnemyReleaseSystem {
     private readonly jailService: EnemyJailService,
     private readonly scheduler: TimerSchedulerAdapter,
     private readonly rng: RandomSource,
-  ) {}
+  ) {
+    world.enemies.forEach((enemy) => {
+      this.initialPlacements.set(enemy, {
+        tile: { ...enemy.tile },
+        direction: enemy.direction,
+        active: enemy.active,
+      });
+    });
+  }
 
+  /** Starts the staggered release sequence for the current jail roster. */
   start(): void {
     this.clearReleaseTimers();
     this.releaseProgressByEnemy.clear();
@@ -49,6 +66,7 @@ export class EnemyReleaseSystem {
     });
   }
 
+  /** Advances jail motion and release paths using the current level multiplier. */
   update(): void {
     this.world.enemies.forEach((enemy) => {
       if (!enemy.active || enemy.state.dead) {
@@ -56,7 +74,7 @@ export class EnemyReleaseSystem {
         enemy.resetAbilities();
         return;
       }
-      enemy.speed = enemy.baseSpeed * (enemy.state.scared ? 0.5 : 1);
+      enemy.speed = enemy.baseSpeed * this.world.levelMultiplier * (enemy.state.scared ? 0.5 : 1);
 
       if (this.shouldQueueRelease(enemy)) {
         this.queueEnemyRelease(enemy);
@@ -73,11 +91,46 @@ export class EnemyReleaseSystem {
           this.world.enemyJailBounds,
           this.movementRules,
           this.rng,
-          Math.min(ENEMY_JAIL_MOVE_SPEED, enemy.speed),
+          Math.min(ENEMY_JAIL_MOVE_SPEED * this.world.levelMultiplier, enemy.speed),
         );
         this.movementRules.syncEntityPosition(enemy);
       }
     });
+  }
+
+  /** Restores the original enemies to jail, retires copies, and restarts staggered release. */
+  resetToJail(): void {
+    this.clearReleaseTimers();
+    this.releaseProgressByEnemy.clear();
+    this.world.enemiesExitingJail.clear();
+    this.world.lagZones = [];
+    this.world.enemyEffects = [];
+    this.world.enemyScaredTimers.clear();
+    this.world.enemyScaredWarnings.clear();
+    this.world.enemyAnimations.clear();
+    this.world.enemyEatChainCount = 0;
+
+    this.world.enemies.forEach((enemy) => {
+      const placement = this.initialPlacements.get(enemy);
+      if (!placement) return;
+      this.movementRules.setEntityTile(enemy, placement.tile);
+      enemy.active = placement.active;
+      enemy.direction = placement.direction;
+      enemy.speed = enemy.baseSpeed * this.world.levelMultiplier;
+      enemy.state = {
+        free: false,
+        soonFree: placement.active,
+        scared: false,
+        dead: false,
+        animation: 'default',
+      };
+      enemy.eatenElapsedMs = null;
+      enemy.movementBounds = null;
+      enemy.resetAbilities();
+      restoreEnemyDebugPowerOverride(this.world, enemy);
+    });
+
+    this.start();
   }
 
   destroy(): void {
@@ -333,6 +386,7 @@ export class EnemyReleaseSystem {
     enemy.state.free = true;
     enemy.state.soonFree = false;
     enemy.resetAbilities();
+    restoreEnemyDebugPowerOverride(this.world, enemy);
   }
 
   private cleanupEnemyReleaseState(enemy: EnemyEntity): void {

@@ -12,11 +12,23 @@ export interface RunResult {
   elapsedMs: number;
   pointsCollected: number;
   totalPoints: number;
+  levelsCleared: number;
+}
+
+export interface LevelClearCheckpoint {
+  level: number;
+  score: number;
+  lives: number;
+  elapsedMs: number;
+  pointsCollected: number;
+  totalPoints: number;
+  nextMultiplier: number;
 }
 
 export interface RuntimeState {
   paused: boolean;
   result: RunResult | null;
+  levelClear: LevelClearCheckpoint | null;
   tutorial?: TutorialSnapshot;
 }
 
@@ -24,6 +36,7 @@ export interface PacketGame {
   start(): Promise<void>;
   pause(): void;
   resume(): void;
+  continueLevel(): void;
   destroy(): void;
 }
 
@@ -54,6 +67,7 @@ export interface ComposedGame {
   updateSystems: UpdateCapableSystem[];
   renderSystems: RenderCapableSystem[];
   getRemainingPointCount(): number;
+  resetLevel(): number;
   tutorial?: TutorialController;
   destroy: () => void;
 }

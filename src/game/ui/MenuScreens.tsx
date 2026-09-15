@@ -31,7 +31,7 @@ export function MenuScreens({
     rootRef: RefObject<HTMLDivElement | null>;
 }) {
     const { state, store, mapVariant } = s;
-    const { screen, result, tutorial, tutorialLesson } = state;
+    const { screen, result, levelClear, tutorial, tutorialLesson } = state;
     if (screen === 'playing') return null;
     const [eyebrow, title] =
         screen === 'tutorial'
@@ -40,9 +40,11 @@ export function MenuScreens({
                   tutorialLesson ? getTutorialLesson(tutorialLesson).title : 'Tutorial',
               ]
             : screen === 'result'
-              ? result?.outcome === 'lost'
-                  ? ['All lives lost', 'PACKET LOST']
-                  : ['All data recovered', 'MAZE CLEARED']
+              ? levelClear
+                  ? ['', 'MAZE CLEARED']
+                  : result?.outcome === 'lost'
+                    ? ['All lives lost', 'PACKET LOST']
+                    : ['All data recovered', 'MAZE CLEARED']
               : titles[screen];
     let body: ReactNode;
     let actions: ReactNode;
@@ -209,19 +211,27 @@ export function MenuScreens({
                 </>
             );
             break;
-        case 'result':
-            if (!result) break;
-            body = (
+        case 'result': {
+            if (!result && !levelClear) break;
+            body = levelClear ? (
+                <p className="packet-heading text-[clamp(1.2rem,4vw,2rem)]">
+                    GAME IS NOW SPED UP AND SCORING IS INCREASED
+                </p>
+            ) : (
                 <>
-                    <p className="packet-result-score">{score(result.score)}</p>
+                    <p className="packet-result-score">{score(result!.score)}</p>
                     <p className="packet-eyebrow">
                         {state.newBest ? 'NEW LOCAL BEST' : 'FINAL SCORE'}
                     </p>
                     <dl className="packet-stats">
                         {[
                             ['Local best', score(store.getTopRecords(mapVariant)[0]?.score ?? 0)],
-                            ['Data recovered', `${result.pointsCollected} / ${result.totalPoints}`],
-                            ['Play time', duration(result.elapsedMs)],
+                            ['Levels cleared', String(result!.levelsCleared)],
+                            [
+                                'Data recovered',
+                                `${result!.pointsCollected} / ${result!.totalPoints}`,
+                            ],
+                            ['Play time', duration(result!.elapsedMs)],
                         ].map(([label, value]) => (
                             <div key={label}>
                                 <dt>{label}</dt>
@@ -233,13 +243,25 @@ export function MenuScreens({
             );
             actions = (
                 <>
-                    <MenuButton action="replay" variant="primary" onClick={() => s.startRun()}>
-                        {result.outcome === 'lost' ? 'Try again' : 'Play again'}
+                    {levelClear ? (
+                        <MenuButton
+                            action="continue-level"
+                            variant="primary"
+                            onClick={s.continueLevel}
+                        >
+                            Continue
+                        </MenuButton>
+                    ) : (
+                        <MenuButton action="replay" variant="primary" onClick={() => s.startRun()}>
+                            {result?.outcome === 'lost' ? 'Try again' : 'Play again'}
+                        </MenuButton>
+                    )}
+                    <MenuButton action="main-menu" onClick={s.leaveResult}>
+                        Main menu
                     </MenuButton>
-                    {exit}
                 </>
             );
-            footer = (
+            footer = !levelClear && (
                 <p className="packet-note">
                     {store.getStatusMessage()
                         ? 'Your result is available for this session.'
@@ -247,6 +269,7 @@ export function MenuScreens({
                 </p>
             );
             break;
+        }
         case 'loading':
             body = (
                 <p className="packet-copy packet-loading" role="status">
@@ -337,7 +360,7 @@ export function MenuScreens({
                                 ],
                                 [
                                     'Survive',
-                                    'You have three lives. Avoid enemies, use the linked portals, and recover all data to clear the maze.',
+                                    'You have three lives. Recovering every point opens a clear checkpoint; continuing refills the maze at higher speed and scoring.',
                                 ],
                                 [
                                     'Pause',
@@ -387,7 +410,7 @@ export function MenuScreens({
                     : undefined
             }
             onBack={['settings', 'help', 'profile'].includes(screen) ? s.back : undefined}
-            outcome={screen === 'result' ? result?.outcome : undefined}
+            outcome={screen === 'result' ? (levelClear ? 'cleared' : result?.outcome) : undefined}
             tutorialPhase={screen === 'tutorial' ? tutorial?.phase : undefined}
             actions={actions}
             footer={

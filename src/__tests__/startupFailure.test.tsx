@@ -58,6 +58,7 @@ describe('game startup and development asset route', () => {
             start: mocks.start,
             pause: mocks.pause,
             resume: mocks.resume,
+            continueLevel: vi.fn(),
             destroy: mocks.destroy,
         });
         vi.doMock('../dev/assets/AssetShowcase', () => {

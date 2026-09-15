@@ -39,6 +39,7 @@ function createComposedGame() {
   const world = {
     isMoving: true,
     debugFrozen: false,
+    levelMultiplier: 1,
     outcome: null as WorldState['outcome'],
     nextTick: vi.fn(),
   };
@@ -51,6 +52,7 @@ function createComposedGame() {
     updateSystems: [{ start, update, destroy: updateDestroy }],
     renderSystems: [{ render, destroy: renderDestroy }],
     getRemainingPointCount: vi.fn(() => 1),
+    resetLevel: vi.fn(() => 1),
     destroy: vi.fn(),
   };
 
@@ -92,6 +94,7 @@ function createFinishingGame(kind: 'pellet' | 'power-pellet', enemyState?: 'dang
   composed.world = world;
   composed.updateSystems = [collisions, collectibles];
   composed.getRemainingPointCount = () => collectibles.getPointCount();
+  composed.resetLevel = () => collectibles.refill();
   return { composed, world, collectibles, spies };
 }
 
@@ -208,15 +211,23 @@ describe('GameRuntime', () => {
     { kind: 'pellet' as const, score: 10, enemyState: undefined },
     { kind: 'power-pellet' as const, score: 50, enemyState: undefined },
     { kind: 'pellet' as const, score: 210, enemyState: 'scared' as const },
-  ])('finishes on the final $kind with its score and any scared-enemy bonus ($score)', async ({ kind, score, enemyState }) => {
-    const { composed, world } = createFinishingGame(kind, enemyState);
+  ])('checkpoints on the final $kind with its score and any scared-enemy bonus ($score)', async ({ kind, score, enemyState }) => {
+    const { composed, world, collectibles } = createFinishingGame(kind, enemyState);
     const onStateChange = vi.fn<(_state: RuntimeState) => void>();
     const runtime = new GameRuntime({ compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot, onStateChange);
     await runtime.start();
     nextFrame?.(1);
     nextFrame?.(20);
-    const result = { outcome: 'cleared', score, lives: 3, elapsedMs: 17, pointsCollected: 1, totalPoints: 1 };
-    expect(onStateChange).toHaveBeenLastCalledWith({ paused: true, result });
+    const levelClear = {
+      level: 1,
+      score,
+      lives: 3,
+      elapsedMs: 17,
+      pointsCollected: 1,
+      totalPoints: 1,
+      nextMultiplier: 1.25,
+    };
+    expect(onStateChange).toHaveBeenLastCalledWith({ paused: true, result: null, levelClear });
     expect(world.isMoving).toBe(false);
 
     runtime.resume();
@@ -224,8 +235,55 @@ describe('GameRuntime', () => {
     emitWindowEvent('focus');
     nextFrame?.(60);
     expect(world.isMoving).toBe(false);
-    expect(onStateChange.mock.calls.filter(([state]) => state.result)).toHaveLength(1);
+    expect(onStateChange.mock.calls.filter(([state]) => state.levelClear)).toHaveLength(1);
     expect(getGameState().score).toBe(score);
+
+    runtime.continueLevel();
+    expect(world.isMoving).toBe(true);
+    expect(world.outcome).toBeNull();
+    expect(world.levelMultiplier).toBe(1.25);
+    expect(collectibles.getPointCount()).toBe(1);
+    expect(onStateChange).toHaveBeenLastCalledWith({ paused: false, result: null, levelClear: null });
+    runtime.destroy();
+  });
+
+  it('compounds level speed while scaling simulation time but retaining wall-clock play time', async () => {
+    const { composed, spies } = createComposedGame();
+    let remaining = 1;
+    composed.getRemainingPointCount = () => remaining;
+    composed.resetLevel = vi.fn(() => {
+      remaining = 1;
+      return 1;
+    });
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime(
+      { compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot,
+      onStateChange,
+    );
+    await runtime.start();
+    remaining = 0;
+    nextFrame?.(1);
+    nextFrame?.(20);
+
+    runtime.continueLevel();
+    expect(spies.world.levelMultiplier).toBe(1.25);
+    spies.scheduler.update.mockClear();
+    spies.update.mockClear();
+    nextFrame?.(40);
+    expect(spies.scheduler.update).toHaveBeenLastCalledWith((1000 / 60) * 1.25);
+    expect(spies.update).toHaveBeenLastCalledWith((1000 / 60) * 1.25);
+
+    remaining = 0;
+    nextFrame?.(60);
+    expect(onStateChange.mock.lastCall?.[0].levelClear).toMatchObject({
+      level: 2,
+      elapsedMs: 50,
+      pointsCollected: 2,
+      totalPoints: 2,
+      nextMultiplier: 1.5625,
+    });
+    runtime.continueLevel();
+    expect(spies.world.levelMultiplier).toBe(1.5625);
     runtime.destroy();
   });
 
@@ -247,7 +305,9 @@ describe('GameRuntime', () => {
     runtime.resume();
     for (let frame = 1; frame <= 65; frame += 1) nextFrame?.(220 + frame * 17);
     const result = onStateChange.mock.lastCall?.[0].result;
-    expect(result).toMatchObject({ outcome: 'lost', score: 100, lives: 0, pointsCollected: 0, totalPoints: 1 });
+    expect(result).toMatchObject({
+      outcome: 'lost', score: 100, lives: 0, pointsCollected: 0, totalPoints: 1, levelsCleared: 0,
+    });
     expect(result?.elapsedMs).toBeGreaterThanOrEqual(917);
     expect(result?.elapsedMs).toBeLessThanOrEqual(934);
     expect(world.packet.tile).toEqual({ x: 0, y: 0 });
@@ -268,7 +328,7 @@ describe('GameRuntime', () => {
     nextFrame?.(1);
     nextFrame?.(50);
     expect(spies.world.isMoving).toBe(true);
-    expect(onStateChange).toHaveBeenCalledExactlyOnceWith({ paused: false, result: null });
+    expect(onStateChange).toHaveBeenCalledExactlyOnceWith({ paused: false, result: null, levelClear: null });
     runtime.destroy();
   });
 
@@ -412,7 +472,7 @@ describe('GameRuntime', () => {
     expect(spies.scheduler.update).not.toHaveBeenCalled();
     expect(spies.world.nextTick).not.toHaveBeenCalled();
     expect(spies.render).toHaveBeenLastCalledWith(1);
-    expect(onStateChange).toHaveBeenCalledExactlyOnceWith({ paused: false, result: null });
+    expect(onStateChange).toHaveBeenCalledExactlyOnceWith({ paused: false, result: null, levelClear: null });
 
     spies.world.debugFrozen = false;
     nextFrame?.(80);

@@ -24,6 +24,7 @@ export class EnemyMovementSystem {
     this.returnNavigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService, 'returning', world.enemyJailBounds);
   }
 
+  /** Advances active and returning enemies using the current level multiplier. */
   update(deltaMs = 1000 / 60): void {
     if (!this.world.isMoving || this.world.outcome) return;
     this.world.enemies.forEach((enemy) => {
@@ -35,7 +36,7 @@ export class EnemyMovementSystem {
         return;
       }
 
-      enemy.speed = enemy.baseSpeed * (enemy.state.scared ? 0.5 : 1);
+      enemy.speed = enemy.baseSpeed * this.world.levelMultiplier * (enemy.state.scared ? 0.5 : 1);
       if (enemy.moved.x === 0 && enemy.moved.y === 0) {
         const playerTile = {
           x: Math.floor(this.world.packet.x / this.world.tileSize),
@@ -58,18 +59,23 @@ export class EnemyMovementSystem {
     });
   }
 
+  /** Clears return-route progress after the enemy roster is restored to jail. */
+  reset(): void {
+    this.world.enemies.forEach((enemy) => this.returningEnemies.delete(enemy));
+  }
+
   private returnToJail(enemy: EnemyEntity, deltaMs: number): void {
     const elapsed = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
     enemy.eatenElapsedMs = Math.min(ENEMY_EAT_DURATION_MS, (enemy.eatenElapsedMs ?? 0) + elapsed);
     if (enemy.eatenElapsedMs < ENEMY_EAT_DURATION_MS) return;
 
-    enemy.speed = enemy.baseSpeed * 2;
+    enemy.speed = enemy.baseSpeed * this.world.levelMultiplier * 2;
     const centered = enemy.moved.x === 0 && enemy.moved.y === 0;
     if (centered && enemy.tile.x === this.world.enemyJailReturnTile.x && enemy.tile.y === this.world.enemyJailReturnTile.y) {
       enemy.state.dead = false;
       enemy.state.soonFree = !enemy.isCopy;
       enemy.eatenElapsedMs = null;
-      enemy.speed = enemy.baseSpeed;
+      enemy.speed = enemy.baseSpeed * this.world.levelMultiplier;
       this.returningEnemies.delete(enemy);
       if (enemy.isCopy) {
         enemy.active = false;

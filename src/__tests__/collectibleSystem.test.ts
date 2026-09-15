@@ -69,6 +69,35 @@ describe('CollectibleSystem', () => {
     expect(getGameState().score).toBe(10);
   });
 
+  it.each([
+    { kind: 'pellet' as const, expectedScore: 13 },
+    { kind: 'power-pellet' as const, expectedScore: 63 },
+  ])('rounds level-scaled $kind awards from their base value', ({ kind, expectedScore }) => {
+    const { world, collectibles } = createCollectibles(kind);
+    world.levelMultiplier = 1.25;
+
+    collectibles.update(0);
+
+    expect(getGameState().score).toBe(expectedScore);
+  });
+
+  it('restores the exact initial layout and clears completed-level pickup effects', () => {
+    const { world, movement, collectibles } = createCollectibles();
+    collectibles.update(0);
+    movement.setEntityTile(world.packet, { x: 1, y: 0 });
+    collectibles.update(0);
+    expect(collectibles.getPointCount()).toBe(0);
+    expect(collectibles.getEatEffects()).toHaveLength(2);
+
+    expect(collectibles.refill()).toBe(2);
+
+    expect(Array.from(collectibles.getPoints()).map((point) => point.tile)).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+    ]);
+    expect(collectibles.getEatEffects()).toHaveLength(0);
+  });
+
   it('does not start an eat animation at a centered tile with no collectible', () => {
     const { world, movement, collectibles } = createCollectibles();
     movement.setEntityTile(world.packet, { x: 2, y: 0 });
@@ -106,5 +135,22 @@ describe('CollectibleSystem', () => {
     expect(world.enemyScaredWarnings.has(activeEnemy)).toBe(false);
     expect(world.enemyEatChainCount).toBe(0);
     expect(inactiveEnemy.state.scared).toBe(false);
+  });
+
+  it('keeps the development power override active when a real power core is collected', () => {
+    const { world, collectibles } = createCollectibles('power-pellet');
+    world.debugPowerOverrideEnabled = true;
+    world.enemyScaredTimers.set(world.enemies[0], Number.POSITIVE_INFINITY);
+    world.enemies[0].state.scared = true;
+
+    collectibles.update(16);
+
+    expect(world.debugPowerOverrideEnabled).toBe(true);
+    expect(world.enemies.every((enemy) => enemy.state.scared)).toBe(true);
+    expect(
+      world.enemies.every(
+        (enemy) => world.enemyScaredTimers.get(enemy) === Number.POSITIVE_INFINITY,
+      ),
+    ).toBe(true);
   });
 });
