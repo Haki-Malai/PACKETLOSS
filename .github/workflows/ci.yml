@@ -43,6 +43,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: ./.github/workflows/deploy-aws.yml
+    uses: Haki-Malai/infra/.github/workflows/deploy-packetloss.yml@1c158f58ce77bdfdfdfcc4f96f2e80532c09973f
     with:
       stage: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}

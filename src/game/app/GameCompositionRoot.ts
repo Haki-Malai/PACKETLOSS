@@ -34,11 +34,33 @@ import { RenderSystem } from '../systems/RenderSystem';
 import { prepareTutorialWorld, TutorialController } from '../tutorial/TutorialController';
 import type { TutorialLessonId } from '../tutorial/TutorialLesson';
 import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
+import type { PreloadedGameResources } from './preloadGameResources';
 import { ComposedGame, RuntimeControl } from './contracts';
 
 const ENEMY_KEYS: EnemyKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
 // Keep the development constructor outside the startup try/catch so production can omit its module.
 const DevelopmentDebugSystem = IS_DEV ? DebugOverlaySystem : null;
+
+/** Restores Packet state for a continued level without changing score or lives. */
+function resetPacketForLevel(world: WorldState, movementRules: MovementRules): void {
+  movementRules.setEntityTile(world.packet, world.packetSpawnTile);
+  world.packet.active = true;
+  world.packet.direction = { current: 'right', next: 'right' };
+  world.packet.portalBlinkRemainingMs = 0;
+  world.packet.portalBlinkElapsedMs = 0;
+  world.packet.deathAnimationRemainingMs = 0;
+  world.packet.enemyEatRemainingMs = 0;
+  world.packet.deathRecoveryRemainingMs = 0;
+  world.packet.deathRecoveryElapsedMs = 0;
+  world.packet.deathRecoveryNextToggleAtMs = 0;
+  world.packet.deathRecoveryVisible = true;
+  world.packetAnimation = {
+    frame: 0,
+    elapsedMs: 0,
+    sequenceIndex: 0,
+    active: false,
+  };
+}
 
 export interface GameCompositionOptions {
   mountId?: string;
@@ -46,6 +68,7 @@ export interface GameCompositionOptions {
   mapVariant?: MapVariant;
   tutorialLesson?: TutorialLessonId;
   rng?: (() => number) | { next(): number; int(maxExclusive: number): number };
+  preloadedResources?: PreloadedGameResources;
 }
 
 export class GameCompositionRoot {
@@ -65,18 +88,22 @@ export class GameCompositionRoot {
       throw new Error(`Game mount element not found: #${mountId}`);
     }
 
-    const mapRepository = new TiledMapRepository();
     const rng = this.options.tutorialLesson ? new SeededRandom(1) : toRandomSource(this.options.rng ?? Math.random);
     const mapVariant = this.options.tutorialLesson ? 'demo' : this.options.mapVariant ?? 'default';
     const { mapJsonPath } = resolveMapPathsForVariant(mapVariant);
-    const map = await this.loadMapForVariant(mapRepository, mapVariant, mapJsonPath);
-    signal?.throwIfAborted();
-    const assets = await ArcadeAssets.load(signal);
+    let assets: ArcadeAssets | undefined;
     let canvas: HTMLCanvasElement | undefined;
     let renderer: ThreeRendererAdapter | undefined;
     let input: BrowserInputAdapter | undefined;
     let renderSystem: RenderSystem | undefined;
     try {
+      const preloaded = this.options.preloadedResources?.take(mapVariant);
+      const map = preloaded?.map ?? await this.loadMapForVariant(
+        new TiledMapRepository(), mapVariant, mapJsonPath, signal,
+      );
+      assets = preloaded?.assets;
+      signal?.throwIfAborted();
+      assets ??= await ArcadeAssets.load(signal);
       signal?.throwIfAborted();
       const tileSize = map.tileWidth || TILE_SIZE;
 
@@ -170,7 +197,18 @@ export class GameCompositionRoot {
         ? null
         : new EnemyReleaseSystem(world, movementRules, jailService, scheduler, rng);
       const enemyMovementSystem = new EnemyMovementSystem(world, movementRules, enemyDecisions, portalService, gameplayRng);
-      const enemyPacketCollisionSystem = new EnemyPacketCollisionSystem(world, movementRules, SPEED.enemy);
+      /** Clears cached routes before restoring and rereleasing the original jail roster. */
+      const resetEnemiesToJail = (): void => {
+        enemyDecisions.reset();
+        enemyMovementSystem.reset();
+        enemyReleaseSystem?.resetToJail();
+      };
+      const enemyPacketCollisionSystem = new EnemyPacketCollisionSystem(
+        world,
+        movementRules,
+        SPEED.enemy,
+        enemyReleaseSystem ? resetEnemiesToJail : undefined,
+      );
       const animationSystem = new AnimationSystem(world, SPEED.enemy);
       const cameraSystem = new CameraSystem(world, camera, renderer, canvas, !!this.options.tutorialLesson);
       const collectibleSystem = new CollectibleSystem(world, tutorialPoints);
@@ -207,6 +245,12 @@ export class GameCompositionRoot {
         updateSystems,
         renderSystems,
         getRemainingPointCount: () => collectibleSystem.getPointCount(),
+        /** Refills collectibles and restores actors for an explicitly continued normal level. */
+        resetLevel: () => {
+          resetPacketForLevel(world, movementRules);
+          resetEnemiesToJail();
+          return collectibleSystem.refill();
+        },
         ...(tutorial ? { tutorial } : {}),
         destroy: () => {
           canvas?.remove();
@@ -218,7 +262,7 @@ export class GameCompositionRoot {
         renderSystem.destroy();
       } else {
         renderer?.dispose();
-        assets.dispose();
+        assets?.dispose();
       }
       canvas?.remove();
       throw error;
@@ -229,9 +273,12 @@ export class GameCompositionRoot {
     mapRepository: TiledMapRepository,
     mapVariant: MapVariant,
     mapJsonPath: string,
+    signal?: AbortSignal,
   ) {
     try {
-      return await mapRepository.loadMap(mapJsonPath);
+      return await (signal
+        ? mapRepository.loadMap(mapJsonPath, signal)
+        : mapRepository.loadMap(mapJsonPath));
     } catch (error) {
       if (mapVariant === 'demo') {
         throw new Error(

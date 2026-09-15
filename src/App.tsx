@@ -1,10 +1,14 @@
-import { Component, StrictMode, Suspense, lazy, type ReactNode } from 'react';
+import { Component, StrictMode, Suspense, lazy, useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { GameShell } from './game/ui/GameShell';
-import { MenuPanel, buttonLayout } from './game/ui/MenuPanel';
+import { MenuButton, MenuPanel, buttonLayout } from './game/ui/MenuPanel';
 import { resolveMapVariantFromEnv } from './game/app/mapRuntimeConfig';
 import { IS_DEV } from './config/environment';
 import { useEnvironment } from './config/EnvironmentContext';
+import { preloadGameResources } from './game/app/preloadGameResources';
+import type { PreloadedGameResources } from './game/app/preloadGameResources';
+import type { MapVariant } from './game/app/mapRuntimeConfig';
+import { preloadMenuPreviews } from './game/ui/MenuPreviews';
 
 const AssetShowcase = IS_DEV ? lazy(() => import('./dev/assets/AssetShowcase')) : null;
 
@@ -25,7 +29,7 @@ export function App() {
                     </Suspense>
                 ) : (
                     <>
-                        <GameShell
+                        <GameBootstrap
                             mapVariant={resolveMapVariantFromEnv(import.meta.env.VITE_GAME_ENV)}
                         />
                         {IS_DEV &&
@@ -46,7 +50,94 @@ export function App() {
     );
 }
 
-function StartupMessage({ children, error = false }: { children: ReactNode; error?: boolean }) {
+function GameBootstrap({ mapVariant }: { mapVariant: MapVariant }) {
+    const [attempt, setAttempt] = useState(0);
+    const [resources, setResources] = useState<PreloadedGameResources | null>(null);
+    const [error, setError] = useState<Error | null>(null);
+    useEffect(() => {
+        const abort = new AbortController();
+        let loaded: PreloadedGameResources | null = null;
+        let active = true;
+        setResources(null);
+        setError(null);
+        /** Prepares network assets and lazy runtime/menu modules before revealing the title. */
+        async function initialize() {
+            const [resourceResult, previewResult, runtimeResult] = await Promise.allSettled([
+                preloadGameResources(abort.signal),
+                preloadMenuPreviews(),
+                import('./game/app/createPacketGame'),
+            ]);
+            if (resourceResult.status === 'fulfilled') loaded = resourceResult.value;
+            const failure = [resourceResult, previewResult, runtimeResult].find(
+                (result) => result.status === 'rejected'
+            );
+            try {
+                if (failure?.status === 'rejected') throw failure.reason;
+                if (!active) {
+                    loaded?.dispose();
+                    return;
+                }
+                if (!loaded) throw new Error('The game assets could not load.');
+                setResources(loaded);
+            } catch (reason) {
+                if (!active || abort.signal.aborted) {
+                    loaded?.dispose();
+                    loaded = null;
+                    return;
+                }
+                loaded?.dispose();
+                loaded = null;
+                setError(
+                    reason instanceof Error
+                        ? reason
+                        : new Error('The game could not load. Please try again.')
+                );
+            }
+        }
+        void initialize();
+        return () => {
+            active = false;
+            abort.abort();
+            loaded?.dispose();
+        };
+    }, [attempt]);
+
+    if (error)
+        return (
+            <StartupMessage
+                error
+                title="Unable to load"
+                action={
+                    <MenuButton
+                        action="retry"
+                        variant="primary"
+                        onClick={() => setAttempt((value) => value + 1)}
+                    >
+                        Retry
+                    </MenuButton>
+                }
+            >
+                {error.message}
+            </StartupMessage>
+        );
+    if (!resources)
+        return (
+            <StartupMessage title="PACKETLOSS">Loading the maze and game assets…</StartupMessage>
+        );
+    return <GameShell mapVariant={mapVariant} preloadedResources={resources} />;
+}
+
+function StartupMessage({
+    children,
+    error = false,
+    title = 'Asset Lab',
+    action,
+}: {
+    children: ReactNode;
+    error?: boolean;
+    title?: string;
+    action?: ReactNode;
+}) {
     return (
         <div
             className="game-shell flex h-full items-center justify-center p-6"
@@ -54,7 +145,8 @@ function StartupMessage({ children, error = false }: { children: ReactNode; erro
         >
             <MenuPanel
                 eyebrow={error ? 'Signal interrupted' : 'Connecting'}
-                title={error ? 'Unable to start' : 'Asset Lab'}
+                title={error && title === 'Asset Lab' ? 'Unable to start' : title}
+                actions={action}
             >
                 <p className="packet-copy" role={error ? 'alert' : 'status'}>
                     {children}

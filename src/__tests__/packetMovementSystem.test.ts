@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { PACKET_DEATH_RECOVERY, PACKET_PORTAL_BLINK } from '../config/constants';
 import { openTile } from './fixtures/collisionFixtures';
 import { PortalService } from '../game/domain/services/PortalService';
-import { MovementRules } from '../game/domain/services/MovementRules';
+import { BufferedEntity, MovementRules } from '../game/domain/services/MovementRules';
+import { Direction } from '../game/domain/valueObjects/Direction';
+import { CollisionTiles } from '../game/domain/world/CollisionGrid';
 import { WorldState } from '../game/domain/world/WorldState';
 import { PacketMovementSystem } from '../game/systems/PacketMovementSystem';
 
@@ -47,11 +49,14 @@ describe('PacketMovementSystem portal blink', () => {
       applyBufferedDirection: applyBufferedDirectionMock,
       canMove: canMoveMock,
       advanceEntity: advanceEntityMock,
+      movementDistance: vi.fn((speed: number) => speed),
+      discardPendingDistance: vi.fn(),
       syncEntityPosition: syncEntityPositionMock,
     } as unknown as MovementRules;
 
     const portalService = {
       canAdvanceOutward: canAdvanceOutwardMock,
+      getDistanceToTeleport: vi.fn(() => null),
       tryTeleport: tryTeleportMock,
     } as unknown as PortalService;
 
@@ -108,11 +113,14 @@ describe('PacketMovementSystem portal blink', () => {
       applyBufferedDirection: vi.fn(),
       canMove: vi.fn(() => false),
       advanceEntity: vi.fn(),
+      movementDistance: vi.fn((speed: number) => speed),
+      discardPendingDistance: vi.fn(),
       syncEntityPosition: vi.fn(),
     } as unknown as MovementRules;
 
     const portalService = {
       canAdvanceOutward: vi.fn(() => false),
+      getDistanceToTeleport: vi.fn(() => null),
       tryTeleport: vi.fn(() => false),
     } as unknown as PortalService;
 
@@ -135,6 +143,7 @@ describe('PacketMovementSystem portal blink', () => {
 
     const world = {
       lagZones: [],
+      levelMultiplier: 1.25,
       packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
@@ -162,15 +171,24 @@ describe('PacketMovementSystem portal blink', () => {
     } as unknown as WorldState;
 
     const movementRules = {
-      applyBufferedDirection: vi.fn(),
+      applyBufferedDirection: vi.fn((
+        entity: BufferedEntity,
+        _tiles: CollisionTiles,
+        canUseBlockedDirection: (direction: Direction) => boolean,
+      ) => {
+        if (canUseBlockedDirection('left')) entity.direction.current = 'left';
+      }),
       canMove: vi.fn(() => false),
       advanceEntity: advanceEntityMock,
+      movementDistance: vi.fn((speed: number) => speed),
+      discardPendingDistance: vi.fn(),
       syncEntityPosition: vi.fn(),
     } as unknown as MovementRules;
 
     const canAdvanceOutwardMock = vi.fn(() => true);
     const portalService = {
       canAdvanceOutward: canAdvanceOutwardMock,
+      getDistanceToTeleport: vi.fn(() => null),
       tryTeleport: vi.fn(() => false),
     } as unknown as PortalService;
 
@@ -179,6 +197,7 @@ describe('PacketMovementSystem portal blink', () => {
 
     expect(world.packet.direction.current).toBe('left');
     expect(advanceEntityMock).toHaveBeenCalledOnce();
+    expect(advanceEntityMock).toHaveBeenCalledWith(world.packet, 'left', 1, Infinity);
     expect(canAdvanceOutwardMock).toHaveBeenCalledWith(expect.objectContaining({ direction: 'left' }), world.collisionGrid);
   });
 
@@ -211,11 +230,14 @@ describe('PacketMovementSystem portal blink', () => {
       applyBufferedDirection: vi.fn(),
       canMove: vi.fn(() => false),
       advanceEntity: vi.fn(),
+      movementDistance: vi.fn((speed: number) => speed),
+      discardPendingDistance: vi.fn(),
       syncEntityPosition: vi.fn(),
     } as unknown as MovementRules;
 
     const portalService = {
       canAdvanceOutward: vi.fn(() => false),
+      getDistanceToTeleport: vi.fn(() => null),
       tryTeleport: vi.fn(() => false),
     } as unknown as PortalService;
 
@@ -256,11 +278,14 @@ describe('PacketMovementSystem portal blink', () => {
       applyBufferedDirection: vi.fn(),
       canMove: vi.fn(() => true),
       advanceEntity: vi.fn(),
+      movementDistance: vi.fn((speed: number) => speed),
+      discardPendingDistance: vi.fn(),
       syncEntityPosition: vi.fn(),
     } as unknown as MovementRules;
 
     const portalService = {
       canAdvanceOutward: vi.fn(() => false),
+      getDistanceToTeleport: vi.fn(() => null),
       tryTeleport: vi.fn(() => false),
     } as unknown as PortalService;
 

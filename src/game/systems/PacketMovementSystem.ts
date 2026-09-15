@@ -1,6 +1,7 @@
 import { ENEMY_CONFIG, PACKET_DEATH_RECOVERY, PACKET_PORTAL_BLINK, SPEED } from '../../config/constants';
 import { PortalService } from '../domain/services/PortalService';
 import { MovementRules } from '../domain/services/MovementRules';
+import { OPPOSITE_DIRECTION } from '../domain/valueObjects/Direction';
 import { WorldState } from '../domain/world/WorldState';
 import { resolveNextBlinkToggleAt } from '../shared/blinkCadence';
 
@@ -11,15 +12,36 @@ export class PacketMovementSystem {
     private readonly portalService: PortalService,
   ) {}
 
-  update(deltaMs = 0): void {
+  /** Returns the next center or portal threshold so the runtime can preserve the full movement budget. */
+  getSimulationBoundaryMs(maximumMs: number): number {
+    if (this.world.packet.deathAnimationRemainingMs > 0) return maximumMs;
+    const packet = this.world.packet;
+    const direction = packet.direction.next === OPPOSITE_DIRECTION[packet.direction.current]
+      ? packet.direction.next : packet.direction.current;
+    const occupiedX = Math.floor(packet.x / this.world.tileSize);
+    const occupiedY = Math.floor(packet.y / this.world.tileSize);
+    const slowed = this.world.lagZones.some((zone) => zone.ageMs < zone.durationMs
+      && zone.tile.x === occupiedX && zone.tile.y === occupiedY);
+    const speed = SPEED.packet * (slowed ? ENEMY_CONFIG.lag.slowMultiplier : 1);
+    const centerDistance = this.movementRules.getDistanceToCenter(packet, direction);
+    const portalDistance = this.portalService.getDistanceToTeleport(
+      { tile: packet.tile, moved: packet.moved, direction }, this.world.collisionGrid, this.world.tileSize);
+    const distance = portalDistance === null ? centerDistance : Math.min(centerDistance, portalDistance);
+    return Math.min(maximumMs, this.movementRules.timeForDistance(distance, speed));
+  }
+
+  /** Advances Packet movement and protection effects using the current level multiplier. */
+  update(deltaMs = 1000 / 60): void {
     if (this.world.packet.deathAnimationRemainingMs > 0) return;
     this.updatePortalBlink(deltaMs);
     this.updateDeathRecovery(deltaMs);
-    this.updateDirectionVisuals();
 
     const collisionTiles = this.world.collisionGrid.getTilesAt(this.world.packet.tile);
-    this.movementRules.applyBufferedDirection(this.world.packet, collisionTiles);
-    this.applyPortalTurnOverride(collisionTiles);
+    this.movementRules.applyBufferedDirection(this.world.packet, collisionTiles, (direction) => {
+      return this.portalService.canAdvanceOutward(
+        { tile: this.world.packet.tile, moved: this.world.packet.moved, direction }, this.world.collisionGrid);
+    });
+    this.updateDirectionVisuals();
 
     const canMoveCurrent = this.movementRules.canMove(
       this.world.packet.direction.current,
@@ -34,8 +56,17 @@ export class PacketMovementSystem {
       const occupiedY = Math.floor(this.world.packet.y / this.world.tileSize);
       const slowed = this.world.lagZones.some((zone) => zone.ageMs < zone.durationMs
         && zone.tile.x === occupiedX && zone.tile.y === occupiedY);
-      this.movementRules.advanceEntity(this.world.packet, this.world.packet.direction.current,
-        SPEED.packet * (slowed ? ENEMY_CONFIG.lag.slowMultiplier : 1));
+      const speed = SPEED.packet * (slowed ? ENEMY_CONFIG.lag.slowMultiplier : 1);
+      const portalDistance = this.portalService.getDistanceToTeleport(
+        this.world.packet, this.world.collisionGrid, this.world.tileSize);
+      this.movementRules.advanceEntity(
+        this.world.packet,
+        this.world.packet.direction.current,
+        this.movementRules.movementDistance(speed, deltaMs),
+        portalDistance ?? Infinity,
+      );
+    } else {
+      this.movementRules.discardPendingDistance(this.world.packet);
     }
 
     const teleported = this.portalService.tryTeleport(
@@ -133,32 +164,4 @@ export class PacketMovementSystem {
     }
   }
 
-  private applyPortalTurnOverride(collisionTiles: ReturnType<WorldState['collisionGrid']['getTilesAt']>): void {
-    if (this.world.packet.moved.x !== 0 || this.world.packet.moved.y !== 0) {
-      return;
-    }
-
-    const currentDirection = this.world.packet.direction.current;
-    const nextDirection = this.world.packet.direction.next;
-    if (nextDirection === currentDirection) {
-      return;
-    }
-
-    if (this.movementRules.canMove(nextDirection, this.world.packet.moved.y, this.world.packet.moved.x, collisionTiles)) {
-      return;
-    }
-
-    const canTurnIntoPortalOutward = this.portalService.canAdvanceOutward(
-      {
-        tile: this.world.packet.tile,
-        moved: this.world.packet.moved,
-        direction: nextDirection,
-      },
-      this.world.collisionGrid,
-    );
-
-    if (canTurnIntoPortalOutward) {
-      this.world.packet.direction.current = nextDirection;
-    }
-  }
 }

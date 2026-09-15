@@ -12,6 +12,7 @@ interface CameraLike {
 }
 
 export class CameraSystem {
+  readonly updatePhase = 'afterSimulation' as const;
   private onResize?: () => void;
 
   constructor(

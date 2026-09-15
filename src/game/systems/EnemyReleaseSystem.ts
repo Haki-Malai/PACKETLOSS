@@ -6,6 +6,7 @@ import {
 import { TimerHandle } from '../../engine/timer';
 import { EnemyEntity } from '../domain/entities/EnemyEntity';
 import { EnemyJailService } from '../domain/services/EnemyJailService';
+import { restoreEnemyDebugPowerOverride } from '../domain/services/EnemyScaredStateService';
 import { MovementRules } from '../domain/services/MovementRules';
 import { Direction } from '../domain/valueObjects/Direction';
 import { RandomSource } from '../shared/random/RandomSource';
@@ -22,6 +23,12 @@ interface ReleaseProgress {
   releaseY: number;
 }
 
+interface InitialEnemyPlacement {
+  readonly tile: { readonly x: number; readonly y: number };
+  readonly direction: Direction;
+  readonly active: boolean;
+}
+
 type MoveOutcome = 'moved' | 'reached';
 const POSITION_EPSILON = 0.001;
 
@@ -29,6 +36,7 @@ export class EnemyReleaseSystem {
   private enemyReleaseTimers = new Map<EnemyEntity, TimerHandle>();
   private releaseProgressByEnemy = new Map<EnemyEntity, ReleaseProgress>();
   private nextReleaseSide: ReleaseSide = 'left';
+  private readonly initialPlacements = new Map<EnemyEntity, InitialEnemyPlacement>();
 
   constructor(
     private readonly world: WorldState,
@@ -36,8 +44,31 @@ export class EnemyReleaseSystem {
     private readonly jailService: EnemyJailService,
     private readonly scheduler: TimerSchedulerAdapter,
     private readonly rng: RandomSource,
-  ) {}
+  ) {
+    world.enemies.forEach((enemy) => {
+      this.initialPlacements.set(enemy, {
+        tile: { ...enemy.tile },
+        direction: enemy.direction,
+        active: enemy.active,
+      });
+    });
+  }
 
+  /** Returns the earliest jail or release-path center within a simulation slice. */
+  getSimulationBoundaryMs(maximumMs: number): number {
+    let boundaryMs = maximumMs;
+    for (const enemy of this.world.enemies) {
+      if (!enemy.active || enemy.state.dead || enemy.state.free) continue;
+      const activeSpeed = enemy.baseSpeed * (enemy.state.scared ? 0.5 : 1);
+      const speed = this.world.enemiesExitingJail.has(enemy)
+        ? activeSpeed : Math.min(ENEMY_JAIL_MOVE_SPEED, activeSpeed);
+      boundaryMs = Math.min(boundaryMs, this.movementRules.timeForDistance(
+        this.movementRules.getDistanceToCenter(enemy, enemy.direction), speed));
+    }
+    return boundaryMs;
+  }
+
+  /** Starts the staggered release sequence for the current jail roster. */
   start(): void {
     this.clearReleaseTimers();
     this.releaseProgressByEnemy.clear();
@@ -49,7 +80,8 @@ export class EnemyReleaseSystem {
     });
   }
 
-  update(): void {
+  /** Advances jail motion and release paths for one bounded simulation slice. */
+  update(deltaMs = 1000 / 60): void {
     this.world.enemies.forEach((enemy) => {
       if (!enemy.active || enemy.state.dead) {
         this.cleanupEnemyReleaseState(enemy);
@@ -63,7 +95,7 @@ export class EnemyReleaseSystem {
       }
 
       if (this.world.enemiesExitingJail.has(enemy)) {
-        this.advanceRelease(enemy);
+        this.advanceRelease(enemy, deltaMs);
         return;
       }
 
@@ -73,11 +105,46 @@ export class EnemyReleaseSystem {
           this.world.enemyJailBounds,
           this.movementRules,
           this.rng,
-          Math.min(ENEMY_JAIL_MOVE_SPEED, enemy.speed),
+          this.movementRules.movementDistance(Math.min(ENEMY_JAIL_MOVE_SPEED, enemy.speed), deltaMs),
         );
         this.movementRules.syncEntityPosition(enemy);
       }
     });
+  }
+
+  /** Restores the original enemies to jail, retires copies, and restarts staggered release. */
+  resetToJail(): void {
+    this.clearReleaseTimers();
+    this.releaseProgressByEnemy.clear();
+    this.world.enemiesExitingJail.clear();
+    this.world.lagZones = [];
+    this.world.enemyEffects = [];
+    this.world.enemyScaredTimers.clear();
+    this.world.enemyScaredWarnings.clear();
+    this.world.enemyAnimations.clear();
+    this.world.enemyEatChainCount = 0;
+
+    this.world.enemies.forEach((enemy) => {
+      const placement = this.initialPlacements.get(enemy);
+      if (!placement) return;
+      this.movementRules.setEntityTile(enemy, placement.tile);
+      enemy.active = placement.active;
+      enemy.direction = placement.direction;
+      enemy.speed = enemy.baseSpeed;
+      enemy.state = {
+        free: false,
+        soonFree: placement.active,
+        scared: false,
+        dead: false,
+        animation: 'default',
+      };
+      enemy.eatenElapsedMs = null;
+      enemy.movementBounds = null;
+      enemy.resetAbilities();
+      restoreEnemyDebugPowerOverride(this.world, enemy);
+    });
+
+    this.start();
   }
 
   destroy(): void {
@@ -129,7 +196,8 @@ export class EnemyReleaseSystem {
     });
   }
 
-  private advanceRelease(enemy: EnemyEntity): void {
+  /** Advances the current authored release phase toward its next target center. */
+  private advanceRelease(enemy: EnemyEntity, deltaMs: number): void {
     const progress = this.releaseProgressByEnemy.get(enemy);
     if (!progress) {
       this.cleanupEnemyReleaseState(enemy);
@@ -139,7 +207,7 @@ export class EnemyReleaseSystem {
     if (progress.phase === 'to_side_center') {
       const sideCenterX = progress.side === 'left' ? this.world.enemyJailBounds.minX : this.world.enemyJailBounds.maxX;
       const sideTarget = { x: sideCenterX, y: this.world.enemyJailBounds.y };
-      const outcome = this.moveEnemyTowardTarget(enemy, sideTarget);
+      const outcome = this.moveEnemyTowardTarget(enemy, sideTarget, deltaMs);
       if (outcome === 'reached') {
         progress.phase = 'to_gate_column';
       }
@@ -148,7 +216,7 @@ export class EnemyReleaseSystem {
 
     if (progress.phase === 'to_gate_column') {
       const gateTarget = { x: progress.gateColumnX, y: this.world.enemyJailBounds.y };
-      const outcome = this.moveEnemyTowardTarget(enemy, gateTarget);
+      const outcome = this.moveEnemyTowardTarget(enemy, gateTarget, deltaMs);
       if (outcome === 'reached') {
         progress.phase = 'cross_gate_once';
       }
@@ -157,7 +225,7 @@ export class EnemyReleaseSystem {
 
     if (progress.phase === 'cross_gate_once') {
       const releaseTarget = { x: progress.gateColumnX, y: progress.releaseY };
-      const outcome = this.moveEnemyTowardTarget(enemy, releaseTarget);
+      const outcome = this.moveEnemyTowardTarget(enemy, releaseTarget, deltaMs);
       if (outcome === 'reached') {
         this.completeRelease(enemy, progress);
       }
@@ -233,8 +301,14 @@ export class EnemyReleaseSystem {
     return this.movementRules.canMove('up', 0, 0, jailCollisionTiles, 'enemyRelease');
   }
 
-  private moveEnemyTowardTarget(enemy: EnemyEntity, targetTile: { x: number; y: number }): MoveOutcome {
-    const snappedBeforeMove = this.snapResidualOffsetsAtTargetAxes(enemy, targetTile);
+  /** Moves an exiting enemy toward a target without passing through its center. */
+  private moveEnemyTowardTarget(
+    enemy: EnemyEntity,
+    targetTile: { x: number; y: number },
+    deltaMs: number,
+  ): MoveOutcome {
+    const distance = this.movementRules.movementDistance(enemy.speed, deltaMs);
+    const snappedBeforeMove = this.snapResidualOffsetsAtTargetAxes(enemy, targetTile, distance);
     if (snappedBeforeMove) {
       this.movementRules.syncEntityPosition(enemy);
     }
@@ -249,8 +323,8 @@ export class EnemyReleaseSystem {
     }
 
     enemy.direction = direction;
-    this.movementRules.advanceEntity(enemy, direction, enemy.speed);
-    const snappedAfterMove = this.snapResidualOffsetsAtTargetAxes(enemy, targetTile);
+    this.movementRules.advanceEntity(enemy, direction, distance);
+    const snappedAfterMove = this.snapResidualOffsetsAtTargetAxes(enemy, targetTile, distance);
     this.movementRules.syncEntityPosition(enemy);
 
     if (snappedAfterMove) {
@@ -269,15 +343,20 @@ export class EnemyReleaseSystem {
     );
   }
 
-  private snapResidualOffsetsAtTargetAxes(enemy: EnemyEntity, targetTile: { x: number; y: number }): boolean {
+  /** Snaps only residual movement that the current slice can actually reach. */
+  private snapResidualOffsetsAtTargetAxes(
+    enemy: EnemyEntity,
+    targetTile: { x: number; y: number },
+    movementDistance: number,
+  ): boolean {
     let changed = false;
-    if (enemy.tile.x === targetTile.x && Math.abs(enemy.moved.x) <= enemy.speed) {
+    if (enemy.tile.x === targetTile.x && Math.abs(enemy.moved.x) <= movementDistance) {
       if (Math.abs(enemy.moved.x) > POSITION_EPSILON) {
         enemy.moved.x = 0;
         changed = true;
       }
     }
-    if (enemy.tile.y === targetTile.y && Math.abs(enemy.moved.y) <= enemy.speed) {
+    if (enemy.tile.y === targetTile.y && Math.abs(enemy.moved.y) <= movementDistance) {
       if (Math.abs(enemy.moved.y) > POSITION_EPSILON) {
         enemy.moved.y = 0;
         changed = true;
@@ -333,6 +412,7 @@ export class EnemyReleaseSystem {
     enemy.state.free = true;
     enemy.state.soonFree = false;
     enemy.resetAbilities();
+    restoreEnemyDebugPowerOverride(this.world, enemy);
   }
 
   private cleanupEnemyReleaseState(enemy: EnemyEntity): void {

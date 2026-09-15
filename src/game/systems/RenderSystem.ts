@@ -111,9 +111,11 @@ export class RenderSystem {
     this.previousEnemyEatRemainingMs = this.world.packet.enemyEatRemainingMs;
   }
 
+  /** Advances presentation time and records the latest bounded simulation position. */
   update(deltaMs: number): void {
     if (this.destroyed || !this.world.isMoving) return;
     this.animationTime += deltaMs / 1000;
+    this.presentation.recordCurrentState(deltaMs);
     const previous = this.presentation.getPosition(this.world.packet, 0);
     if (previous === this.world.packet || this.world.packet.deathAnimationRemainingMs > 0) {
       // Collection runs later in this tick, so fresh destination stars survive a reset.

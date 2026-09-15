@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CreatePacketGameOptions } from '../game/app/createPacketGame';
-import type { RunResult, RuntimeState } from '../game/app/contracts';
+import type { LevelClearCheckpoint, RunResult, RuntimeState } from '../game/app/contracts';
 import { LocalProfileStore } from '../game/infrastructure/adapters/LocalProfileStore';
 import { GameShell } from '../game/ui/GameShell';
 import { mountEnemyPortraits } from '../game/ui/EnemyPortraits';
@@ -9,6 +9,7 @@ import { mountTitleWordmark } from '../game/ui/TitleWordmark';
 import { StrictMode } from 'react';
 import { addScore, resetGameState } from '../state/gameState';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {
     TUTORIAL_LESSONS,
     type TutorialLessonId,
@@ -25,6 +26,11 @@ const loss: RunResult = {
     elapsedMs: 64_500,
     pointsCollected: 14,
     totalPoints: 50,
+    levelsCleared: 2,
+};
+
+type RuntimeEmission = Omit<RuntimeState, 'levelClear'> & {
+    levelClear?: RuntimeState['levelClear'];
 };
 
 function pendingStart() {
@@ -68,11 +74,13 @@ function setup(starts: Promise<void>[] = [], mapVariant: 'default' | 'demo' = 'd
             }),
             pause: vi.fn(),
             resume: vi.fn(),
+            continueLevel: vi.fn(),
             destroy: vi.fn(() => {
                 disposed = true;
                 canvas?.remove();
             }),
-            emit: (state: RuntimeState) => act(() => options.onStateChange?.(state)),
+            emit: (state: RuntimeEmission) =>
+                act(() => options.onStateChange?.({ levelClear: null, ...state })),
         };
     };
     const games: ReturnType<typeof makeGame>[] = [];
@@ -135,6 +143,7 @@ function tutorialState(
     return {
         paused,
         result: null,
+        levelClear: null,
         tutorial: {
             lesson,
             phase,
@@ -163,6 +172,63 @@ afterEach(async () => {
 });
 
 describe('GameShell', () => {
+    it('moves the shared menu highlight with arrows and activates it with Enter', async () => {
+        const page = setup();
+        const user = userEvent.setup();
+        const start = page.action('start');
+        const profile = page.action('profile');
+        const titlePanel = page.find('[role="dialog"]');
+
+        expect(start.classList.contains('packet-primary')).toBe(true);
+        expect(page.key('ArrowRight').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(profile);
+        expect(titlePanel.getAttribute('data-arrow-navigation')).toBe('true');
+        expect(profile.classList.contains('packet-primary')).toBe(true);
+        expect(start.classList.contains('packet-primary')).toBe(false);
+        expect(page.key('ArrowLeft').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(start);
+        page.key('Tab');
+        expect(titlePanel.getAttribute('data-arrow-navigation')).toBeNull();
+        await user.keyboard('{Enter}');
+        await flushStart();
+        const game = page.games[0];
+        expect(page.screen()).toBe('playing');
+
+        game.emit({ paused: true, result: null });
+        const resume = page.action('resume');
+        const restart = page.action('restart');
+        expect(resume.classList.contains('packet-primary')).toBe(true);
+        expect(page.key('ArrowDown').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(restart);
+        expect(restart.classList.contains('packet-primary')).toBe(true);
+        expect(resume.classList.contains('packet-primary')).toBe(false);
+        expect(page.key('ArrowUp').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(resume);
+        await user.keyboard('{Enter}');
+        expect(game.resume).toHaveBeenCalledOnce();
+
+        const levelClear: LevelClearCheckpoint = {
+            level: 1,
+            score: 50,
+            lives: 3,
+            elapsedMs: 1_000,
+            pointsCollected: 1,
+            totalPoints: 1,
+            nextMultiplier: 1.25,
+        };
+        game.emit({ paused: true, result: null, levelClear });
+        const continueLevel = page.action('continue-level');
+        const mainMenu = page.action('main-menu');
+        expect(page.key('ArrowUp').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(mainMenu);
+        expect(mainMenu.classList.contains('packet-primary')).toBe(true);
+        expect(continueLevel.classList.contains('packet-primary')).toBe(false);
+        expect(page.key('ArrowDown').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(continueLevel);
+        await user.keyboard('{Enter}');
+        expect(game.continueLevel).toHaveBeenCalledOnce();
+    });
+
     it('keeps React overlays outside canvas ownership and ignores diagnostics from a replaced run', async () => {
         resetGameState(70, 2);
         const page = setup();
@@ -715,7 +781,7 @@ describe('GameShell', () => {
         expect(page.screen()).toBe('title');
     });
 
-    it('keeps a completed result in memory and explains when local saving fails', async () => {
+    it('keeps a completed result in memory and reports when saving fails', async () => {
         const page = setup();
         page.storage.setItem.mockImplementation(() => {
             throw new Error('Storage blocked');
@@ -729,7 +795,6 @@ describe('GameShell', () => {
         const copy = Array.from(page.root.querySelectorAll('p'))
             .map((node) => node.textContent)
             .join('\n');
-        expect(copy).toContain('Your result is available for this session.');
         expect(copy).not.toContain('saved on this device');
         fireEvent.click(page.action('main-menu'));
         fireEvent.click(page.action('profile'));
@@ -764,45 +829,84 @@ describe('GameShell', () => {
         expect(page.store.getRecentRecords('demo')).toEqual([]);
     });
 
-    it.each(['lost', 'cleared'] as const)(
-        'shows %s results and saves the run once with its starting nickname',
-        async (outcome) => {
-            const page = setup();
-            page.store.setNickname('START NAME');
-            fireEvent.click(page.action('start'));
-            await flushStart();
-            page.store.setNickname('LATER NAME');
-            const result: RunResult = { ...loss, outcome };
-            const game = page.games[0];
-            game.emit({ paused: false, result });
-            game.emit({ paused: false, result });
-            expect(page.screen()).toBe('result');
-            expect(page.find('h1').textContent).toBe(
-                outcome === 'lost' ? 'PACKET LOST' : 'MAZE CLEARED'
-            );
-            expect(page.find('[data-outcome]').getAttribute('data-outcome')).toBe(outcome);
-            expect(
-                Array.from(page.find('dl').querySelectorAll('dd')).map((node) => node.textContent)
-            ).toEqual(['140', '14 / 50', '1:04']);
-            expect(page.store.getRecentRecords('demo')).toMatchObject([
-                {
-                    ...result,
-                    id: 'run-1',
-                    nickname: 'START NAME',
-                    map: 'demo',
-                },
-            ]);
-            expect(page.storage.setItem).toHaveBeenCalledTimes(3);
+    it('shows a final loss and saves the cumulative run once with its starting nickname', async () => {
+        const page = setup();
+        page.store.setNickname('START NAME');
+        fireEvent.click(page.action('start'));
+        await flushStart();
+        page.store.setNickname('LATER NAME');
+        const game = page.games[0];
+        game.emit({ paused: false, result: loss });
+        game.emit({ paused: false, result: loss });
+        expect(page.screen()).toBe('result');
+        expect(page.find('h1').textContent).toBe('PACKET LOST');
+        expect(page.find('[data-outcome]').getAttribute('data-outcome')).toBe('lost');
+        expect(
+            Array.from(page.find('dl').querySelectorAll('dd')).map((node) => node.textContent)
+        ).toEqual(['140', '2', '14 / 50', '1:04']);
+        expect(page.store.getRecentRecords('demo')).toMatchObject([
+            {
+                ...loss,
+                id: 'run-1',
+                nickname: 'START NAME',
+                map: 'demo',
+            },
+        ]);
+        expect(page.storage.setItem).toHaveBeenCalledTimes(3);
 
-            page.key(' ');
-            game.emit({ paused: false, result: null });
-            expect(page.screen()).toBe('result');
-            expect(game.resume).not.toHaveBeenCalled();
-            fireEvent.click(page.action('main-menu'));
-            expect(page.screen()).toBe('title');
-            expect(game.destroy).toHaveBeenCalledOnce();
-        }
-    );
+        page.key(' ');
+        game.emit({ paused: false, result: null });
+        expect(page.screen()).toBe('result');
+        expect(game.resume).not.toHaveBeenCalled();
+        fireEvent.click(page.action('main-menu'));
+        expect(page.screen()).toBe('title');
+        expect(game.destroy).toHaveBeenCalledOnce();
+    });
+
+    it('continues clear checkpoints without saving and confirms before abandoning one', async () => {
+        const page = setup();
+        fireEvent.click(page.action('start'));
+        await flushStart();
+        const game = page.games[0];
+        const levelClear: LevelClearCheckpoint = {
+            level: 1,
+            score: 140,
+            lives: 2,
+            elapsedMs: 64_500,
+            pointsCollected: 50,
+            totalPoints: 50,
+            nextMultiplier: 1.25,
+        };
+
+        game.emit({ paused: true, result: null, levelClear });
+
+        expect(page.screen()).toBe('result');
+        expect(page.find('h1').textContent).toBe('MAZE CLEARED');
+        expect(page.find('[data-outcome]').getAttribute('data-outcome')).toBe('cleared');
+        expect(page.root.textContent).toContain('GAME IS NOW SPED UP AND SCORING IS INCREASED');
+        expect(page.root.textContent).not.toContain('Next level runs');
+        expect(page.root.querySelector('dl')).toBeNull();
+        expect(page.store.getRecentRecords('demo')).toEqual([]);
+        page.key(' ');
+        expect(game.resume).not.toHaveBeenCalled();
+
+        fireEvent.click(page.action('continue-level'));
+        expect(game.continueLevel).toHaveBeenCalledOnce();
+        game.emit({ paused: false, result: null });
+        expect(page.screen()).toBe('playing');
+
+        game.emit({
+            paused: true,
+            result: null,
+            levelClear: { ...levelClear, level: 2, nextMultiplier: 1.5625 },
+        });
+        fireEvent.click(page.action('main-menu'));
+        expect(page.screen()).toBe('confirm');
+        expect(page.root.textContent).toContain('will not be saved');
+        fireEvent.click(page.action('cancel'));
+        expect(page.screen()).toBe('result');
+        expect(page.store.getRecentRecords('demo')).toEqual([]);
+    });
 
     it('saves profile text through its form and clears records only after confirmation', () => {
         const page = setup();
@@ -816,6 +920,7 @@ describe('GameShell', () => {
         fireEvent.click(page.action('profile'));
         const nickname = page.find<HTMLInputElement>('[data-control="nickname"]');
         fireEvent.change(nickname, { target: { value: ' <b>ME</b> ' } });
+        expect(page.key('ArrowDown', nickname).defaultPrevented).toBe(false);
         const typed = page.key(' ', nickname);
         expect(typed.defaultPrevented).toBe(false);
         const submit = new Event('submit', { cancelable: true, bubbles: true });
@@ -842,7 +947,7 @@ describe('GameShell', () => {
         expect(page.find('[data-identity]').querySelector('span')?.textContent).toBe('<b>ME</b>');
     });
 
-    it('contains keyboard focus and preserves native button Space before supporting pause shortcuts', async () => {
+    it('contains keyboard focus and preserves native button keys before supporting pause shortcuts', async () => {
         const page = setup();
         expect(page.document.activeElement).toBe(page.find('[role="dialog"]'));
         expect(page.key('Tab').defaultPrevented).toBe(true);
@@ -857,10 +962,13 @@ describe('GameShell', () => {
         game.emit({ paused: true, result: null });
         const settings = page.action('settings');
         settings.focus();
+        expect(page.key('Enter', settings).defaultPrevented).toBe(false);
+        expect(game.resume).not.toHaveBeenCalled();
         expect(page.key(' ', settings).defaultPrevented).toBe(false);
         expect(game.resume).not.toHaveBeenCalled();
         fireEvent.click(settings);
         expect(page.screen()).toBe('settings');
+        expect(page.action('back').classList.contains('packet-primary')).toBe(true);
         page.key('Tab');
         expect(page.document.activeElement).toBe(page.action('back'));
         page.key('Escape');

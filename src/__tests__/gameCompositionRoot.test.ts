@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CAMERA } from '../config/constants';
 import { Camera3D } from '../engine/camera3d';
 import { GameCompositionRoot } from '../game/app/GameCompositionRoot';
+import { PreloadedGameResources } from '../game/app/preloadGameResources';
 import { BrowserInputAdapter } from '../game/infrastructure/adapters/BrowserInputAdapter';
 import { ThreeRendererAdapter } from '../game/infrastructure/adapters/ThreeRendererAdapter';
 import { TiledMapRepository } from '../game/infrastructure/map/TiledMapRepository';
@@ -111,6 +112,31 @@ describe('GameCompositionRoot startup', () => {
     expect(BrowserInputAdapter).not.toHaveBeenCalled();
   });
 
+  it('uses the first-visit map and models without loading them again', async () => {
+    const { mount } = prepareComposition();
+    const { map } = createMapFixture([[createCollisionTile()]]);
+    const assets = createCharacterAssets();
+    const loadMap = vi.spyOn(TiledMapRepository.prototype, 'loadMap');
+    loadMap.mockClear();
+    const loadAssets = vi.spyOn(ArcadeAssets, 'load');
+    const rendererDispose = vi.fn();
+    vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
+      return { dispose: rendererDispose } as unknown as ThreeRendererAdapter;
+    });
+    const preloadedResources = new PreloadedGameResources({ default: map, demo: map }, assets);
+
+    const composed = await new GameCompositionRoot({ preloadedResources }).compose(runtimeControl);
+
+    expect(loadMap).not.toHaveBeenCalled();
+    expect(loadAssets).not.toHaveBeenCalled();
+    expect(composed.world.map).toBe(map);
+    const render = composed.renderSystems.find((system) => system instanceof RenderSystem)!;
+    render.destroy?.();
+    composed.destroy();
+    expect(rendererDispose).toHaveBeenCalledOnce();
+    expect(mount.children).toHaveLength(0);
+  });
+
   it('releases loaded assets and a created renderer when input construction fails', async () => {
     const { mount } = prepareComposition();
     const assets = createCharacterAssets();
@@ -153,6 +179,52 @@ describe('GameCompositionRoot startup', () => {
     const copies = composed.world.enemies.filter((enemy) => enemy.isCopy);
     expect(copies).toHaveLength(3);
     expect(copies.every((enemy) => !enemy.active && !enemy.state.soonFree && enemy.displayWidth === 8.8)).toBe(true);
+    render.destroy?.();
+    composed.destroy();
+    expect(rendererDispose).toHaveBeenCalledOnce();
+    expect(mount.children).toHaveLength(0);
+  });
+
+  it('resets level actors and restores the original jail roster while retiring Spam copies', async () => {
+    const { mount } = prepareComposition();
+    vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(createCharacterAssets());
+    const rendererDispose = vi.fn();
+    vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
+      return { dispose: rendererDispose } as unknown as ThreeRendererAdapter;
+    });
+    const composed = await new GameCompositionRoot({ rng: () => 0.5 }).compose(runtimeControl);
+    const originals = composed.world.enemies.filter((enemy) => !enemy.isCopy);
+    const copies = composed.world.enemies.filter((enemy) => enemy.isCopy);
+    const initialPointCount = composed.getRemainingPointCount();
+    const originalPlacements = originals.map((enemy) => ({ tile: { ...enemy.tile }, direction: enemy.direction }));
+    composed.world.levelMultiplier = 1.25;
+    composed.world.packet.tile = { x: 0, y: 0 };
+    composed.world.packet.moved = { x: 3, y: 0 };
+    originals.forEach((enemy) => {
+      enemy.tile = { x: 0, y: 0 };
+      enemy.state = { free: true, soonFree: false, scared: true, dead: false, animation: 'scared' };
+      enemy.abilityRemainingMs = 200;
+    });
+    copies[0].active = true;
+    copies[0].state.free = true;
+    composed.world.enemyEffects = [{ kind: 'split', x: 8, y: 8, radius: 16, ageMs: 0, durationMs: 450 }];
+    composed.world.lagZones = [{
+      tile: { x: 1, y: 1 }, x: 24, y: 24, radius: 8, ageMs: 0, durationMs: 4000,
+    }];
+
+    expect(composed.resetLevel()).toBe(initialPointCount);
+
+    expect(composed.world.packet.tile).toEqual(composed.world.packetSpawnTile);
+    expect(composed.world.packet.direction).toEqual({ current: 'right', next: 'right' });
+    expect(originals.map((enemy) => ({ tile: enemy.tile, direction: enemy.direction }))).toEqual(originalPlacements);
+    expect(originals.every((enemy) => enemy.active && !enemy.state.free && enemy.state.soonFree
+      && !enemy.state.scared && !enemy.state.dead)).toBe(true);
+    expect(originals.map((enemy) => enemy.speed)).toEqual([1, 1, 1, 1, 0.5]);
+    expect(copies.every((enemy) => !enemy.active && !enemy.state.soonFree)).toBe(true);
+    expect(composed.world.enemyEffects).toEqual([]);
+    expect(composed.world.lagZones).toEqual([]);
+
+    const render = composed.renderSystems.find((system) => system instanceof RenderSystem)!;
     render.destroy?.();
     composed.destroy();
     expect(rendererDispose).toHaveBeenCalledOnce();

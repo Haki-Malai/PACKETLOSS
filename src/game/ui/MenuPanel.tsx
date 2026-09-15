@@ -1,17 +1,21 @@
 import {
     createContext,
-    useEffect,
+    useCallback,
     useContext,
+    useEffect,
     useId,
+    useLayoutEffect,
     useRef,
     useState,
     type ComponentProps,
+    type FocusEvent as ReactFocusEvent,
     type KeyboardEvent as ReactKeyboardEvent,
     type ReactNode,
     type Ref,
 } from 'react';
 
 export const MenuInteraction = createContext<() => void>(() => {});
+const MenuSelection = createContext<string | null | undefined>(undefined);
 
 export function MenuButton({
     action,
@@ -26,12 +30,20 @@ export function MenuButton({
     variant?: '' | 'primary' | 'danger';
 }) {
     const claimPause = useContext(MenuInteraction);
+    const selectedButtonId = useContext(MenuSelection);
+    const selectionId = useId();
+    const isSelected =
+        selectedButtonId === undefined || selectedButtonId === null
+            ? variant === 'primary'
+            : selectedButtonId === selectionId;
     return (
         <button
             {...props}
             type={props.type ?? 'button'}
             data-action={action}
-            className={`packet-button ${buttonLayout} ${layout === 'icon' ? 'size-12 min-h-12 min-w-12 shrink-0 p-0' : layout === 'compact' ? 'min-h-11 w-auto px-3 py-2' : 'min-h-12 w-full px-4 py-3'} ${variant === 'primary' ? 'packet-primary' : variant === 'danger' ? 'packet-danger' : ''} ${className}`}
+            data-menu-button={selectedButtonId === undefined ? undefined : selectionId}
+            data-menu-default={variant === 'primary' || undefined}
+            className={`packet-button ${buttonLayout} ${layout === 'icon' ? 'size-12 min-h-12 min-w-12 shrink-0 p-0' : layout === 'compact' ? 'min-h-11 w-auto px-3 py-2' : 'min-h-12 w-full px-4 py-3'} ${isSelected ? 'packet-primary' : variant === 'danger' ? 'packet-danger' : ''} ${className}`}
             onClick={(event) => {
                 claimPause();
                 onClick?.(event);
@@ -45,6 +57,17 @@ export const buttonLayout =
 export const fieldLayout = 'flex min-w-0 flex-col gap-2 text-[0.85rem] text-packet-muted';
 export const inputLayout =
     'min-h-12 w-full rounded-none border border-packet-line bg-packet-raised px-3 py-2.5 text-packet-text';
+
+const interactiveMenuControlSelector =
+    'button, a, input, select, textarea, [role="button"], [role="combobox"], [role="option"]';
+const navigableMenuButtonSelector = 'button.packet-button[data-menu-button]:not(:disabled)';
+
+/** Returns enabled, visible menu buttons in their document order. */
+function getNavigableMenuButtons(panel: HTMLDivElement): HTMLButtonElement[] {
+    return Array.from(
+        panel.querySelectorAll<HTMLButtonElement>(navigableMenuButtonSelector)
+    ).filter((button) => !button.closest('[hidden],[inert]'));
+}
 
 export type SelectOption<Value extends string> = {
     value: Value;
@@ -232,48 +255,155 @@ export function MenuPanel({
     tutorialPhase?: string;
 }) {
     const headingId = useId();
+    const ownPanelRef = useRef<HTMLDivElement>(null);
+    const arrowFocus = useRef(false);
+    const [selectedButtonId, setSelectedButtonId] = useState<string | null>(null);
+
+    /** Toggles the visual suppression used only while arrows move button focus. */
+    function setArrowNavigation(active: boolean): void {
+        if (active) ownPanelRef.current?.setAttribute('data-arrow-navigation', 'true');
+        else ownPanelRef.current?.removeAttribute('data-arrow-navigation');
+    }
+
+    /** Keeps the shell's panel ref and this component's local navigation ref synchronized. */
+    const capturePanel = useCallback(
+        (node: HTMLDivElement | null) => {
+            ownPanelRef.current = node;
+            if (typeof panelRef === 'function') panelRef(node);
+            else if (panelRef) panelRef.current = node;
+        },
+        [panelRef]
+    );
+
+    useLayoutEffect(() => {
+        const buttons = ownPanelRef.current ? getNavigableMenuButtons(ownPanelRef.current) : [];
+        const initial =
+            buttons.find((button) => button.dataset.menuDefault === 'true') ?? buttons[0];
+        setSelectedButtonId(initial?.dataset.menuButton ?? null);
+    }, [outcome, title, tutorialPhase]);
+
+    /** Makes keyboard or programmatic button focus the current menu selection. */
+    function selectFocusedButton(event: ReactFocusEvent<HTMLDivElement>): void {
+        if (!arrowFocus.current) setArrowNavigation(false);
+        const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(
+            navigableMenuButtonSelector
+        );
+        if (button) setSelectedButtonId(button.dataset.menuButton ?? null);
+    }
+
+    /** Moves menu selection with arrows and activates it with Enter from the panel. */
+    function handleMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+        if (event.key === 'Tab') {
+            setArrowNavigation(false);
+            return;
+        }
+        if (
+            event.defaultPrevented ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey
+        ) {
+            return;
+        }
+
+        const target = event.target as HTMLElement | null;
+        const targetButton = target?.closest<HTMLButtonElement>(navigableMenuButtonSelector);
+        const interactiveControl = target?.closest(interactiveMenuControlSelector);
+        const direction =
+            event.key === 'ArrowUp' || event.key === 'ArrowLeft'
+                ? -1
+                : event.key === 'ArrowDown' || event.key === 'ArrowRight'
+                  ? 1
+                  : 0;
+
+        if (direction !== 0) {
+            if (interactiveControl && !targetButton) return;
+            const buttons = getNavigableMenuButtons(event.currentTarget);
+            if (buttons.length === 0) return;
+            const selectedIndex = buttons.findIndex(
+                (button) => button.dataset.menuButton === selectedButtonId
+            );
+            const nextIndex =
+                selectedIndex < 0
+                    ? direction > 0
+                        ? 0
+                        : buttons.length - 1
+                    : (selectedIndex + direction + buttons.length) % buttons.length;
+            const nextButton = buttons[nextIndex];
+            event.preventDefault();
+            setSelectedButtonId(nextButton.dataset.menuButton ?? null);
+            setArrowNavigation(true);
+            arrowFocus.current = true;
+            try {
+                nextButton.focus({ preventScroll: true });
+            } finally {
+                arrowFocus.current = false;
+            }
+            return;
+        }
+
+        if (event.key !== 'Enter' || event.repeat || interactiveControl) return;
+        const buttons = getNavigableMenuButtons(event.currentTarget);
+        const selected =
+            buttons.find((button) => button.dataset.menuButton === selectedButtonId) ??
+            buttons.find((button) => button.dataset.menuDefault === 'true') ??
+            buttons[0];
+        if (!selected) return;
+        event.preventDefault();
+        selected.click();
+    }
+
     return (
-        <div
-            ref={panelRef}
-            className={`packet-panel relative z-1 flex w-full shrink-0 flex-col border border-packet-line bg-packet-surface outline-none ${tutorialPhase ? 'mt-auto mr-0 mb-0 ml-0 max-w-[480px] gap-4 p-[clamp(18px,3vw,26px)]' : `m-auto gap-6 p-[clamp(22px,5vw,40px)] ${wide ? 'max-w-[1040px]' : 'max-w-[640px]'}`} ${centered ? 'packet-title-panel' : ''}`}
-            tabIndex={-1}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={headingId}
-            data-outcome={outcome}
-            data-tutorial-phase={tutorialPhase}
-        >
-            <div className="packet-panel-signal" aria-hidden="true" />
-            <header className="flex items-start gap-4">
-                <div className="flex min-w-0 flex-1 flex-col gap-3">
-                    <p className="packet-eyebrow">{eyebrow}</p>
-                    {heading ? (
-                        heading(headingId)
-                    ) : (
-                        <h1 id={headingId} className="packet-heading">
-                            {title}
-                        </h1>
+        <MenuSelection.Provider value={selectedButtonId}>
+            <div
+                ref={capturePanel}
+                className={`packet-panel relative z-1 flex w-full shrink-0 flex-col border border-packet-line bg-packet-surface outline-none ${tutorialPhase ? 'mt-auto mr-0 mb-0 ml-0 max-w-[480px] gap-4 p-[clamp(18px,3vw,26px)]' : `m-auto gap-6 p-[clamp(22px,5vw,40px)] ${wide ? 'max-w-[1040px]' : 'max-w-[640px]'}`} ${centered ? 'packet-title-panel' : ''}`}
+                tabIndex={-1}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={headingId}
+                data-outcome={outcome}
+                data-tutorial-phase={tutorialPhase}
+                onFocusCapture={selectFocusedButton}
+                onKeyDown={handleMenuKeyDown}
+                onPointerDownCapture={() => setArrowNavigation(false)}
+            >
+                <div className="packet-panel-signal" aria-hidden="true" />
+                <header className="flex items-start gap-4">
+                    <div className="flex min-w-0 flex-1 flex-col gap-3">
+                        <p className="packet-eyebrow">{eyebrow}</p>
+                        {heading ? (
+                            heading(headingId)
+                        ) : (
+                            <h1 id={headingId} className="packet-heading">
+                                {title}
+                            </h1>
+                        )}
+                    </div>
+                    {onBack && (
+                        <MenuButton
+                            action="back"
+                            onClick={onBack}
+                            layout="icon"
+                            aria-label="Back"
+                            title="Back (Escape)"
+                        >
+                            <span
+                                aria-hidden="true"
+                                className="font-sans text-[1.6rem] leading-none"
+                            >
+                                ←
+                            </span>
+                        </MenuButton>
                     )}
-                </div>
-                {onBack && (
-                    <MenuButton
-                        action="back"
-                        onClick={onBack}
-                        layout="icon"
-                        aria-label="Back"
-                        title="Back (Escape)"
-                    >
-                        <span aria-hidden="true" className="font-sans text-[1.6rem] leading-none">
-                            ←
-                        </span>
-                    </MenuButton>
-                )}
-            </header>
-            <div className="flex min-w-0 flex-col gap-3 empty:hidden">{children}</div>
-            <div className="grid gap-3 empty:hidden">{actions}</div>
-            <footer className="flex min-w-0 flex-col gap-3 empty:hidden [&>.packet-note]:m-0">
-                {footer}
-            </footer>
-        </div>
+                </header>
+                <div className="flex min-w-0 flex-col gap-3 empty:hidden">{children}</div>
+                <div className="grid gap-3 empty:hidden">{actions}</div>
+                <footer className="flex min-w-0 flex-col gap-3 empty:hidden [&>.packet-note]:m-0">
+                    {footer}
+                </footer>
+            </div>
+        </MenuSelection.Provider>
     );
 }

@@ -116,6 +116,42 @@ describe('EnemyPacketCollisionSystem', () => {
     }
   });
 
+  it('restores every original enemy and clears transient threats when a nonfinal death respawns', () => {
+    const harness = new MechanicsDomainHarness({ seed: 4108, fixture: 'default-map', enemyCount: 2 });
+
+    try {
+      const initialTiles = harness.world.enemies.map((enemy) => ({ ...enemy.tile }));
+      const [dangerous, returning] = harness.world.enemies;
+      const contactTile = { x: 18, y: 18 };
+      harness.movementRules.setEntityTile(harness.world.packet, contactTile);
+      harness.movementRules.setEntityTile(dangerous, contactTile);
+      harness.movementRules.setEntityTile(returning, { x: 19, y: 18 });
+      dangerous.state.free = true;
+      returning.state = { free: false, soonFree: false, scared: true, dead: true, animation: 'scared' };
+      returning.eatenElapsedMs = 100;
+      harness.world.enemyScaredTimers.set(returning, 500);
+      harness.world.enemyEffects = [{ kind: 'ping', x: 8, y: 8, radius: 16, ageMs: 0, durationMs: 600 }];
+      harness.world.lagZones = [{
+        tile: { x: 17, y: 18 }, x: 280, y: 296, radius: 8, ageMs: 0, durationMs: 4000,
+      }];
+
+      harness.enemyPacketCollisionSystem.update();
+      expect(harness.world.enemies.map((enemy) => enemy.tile)).not.toEqual(initialTiles);
+      harness.enemyPacketCollisionSystem.update(PACKET_DEATH_ANIMATION.durationMs);
+
+      expect(getGameState().lives).toBe(2);
+      expect(harness.world.enemies.map((enemy) => enemy.tile)).toEqual(initialTiles);
+      expect(harness.world.enemies.every((enemy) => enemy.active && !enemy.state.free
+        && enemy.state.soonFree && !enemy.state.scared && !enemy.state.dead)).toBe(true);
+      expect(harness.world.enemies.every((enemy) => enemy.eatenElapsedMs === null)).toBe(true);
+      expect(harness.world.enemyScaredTimers.size).toBe(0);
+      expect(harness.world.enemyEffects).toEqual([]);
+      expect(harness.world.lagZones).toEqual([]);
+    } finally {
+      harness.destroy();
+    }
+  });
+
   it('keeps an eaten enemy at contact, then walks home before re-entering normal jail release flow', () => {
     const harness = new MechanicsDomainHarness({ seed: 4102, fixture: 'default-map', enemyCount: 1, autoStartSystems: false });
 
@@ -181,10 +217,37 @@ describe('EnemyPacketCollisionSystem', () => {
       harness.enemyPacketCollisionSystem.update(1);
       expect(harness.world.outcome).toBe('lost');
       expect(harness.world.packet.tile).toEqual(contactTile);
+      expect(enemy.tile).toEqual(contactTile);
       expect(harness.world.packet.deathRecoveryRemainingMs).toBe(0);
       enemy.state.scared = true;
       harness.enemyPacketCollisionSystem.update();
       expect(getGameState()).toEqual({ score: 0, lives: 0 });
+    } finally {
+      harness.destroy();
+    }
+  });
+
+  it('rounds every scared-enemy chain award with the current level multiplier', () => {
+    const harness = new MechanicsDomainHarness({ seed: 4109, fixture: 'default-map', enemyCount: 2 });
+
+    try {
+      harness.world.levelMultiplier = 1.25;
+      const [first, second] = harness.world.enemies;
+      const collisionTile = { x: 18, y: 18 };
+      harness.movementRules.setEntityTile(harness.world.packet, collisionTile);
+      harness.movementRules.setEntityTile(first, collisionTile);
+      harness.movementRules.setEntityTile(second, collisionTile);
+      first.state.free = true;
+      first.state.scared = true;
+      second.state.free = true;
+      second.state.scared = true;
+
+      harness.enemyPacketCollisionSystem.update();
+      harness.enemyPacketCollisionSystem.update();
+
+      expect(getGameState()).toEqual({ score: 750, lives: 3 });
+      expect(first.state.dead).toBe(true);
+      expect(second.state.dead).toBe(true);
     } finally {
       harness.destroy();
     }

@@ -8,6 +8,7 @@ interface CameraLike {
 
 export class DebugOverlaySystem {
   readonly runsWhenPaused = true;
+  readonly updatePhase = 'afterSimulation' as const;
   private lastRenderTimestampMs: number | null = null;
   private smoothedFps: number | null = null;
   private panelsVisible: boolean | null = null;

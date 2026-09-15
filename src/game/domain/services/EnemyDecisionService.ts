@@ -23,7 +23,12 @@ export interface EnemySimulationConfig {
 }
 
 export class EnemyDecisionService {
-  private readonly patrols = new WeakMap<EnemyEntity, { route: NavigationStep[]; index: number }>();
+  private patrols = new WeakMap<EnemyEntity, { route: NavigationStep[]; index: number }>();
+
+  /** Discards cached patrol progress so restored enemies restart from their jail placement. */
+  reset(): void {
+    this.patrols = new WeakMap<EnemyEntity, { route: NavigationStep[]; index: number }>();
+  }
 
   chooseEnemyDirection(
     enemy: EnemyEntity,

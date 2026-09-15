@@ -35,8 +35,13 @@ describe('eaten enemy return', () => {
     let distance = 0;
     for (let tick = 0; tick < 100 && enemy.state.dead; tick += 1) {
       const before = { x: enemy.x, y: enemy.y };
-      release.update();
-      enemyMovement.update(1);
+      const maximumMs = 1000 / 60;
+      const sliceMs = Math.min(
+        release.getSimulationBoundaryMs(maximumMs),
+        enemyMovement.getSimulationBoundaryMs(maximumMs),
+      );
+      release.update(sliceMs);
+      enemyMovement.update(sliceMs);
       const step = Math.hypot(enemy.x - before.x, enemy.y - before.y);
       expect(step).toBeLessThanOrEqual(2);
       distance += step;
@@ -45,7 +50,7 @@ describe('eaten enemy return', () => {
         movement.setEntityTile(world.packet, enemy.tile);
         setActiveEnemiesScaredWindow(world, 6000);
         abilities.update(1000);
-        collisions.update(1);
+        collisions.update(sliceMs);
         expect(enemy.state.scared).toBe(false);
         expect(enemy.abilityRemainingMs).toBeNull();
         expect(enemy.state.soonFree).toBe(false);
@@ -75,6 +80,7 @@ describe('eaten enemy return', () => {
     enemy.state.scared = true;
     new EnemyPacketCollisionSystem(world, movement).update();
     enemyMovement.update(ENEMY_EAT_DURATION_MS);
+    enemyMovement.update();
     expect(enemy.direction).toBe(expectedDirection);
     expect(enemy.x).toBe(expectedX);
   });
@@ -89,12 +95,13 @@ describe('eaten enemy return', () => {
     enemy.state.scared = true;
     new EnemyPacketCollisionSystem(world, movement).update();
     enemyMovement.update(ENEMY_EAT_DURATION_MS);
+    enemyMovement.update();
     expect(enemy.direction).toBe('right');
     expect(enemy.x).toBe(7);
     expect(enemy.tile).toEqual({ x: 0, y: 1 });
     for (let tick = 0; tick < 40 && enemy.state.dead; tick += 1) {
       const previousX = enemy.x;
-      enemyMovement.update();
+      enemyMovement.update(enemyMovement.getSimulationBoundaryMs(1000 / 60));
       expect(enemy.x - previousX).toBeGreaterThanOrEqual(0);
       expect(enemy.x - previousX).toBeLessThanOrEqual(2);
     }
@@ -119,6 +126,8 @@ describe('eaten enemy return', () => {
     enemyMovement.update(ENEMY_EAT_DURATION_MS);
     collisions.update(ENEMY_EAT_DURATION_MS);
     expect(world.packet.enemyEatRemainingMs).toBe(0);
+    expect([enemy.x, enemy.y]).toEqual([24, 24]);
+    enemyMovement.update();
     expect([enemy.x, enemy.y]).toEqual([26, 24]);
     world.isMoving = false;
     enemyMovement.update(1000);

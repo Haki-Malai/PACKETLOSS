@@ -20,8 +20,10 @@ export class EnemyPacketCollisionSystem {
     private readonly world: WorldState,
     private readonly movementRules: MovementRules,
     _defaultEnemySpeed: number = SPEED.enemy,
+    private readonly onPacketRespawn?: () => void,
   ) {}
 
+  /** Resolves collisions and advances death timing using scaled simulation time. */
   update(deltaMs = 0): void {
     if (!this.world.isMoving) return;
     if (this.world.outcome) return;
@@ -68,12 +70,15 @@ export class EnemyPacketCollisionSystem {
 
   destroy(): void {}
 
+  /** Starts Packet death and drops any movement distance deferred at the contact boundary. */
   private applyPacketHitOutcome(): void {
     loseLife();
+    this.movementRules.discardPendingDistance(this.world.packet);
     this.world.packet.enemyEatRemainingMs = 0;
     this.world.packet.deathAnimationRemainingMs = PACKET_DEATH_ANIMATION.durationMs;
   }
 
+  /** Restores the Packet after a nonfinal death, then resets enemies through the owning composition. */
   private respawnPacket(): void {
     this.movementRules.setEntityTile(this.world.packet, this.world.packetSpawnTile);
     this.world.packet.direction.current = PACKET_RESPAWN_DIRECTION;
@@ -84,14 +89,19 @@ export class EnemyPacketCollisionSystem {
     this.world.packet.deathRecoveryElapsedMs = 0;
     this.world.packet.deathRecoveryNextToggleAtMs = PACKET_DEATH_RECOVERY.blinkStartIntervalMs;
     this.world.packet.deathRecoveryVisible = true;
+    this.onPacketRespawn?.();
   }
 
+  /** Applies the level-scaled chain award and starts the enemy's harmless return state. */
   private applyEnemyHitOutcome(enemy: EnemyEntity): void {
     const chainScoreIndex = Math.min(this.world.enemyEatChainCount, ENEMY_EAT_CHAIN_SCORES.length - 1);
-    addScore(ENEMY_EAT_CHAIN_SCORES[chainScoreIndex] ?? ENEMY_EAT_CHAIN_SCORES[ENEMY_EAT_CHAIN_SCORES.length - 1]);
+    const baseScore = ENEMY_EAT_CHAIN_SCORES[chainScoreIndex]
+      ?? ENEMY_EAT_CHAIN_SCORES[ENEMY_EAT_CHAIN_SCORES.length - 1];
+    addScore(Math.round(baseScore * this.world.levelMultiplier));
     this.world.enemyEatChainCount += 1;
 
     this.world.enemiesExitingJail.delete(enemy);
+    this.movementRules.discardPendingDistance(enemy);
     clearEnemyScaredWindow(this.world, enemy);
     enemy.speed = enemy.baseSpeed;
     enemy.state.free = false;
