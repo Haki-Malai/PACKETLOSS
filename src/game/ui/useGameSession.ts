@@ -4,6 +4,7 @@ import { useEnvironment } from '../../config/EnvironmentContext';
 import type { CreatePacketGameOptions } from '../app/createPacketGame';
 import type { LevelClearCheckpoint, PacketGame, RunResult, RuntimeState } from '../app/contracts';
 import type { MapVariant } from '../app/mapRuntimeConfig';
+import type { PreloadedGameResources } from '../app/preloadGameResources';
 import { LocalProfileStore } from '../infrastructure/adapters/LocalProfileStore';
 import { EMPTY_DEBUG, type DebugSnapshot } from '../shared/events/DebugSnapshot';
 import {
@@ -32,6 +33,7 @@ export interface GameShellOptions {
     mapVariant: MapVariant;
     store?: LocalProfileStore;
     createGame?: (_options: CreatePacketGameOptions) => PacketGame;
+    preloadedResources?: PreloadedGameResources;
 }
 
 interface ShellState {
@@ -95,9 +97,10 @@ export function useGameSession(options: GameShellOptions) {
             owner.generation += 1;
             owner.game?.destroy();
             owner.game = null;
+            options.preloadedResources?.dispose();
             debug?.publish(EMPTY_DEBUG);
         };
-    }, [debug]);
+    }, [debug, options.preloadedResources]);
 
     /** Applies state immediately for runtime callbacks, then schedules React's update if active. */
     function update(patch: Partial<ShellState>) {
@@ -231,6 +234,9 @@ export function useGameSession(options: GameShellOptions) {
             const game = createGame({
                 mountId: 'packet-scene',
                 mapVariant: tutorialLesson ? 'demo' : options.mapVariant,
+                ...(options.preloadedResources
+                    ? { preloadedResources: options.preloadedResources }
+                    : {}),
                 ...(tutorialLesson ? { tutorialLesson } : {}),
                 /** Forwards state only while the originating run still owns the session. */
                 onStateChange: (runtime) => {

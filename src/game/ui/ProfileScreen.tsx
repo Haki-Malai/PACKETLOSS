@@ -49,9 +49,6 @@ export function ProfileBody({ session }: { session: GameSession }) {
                     Save name
                 </MenuButton>
             </form>
-            <p className="packet-note">
-                Optional · Up to 16 characters. Past records keep the name used for that run.
-            </p>
             <MenuColumns>
                 <RecordSection title="TOP SCORES" records={store.getTopRecords(mapVariant)} />
                 <RecordSection

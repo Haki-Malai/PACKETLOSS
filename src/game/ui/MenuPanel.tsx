@@ -256,7 +256,14 @@ export function MenuPanel({
 }) {
     const headingId = useId();
     const ownPanelRef = useRef<HTMLDivElement>(null);
+    const arrowFocus = useRef(false);
     const [selectedButtonId, setSelectedButtonId] = useState<string | null>(null);
+
+    /** Toggles the visual suppression used only while arrows move button focus. */
+    function setArrowNavigation(active: boolean): void {
+        if (active) ownPanelRef.current?.setAttribute('data-arrow-navigation', 'true');
+        else ownPanelRef.current?.removeAttribute('data-arrow-navigation');
+    }
 
     /** Keeps the shell's panel ref and this component's local navigation ref synchronized. */
     const capturePanel = useCallback(
@@ -277,6 +284,7 @@ export function MenuPanel({
 
     /** Makes keyboard or programmatic button focus the current menu selection. */
     function selectFocusedButton(event: ReactFocusEvent<HTMLDivElement>): void {
+        if (!arrowFocus.current) setArrowNavigation(false);
         const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(
             navigableMenuButtonSelector
         );
@@ -285,6 +293,10 @@ export function MenuPanel({
 
     /** Moves menu selection with arrows and activates it with Enter from the panel. */
     function handleMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+        if (event.key === 'Tab') {
+            setArrowNavigation(false);
+            return;
+        }
         if (
             event.defaultPrevented ||
             event.altKey ||
@@ -321,7 +333,13 @@ export function MenuPanel({
             const nextButton = buttons[nextIndex];
             event.preventDefault();
             setSelectedButtonId(nextButton.dataset.menuButton ?? null);
-            nextButton.focus();
+            setArrowNavigation(true);
+            arrowFocus.current = true;
+            try {
+                nextButton.focus({ preventScroll: true });
+            } finally {
+                arrowFocus.current = false;
+            }
             return;
         }
 
@@ -349,6 +367,7 @@ export function MenuPanel({
                 data-tutorial-phase={tutorialPhase}
                 onFocusCapture={selectFocusedButton}
                 onKeyDown={handleMenuKeyDown}
+                onPointerDownCapture={() => setArrowNavigation(false)}
             >
                 <div className="packet-panel-signal" aria-hidden="true" />
                 <header className="flex items-start gap-4">
