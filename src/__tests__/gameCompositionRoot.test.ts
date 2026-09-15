@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CAMERA } from '../config/constants';
 import { Camera3D } from '../engine/camera3d';
 import { GameCompositionRoot } from '../game/app/GameCompositionRoot';
+import { PreloadedGameResources } from '../game/app/preloadGameResources';
 import { BrowserInputAdapter } from '../game/infrastructure/adapters/BrowserInputAdapter';
 import { ThreeRendererAdapter } from '../game/infrastructure/adapters/ThreeRendererAdapter';
 import { TiledMapRepository } from '../game/infrastructure/map/TiledMapRepository';
@@ -109,6 +110,31 @@ describe('GameCompositionRoot startup', () => {
     expect(getGameState()).toEqual({ score: 500, lives: 1 });
     expect(ThreeRendererAdapter).not.toHaveBeenCalled();
     expect(BrowserInputAdapter).not.toHaveBeenCalled();
+  });
+
+  it('uses the first-visit map and models without loading them again', async () => {
+    const { mount } = prepareComposition();
+    const { map } = createMapFixture([[createCollisionTile()]]);
+    const assets = createCharacterAssets();
+    const loadMap = vi.spyOn(TiledMapRepository.prototype, 'loadMap');
+    loadMap.mockClear();
+    const loadAssets = vi.spyOn(ArcadeAssets, 'load');
+    const rendererDispose = vi.fn();
+    vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
+      return { dispose: rendererDispose } as unknown as ThreeRendererAdapter;
+    });
+    const preloadedResources = new PreloadedGameResources({ default: map, demo: map }, assets);
+
+    const composed = await new GameCompositionRoot({ preloadedResources }).compose(runtimeControl);
+
+    expect(loadMap).not.toHaveBeenCalled();
+    expect(loadAssets).not.toHaveBeenCalled();
+    expect(composed.world.map).toBe(map);
+    const render = composed.renderSystems.find((system) => system instanceof RenderSystem)!;
+    render.destroy?.();
+    composed.destroy();
+    expect(rendererDispose).toHaveBeenCalledOnce();
+    expect(mount.children).toHaveLength(0);
   });
 
   it('releases loaded assets and a created renderer when input construction fails', async () => {

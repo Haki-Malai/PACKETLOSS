@@ -12,8 +12,14 @@ const mocks = vi.hoisted(() => ({
     importShowcase: vi.fn(),
     setupShowcase: vi.fn(),
     disposeShowcase: vi.fn(),
+    preloadGameResources: vi.fn(),
+    disposePreloadedResources: vi.fn(),
 }));
 vi.mock('../game/app/createPacketGame', () => ({ createPacketGame: mocks.createPacketGame }));
+vi.mock('../game/app/preloadGameResources', () => ({
+    PreloadedGameResources: class {},
+    preloadGameResources: mocks.preloadGameResources,
+}));
 vi.mock('../game/ui/TitleWordmark', () => ({ mountTitleWordmark: () => () => {} }));
 
 function ShowcaseStub() {
@@ -61,11 +67,54 @@ describe('game startup and development asset route', () => {
             continueLevel: vi.fn(),
             destroy: mocks.destroy,
         });
+        mocks.preloadGameResources.mockImplementation(() =>
+            Promise.resolve({
+                take: vi.fn(() => null),
+                dispose: mocks.disposePreloadedResources,
+            })
+        );
         vi.doMock('../dev/assets/AssetShowcase', () => {
             mocks.importShowcase();
             return { default: ShowcaseStub };
         });
         vi.spyOn(window, 'addEventListener');
+    });
+
+    it('loads game resources before revealing the first title screen', async () => {
+        let finish!: (_resources: { take: () => null; dispose: () => void }) => void;
+        const loading = new Promise((resolve) => {
+            finish = resolve;
+        });
+        mocks.preloadGameResources.mockReturnValue(loading);
+        await boot();
+        expect(screen.getByRole('status').textContent).toBe('Loading the maze and game assets…');
+        expect(screen.queryByRole('button', { name: 'Start game' })).toBeNull();
+
+        finish({ take: () => null, dispose: mocks.disposePreloadedResources });
+        await settle();
+        expect(screen.getByRole('button', { name: 'Start game' })).toBeDefined();
+        expect(mocks.createPacketGame).not.toHaveBeenCalled();
+    });
+
+    it('offers a retry when the first asset load fails', async () => {
+        let failing = true;
+        mocks.preloadGameResources.mockImplementation(() =>
+            failing
+                ? Promise.reject(new Error('Map unavailable'))
+                : Promise.resolve({
+                      take: vi.fn(() => null),
+                      dispose: mocks.disposePreloadedResources,
+                  })
+        );
+        await boot();
+        await settle();
+        expect(screen.getByRole('alert').textContent).toBe('Map unavailable');
+
+        failing = false;
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await settle();
+        expect(screen.getByRole('button', { name: 'Start game' })).toBeDefined();
+        expect(mocks.preloadGameResources.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
     afterEach(async () => {
         pagehide();
@@ -81,6 +130,7 @@ describe('game startup and development asset route', () => {
     it('shows a readable error when WebGL initialization fails', async () => {
         mocks.start.mockRejectedValueOnce(new Error('The 3D game requires WebGL 2.'));
         await boot();
+        await settle();
         fireEvent.click(screen.getByRole('button', { name: 'Start game' }));
         await settle();
         expect(screen.getByRole('alert').textContent).toBe('The 3D game requires WebGL 2.');
@@ -133,6 +183,7 @@ describe('game startup and development asset route', () => {
 
     it('starts once from the title and keeps the development link outside the game mount', async () => {
         const mount = await boot();
+        await settle();
         const link = screen.getByRole('link', { name: 'Assets' });
         expect(link.getAttribute('href')).toBe('/dev/assets');
         expect(mount.contains(link)).toBe(false);
@@ -146,6 +197,7 @@ describe('game startup and development asset route', () => {
                 mapVariant: 'demo',
             })
         );
+        expect(mocks.createPacketGame.mock.calls[0]?.[0]).toHaveProperty('preloadedResources');
         expect(mocks.createPacketGame.mock.calls[0]?.[0]).toHaveProperty(
             'onDebugChange',
             expect.any(Function)
@@ -203,6 +255,7 @@ describe('game startup and development asset route', () => {
             })
         );
         const mount = await boot();
+        await settle();
         fireEvent.click(screen.getByRole('button', { name: 'Start game' }));
         await settle();
         pagehide();

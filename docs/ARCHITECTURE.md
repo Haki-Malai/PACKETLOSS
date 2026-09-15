@@ -13,7 +13,7 @@ The project moved from a single large runtime file to a layered OOP structure fo
 The runtime is now composed from small, explicit systems operating on a shared `WorldState`.
 
 Entrypoint flow:
-1. `src/main.tsx` mounts one React root inside `EnvironmentProvider`. `App` selects the development-only `/dev/assets` gallery relative to the configured base URL; otherwise it renders `GameShell`, which shows the title screen before initializing gameplay.
+1. `src/main.tsx` mounts one React root inside `EnvironmentProvider`. `App` selects the development-only `/dev/assets` gallery relative to the configured base URL; otherwise it preloads both maps, shared character assets, and menu/runtime modules before rendering `GameShell` and its title screen.
 2. Starting a run calls `createPacketGame`, which builds a `GameRuntime` with `GameCompositionRoot`.
 3. `GameCompositionRoot` wires map/adapters/domain services/systems.
 4. `GameRuntime` drives ordered updates and rendering via fixed-step loop.
@@ -52,7 +52,7 @@ src/game/
 Composition and lifecycle orchestration.
 - `createPacketGame.ts`: public API factory (`start`, `pause`, `resume`, `continueLevel`, `destroy`).
 - `GameRuntime.ts`: fixed-step runtime loop and system execution. Concurrent `start()` calls share initialization; destruction cancels pending startup before it can mount a scene or reset shared game state. Composition checks cancellation after map loading, mounts only after scene construction, and removes only its owned canvas. A failed system startup releases the partial composition and listeners before allowing a retry.
-- `GameCompositionRoot.ts`: composition root; loads the map and required enemy models before resetting shared state or mounting the game, then builds world + systems + adapters. Cancellation and construction failures release loaded assets and any created adapters.
+- `GameCompositionRoot.ts`: composition root; consumes the first-visit prepared map and enemy models when available, otherwise loads them before resetting shared state or mounting the game, then builds world + systems + adapters. Cancellation and construction failures release loaded assets and any created adapters.
 - `contracts.ts`: runtime and system interfaces.
 
 ### `ui`
@@ -60,7 +60,7 @@ Composition and lifecycle orchestration.
 
 `MenuPanel` and `MenuButton` provide shared React components and header, body, actions, and footer slots. Enter on a panel activates its enabled primary action, while focused interactive controls keep native keyboard behavior. All menus use the same frame and spacing with standard (640-pixel maximum) and wide (1,040-pixel maximum) variants; help and profile share the responsive `MenuColumns` component. The shared header owns the labelled top-right Back control for submenus, while the shell owns parent navigation and focus restoration. `GameShell` mounts ambient decoration once beside a dedicated scrollable `.packet-menu-viewport`; screen changes replace only the panel. This keeps background CSS animation continuous across menu navigation without recreating decorative nodes or gameplay timers. Shell disposal removes both, and reduced-motion rules still apply to the persistent background.
 
-The title lazily imports `TitleWordmark`, a small independent Three.js view of the actual map lettering. It reuses `MazeScene`, scene lighting, and `Camera3D` without loading a map, enemy models, or gameplay systems. It renders only on mounting, resizing, and occasional single-letter flicker transitions. Title-owned vertex and outline-instance colors dim one authored glyph without changing the map asset. Leaving the title cancels its timer and disposes its renderer, scene resources, and listeners; stale imports cannot mount into a replacement menu. The accessible text heading remains as a fallback on load failure or context loss.
+The initial bootstrap primes `TitleWordmark` and the enemy-portrait module before revealing the menu. `TitleWordmark` is a small independent Three.js view of the actual map lettering. It reuses `MazeScene`, scene lighting, and `Camera3D` without loading another map, enemy models, or gameplay systems. It renders only on mounting, resizing, and occasional single-letter flicker transitions. Title-owned vertex and outline-instance colors dim one authored glyph without changing the map asset. Leaving the title cancels its timer and disposes its renderer, scene resources, and listeners. The accessible text heading remains as a fallback on load failure or context loss.
 
 `MenuMotion.observeMenuMotion` supplies the same motion-preference and document-visibility policy to the title wordmark and enemy portraits. Reduced motion and hidden tabs stop their scheduling; returning starts from a steady state without catching up hidden time. `MenuPanel` owns the decorative edge sweep and corner pixels for all screens, animated by shared CSS keyframes and a single panel-accent token alongside the existing frame effects.
 

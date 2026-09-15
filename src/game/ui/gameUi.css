@@ -387,6 +387,10 @@
 .packet-ui .packet-button:not(:disabled):is(:hover, :focus-visible) {
     transform: translateY(-2px);
 }
+.packet-panel[data-arrow-navigation='true']
+    .packet-button:not(:disabled):focus-visible:not(:hover) {
+    transform: none;
+}
 .packet-ui .packet-button:not(:disabled):active {
     transform: translateY(1px);
 }
@@ -412,6 +416,9 @@
     outline-offset: 4px;
 }
 .packet-panel:focus-visible {
+    outline: none;
+}
+.packet-panel[data-arrow-navigation='true'] .packet-button:focus-visible {
     outline: none;
 }
 .packet-record-heading {

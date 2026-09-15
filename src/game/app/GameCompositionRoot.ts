@@ -34,6 +34,7 @@ import { RenderSystem } from '../systems/RenderSystem';
 import { prepareTutorialWorld, TutorialController } from '../tutorial/TutorialController';
 import type { TutorialLessonId } from '../tutorial/TutorialLesson';
 import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
+import type { PreloadedGameResources } from './preloadGameResources';
 import { ComposedGame, RuntimeControl } from './contracts';
 
 const ENEMY_KEYS: EnemyKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
@@ -67,6 +68,7 @@ export interface GameCompositionOptions {
   mapVariant?: MapVariant;
   tutorialLesson?: TutorialLessonId;
   rng?: (() => number) | { next(): number; int(maxExclusive: number): number };
+  preloadedResources?: PreloadedGameResources;
 }
 
 export class GameCompositionRoot {
@@ -86,18 +88,22 @@ export class GameCompositionRoot {
       throw new Error(`Game mount element not found: #${mountId}`);
     }
 
-    const mapRepository = new TiledMapRepository();
     const rng = this.options.tutorialLesson ? new SeededRandom(1) : toRandomSource(this.options.rng ?? Math.random);
     const mapVariant = this.options.tutorialLesson ? 'demo' : this.options.mapVariant ?? 'default';
     const { mapJsonPath } = resolveMapPathsForVariant(mapVariant);
-    const map = await this.loadMapForVariant(mapRepository, mapVariant, mapJsonPath);
-    signal?.throwIfAborted();
-    const assets = await ArcadeAssets.load(signal);
+    let assets: ArcadeAssets | undefined;
     let canvas: HTMLCanvasElement | undefined;
     let renderer: ThreeRendererAdapter | undefined;
     let input: BrowserInputAdapter | undefined;
     let renderSystem: RenderSystem | undefined;
     try {
+      const preloaded = this.options.preloadedResources?.take(mapVariant);
+      const map = preloaded?.map ?? await this.loadMapForVariant(
+        new TiledMapRepository(), mapVariant, mapJsonPath, signal,
+      );
+      assets = preloaded?.assets;
+      signal?.throwIfAborted();
+      assets ??= await ArcadeAssets.load(signal);
       signal?.throwIfAborted();
       const tileSize = map.tileWidth || TILE_SIZE;
 
@@ -256,7 +262,7 @@ export class GameCompositionRoot {
         renderSystem.destroy();
       } else {
         renderer?.dispose();
-        assets.dispose();
+        assets?.dispose();
       }
       canvas?.remove();
       throw error;
@@ -267,9 +273,12 @@ export class GameCompositionRoot {
     mapRepository: TiledMapRepository,
     mapVariant: MapVariant,
     mapJsonPath: string,
+    signal?: AbortSignal,
   ) {
     try {
-      return await mapRepository.loadMap(mapJsonPath);
+      return await (signal
+        ? mapRepository.loadMap(mapJsonPath, signal)
+        : mapRepository.loadMap(mapJsonPath));
     } catch (error) {
       if (mapVariant === 'demo') {
         throw new Error(

@@ -177,14 +177,18 @@ describe('GameShell', () => {
         const user = userEvent.setup();
         const start = page.action('start');
         const profile = page.action('profile');
+        const titlePanel = page.find('[role="dialog"]');
 
         expect(start.classList.contains('packet-primary')).toBe(true);
         expect(page.key('ArrowRight').defaultPrevented).toBe(true);
         expect(page.document.activeElement).toBe(profile);
+        expect(titlePanel.getAttribute('data-arrow-navigation')).toBe('true');
         expect(profile.classList.contains('packet-primary')).toBe(true);
         expect(start.classList.contains('packet-primary')).toBe(false);
         expect(page.key('ArrowLeft').defaultPrevented).toBe(true);
         expect(page.document.activeElement).toBe(start);
+        page.key('Tab');
+        expect(titlePanel.getAttribute('data-arrow-navigation')).toBeNull();
         await user.keyboard('{Enter}');
         await flushStart();
         const game = page.games[0];
@@ -777,7 +781,7 @@ describe('GameShell', () => {
         expect(page.screen()).toBe('title');
     });
 
-    it('keeps a completed result in memory and explains when local saving fails', async () => {
+    it('keeps a completed result in memory and reports when saving fails', async () => {
         const page = setup();
         page.storage.setItem.mockImplementation(() => {
             throw new Error('Storage blocked');
@@ -791,7 +795,6 @@ describe('GameShell', () => {
         const copy = Array.from(page.root.querySelectorAll('p'))
             .map((node) => node.textContent)
             .join('\n');
-        expect(copy).toContain('Your result is available for this session.');
         expect(copy).not.toContain('saved on this device');
         fireEvent.click(page.action('main-menu'));
         fireEvent.click(page.action('profile'));

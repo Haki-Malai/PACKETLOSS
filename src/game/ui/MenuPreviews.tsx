@@ -5,6 +5,14 @@ import type { MenuMotion } from '../infrastructure/adapters/LocalProfileStore';
 let titleModule: Promise<typeof import('./TitleWordmark')> | undefined;
 let portraitModule: Promise<typeof import('./EnemyPortraits')> | undefined;
 
+/** Primes both optional Three.js menu views before the title screen is revealed. */
+export async function preloadMenuPreviews(): Promise<void> {
+    await Promise.allSettled([
+        (titleModule ??= import('./TitleWordmark')),
+        (portraitModule ??= import('./EnemyPortraits')),
+    ]);
+}
+
 export function TitleHeading({ id, motion }: { id: string; motion: MenuMotion }) {
     const host = useRef<HTMLDivElement>(null);
     const [ready, setReady] = useState(false);
