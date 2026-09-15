@@ -46,6 +46,33 @@ export const fieldLayout = 'flex min-w-0 flex-col gap-2 text-[0.85rem] text-pack
 export const inputLayout =
     'min-h-12 w-full rounded-none border border-packet-line bg-packet-raised px-3 py-2.5 text-packet-text';
 
+const interactiveMenuControlSelector =
+    'button, a, input, select, textarea, [role="button"], [role="combobox"], [role="option"]';
+
+/** Activates the panel's highlighted primary action when Enter originates outside a control. */
+function activateHighlightedAction(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    const target = event.target as HTMLElement | null;
+    if (
+        event.key !== 'Enter' ||
+        event.repeat ||
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        target?.closest(interactiveMenuControlSelector)
+    ) {
+        return;
+    }
+
+    const highlighted = event.currentTarget.querySelector<HTMLButtonElement>(
+        'button.packet-primary:not(:disabled)'
+    );
+    if (!highlighted) return;
+    event.preventDefault();
+    highlighted.click();
+}
+
 export type SelectOption<Value extends string> = {
     value: Value;
     label: string;
@@ -242,6 +269,7 @@ export function MenuPanel({
             aria-labelledby={headingId}
             data-outcome={outcome}
             data-tutorial-phase={tutorialPhase}
+            onKeyDown={activateHighlightedAction}
         >
             <div className="packet-panel-signal" aria-hidden="true" />
             <header className="flex items-start gap-4">

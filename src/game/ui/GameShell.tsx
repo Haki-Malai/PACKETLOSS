@@ -15,6 +15,7 @@ export function GameShell(options: GameShellOptions) {
         store,
         claimPause,
         resume,
+        leaveResult,
         back,
         exitTutorial,
         mainMenu,
@@ -101,6 +102,7 @@ export function GameShell(options: GameShellOptions) {
                 else if (state.screen === 'tutorial-complete') exitTutorial();
                 else if (['loading', 'error', 'result'].includes(state.screen)) {
                     if (state.tutorialLesson) exitTutorial();
+                    else if (state.screen === 'result') leaveResult();
                     else mainMenu();
                 }
             } else if (event.key === 'Enter' && state.screen === 'tutorial') {
@@ -133,6 +135,7 @@ export function GameShell(options: GameShellOptions) {
         tutorialPhase,
         claimPause,
         resume,
+        leaveResult,
         back,
         exitTutorial,
         mainMenu,

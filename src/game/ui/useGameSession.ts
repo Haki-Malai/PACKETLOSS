@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { IS_DEV } from '../../config/environment';
 import { useEnvironment } from '../../config/EnvironmentContext';
 import type { CreatePacketGameOptions } from '../app/createPacketGame';
-import type { PacketGame, RunResult, RuntimeState } from '../app/contracts';
+import type { LevelClearCheckpoint, PacketGame, RunResult, RuntimeState } from '../app/contracts';
 import type { MapVariant } from '../app/mapRuntimeConfig';
 import { LocalProfileStore } from '../infrastructure/adapters/LocalProfileStore';
 import { EMPTY_DEBUG, type DebugSnapshot } from '../shared/events/DebugSnapshot';
@@ -47,6 +47,7 @@ interface ShellState {
     hasGame: boolean;
     ready: boolean;
     result: RunResult | null;
+    levelClear: LevelClearCheckpoint | null;
     tutorial: TutorialSnapshot | null;
     tutorialLesson: TutorialLessonId | null;
     newBest: boolean;
@@ -74,6 +75,7 @@ export function useGameSession(options: GameShellOptions) {
         hasGame: false,
         ready: false,
         result: null,
+        levelClear: null,
         tutorial: null,
         tutorialLesson: null,
         newBest: false,
@@ -129,7 +131,8 @@ export function useGameSession(options: GameShellOptions) {
     }
 
     /**
-     * Maps runtime notifications to menus and persists each completed normal run once.
+     * Maps runtime notifications to menus and persists each final normal loss once.
+     * Level-clear checkpoints remain attached to the active run and are not stored.
      * Tutorial notifications update practice state without saving a run record and advance successes immediately.
      *
      * @param runtime - State reported by the current game.
@@ -167,11 +170,18 @@ export function useGameSession(options: GameShellOptions) {
             });
             show('result', null, {
                 result: runtime.result,
+                levelClear: null,
                 newBest: !best || runtime.result.score > best.score,
+            });
+        } else if (runtime.levelClear) {
+            show('result', null, {
+                result: null,
+                levelClear: runtime.levelClear,
+                newBest: false,
             });
         } else if (runtime.paused) {
             if (view.screen === 'playing' || view.screen === 'loading') show('paused');
-        } else if (!view.result) show('playing');
+        } else if (!view.result) show('playing', null, { levelClear: null });
     }
 
     /**
@@ -202,6 +212,7 @@ export function useGameSession(options: GameShellOptions) {
             hasGame: false,
             ready: false,
             result: null,
+            levelClear: null,
             tutorialLesson: tutorialLesson ?? null,
             tutorial,
             newBest: false,
@@ -266,6 +277,7 @@ export function useGameSession(options: GameShellOptions) {
             hasGame: false,
             ready: false,
             result: null,
+            levelClear: null,
             tutorialLesson: null,
             tutorial: null,
             confirmation: null,
@@ -279,12 +291,34 @@ export function useGameSession(options: GameShellOptions) {
         if (
             !game ||
             view.result ||
+            view.levelClear ||
             view.tutorial?.phase === 'success' ||
             view.tutorial?.phase === 'retry'
         )
             return;
         game.resume();
         if (!view.tutorialLesson && current.current.screen !== 'playing') show('playing');
+    }
+
+    /** Continues the current normal run from its acknowledged maze-clear checkpoint. */
+    function continueLevel() {
+        const view = current.current;
+        const game = lifetime.current.game;
+        if (!game || view.result || !view.levelClear || view.tutorialLesson) return;
+        game.continueLevel();
+    }
+
+    /** Leaves a terminal result directly or confirms abandonment from a clear checkpoint. */
+    function leaveResult() {
+        if (current.current.levelClear) {
+            confirm(
+                'Leave this run? Your cleared level and current score will not be saved.',
+                () => mainMenu(),
+                'main-menu'
+            );
+            return;
+        }
+        mainMenu();
     }
 
     /** Makes menu interaction an explicit pause so returning window focus cannot resume play. */
@@ -349,6 +383,8 @@ export function useGameSession(options: GameShellOptions) {
         startRun,
         mainMenu,
         resume,
+        continueLevel,
+        leaveResult,
         claimPause,
         submenu,
         back,

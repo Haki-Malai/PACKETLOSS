@@ -159,6 +159,52 @@ describe('GameCompositionRoot startup', () => {
     expect(mount.children).toHaveLength(0);
   });
 
+  it('resets level actors and restores the original jail roster while retiring Spam copies', async () => {
+    const { mount } = prepareComposition();
+    vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(createCharacterAssets());
+    const rendererDispose = vi.fn();
+    vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
+      return { dispose: rendererDispose } as unknown as ThreeRendererAdapter;
+    });
+    const composed = await new GameCompositionRoot({ rng: () => 0.5 }).compose(runtimeControl);
+    const originals = composed.world.enemies.filter((enemy) => !enemy.isCopy);
+    const copies = composed.world.enemies.filter((enemy) => enemy.isCopy);
+    const initialPointCount = composed.getRemainingPointCount();
+    const originalPlacements = originals.map((enemy) => ({ tile: { ...enemy.tile }, direction: enemy.direction }));
+    composed.world.levelMultiplier = 1.25;
+    composed.world.packet.tile = { x: 0, y: 0 };
+    composed.world.packet.moved = { x: 3, y: 0 };
+    originals.forEach((enemy) => {
+      enemy.tile = { x: 0, y: 0 };
+      enemy.state = { free: true, soonFree: false, scared: true, dead: false, animation: 'scared' };
+      enemy.abilityRemainingMs = 200;
+    });
+    copies[0].active = true;
+    copies[0].state.free = true;
+    composed.world.enemyEffects = [{ kind: 'split', x: 8, y: 8, radius: 16, ageMs: 0, durationMs: 450 }];
+    composed.world.lagZones = [{
+      tile: { x: 1, y: 1 }, x: 24, y: 24, radius: 8, ageMs: 0, durationMs: 4000,
+    }];
+
+    expect(composed.resetLevel()).toBe(initialPointCount);
+
+    expect(composed.world.packet.tile).toEqual(composed.world.packetSpawnTile);
+    expect(composed.world.packet.direction).toEqual({ current: 'right', next: 'right' });
+    expect(originals.map((enemy) => ({ tile: enemy.tile, direction: enemy.direction }))).toEqual(originalPlacements);
+    expect(originals.every((enemy) => enemy.active && !enemy.state.free && enemy.state.soonFree
+      && !enemy.state.scared && !enemy.state.dead)).toBe(true);
+    expect(originals.map((enemy) => enemy.speed)).toEqual([1.25, 1.25, 1.25, 1.25, 0.625]);
+    expect(copies.every((enemy) => !enemy.active && !enemy.state.soonFree)).toBe(true);
+    expect(composed.world.enemyEffects).toEqual([]);
+    expect(composed.world.lagZones).toEqual([]);
+
+    const render = composed.renderSystems.find((system) => system instanceof RenderSystem)!;
+    render.destroy?.();
+    composed.destroy();
+    expect(rendererDispose).toHaveBeenCalledOnce();
+    expect(mount.children).toHaveLength(0);
+  });
+
   it('forces the demo and authored Ping pickup for practice without automatic releases', async () => {
     const { mount } = prepareComposition();
     const map = createHarnessMap('demo-map');

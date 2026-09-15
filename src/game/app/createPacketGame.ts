@@ -17,6 +17,8 @@ export function createPacketGame(options: CreatePacketGameOptions = {}): PacketG
     start: () => runtime.start(),
     pause: () => runtime.pause(),
     resume: () => runtime.resume(),
+    /** Continues the active run from its current maze-clear checkpoint. */
+    continueLevel: () => runtime.continueLevel(),
     destroy: () => {
       runtime.destroy();
       if (activeGame === game) {

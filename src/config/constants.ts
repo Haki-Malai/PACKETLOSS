@@ -58,6 +58,7 @@ export const MOBILE_SWIPE_AXIS_LOCK_RATIO = 1.2;
 export const MOBILE_TAP_MAX_DELTA_PX = 10;
 
 export const INITIAL_LIVES = 3;
+export const LEVEL_MULTIPLIER_STEP = 1.25;
 export const ENEMY_JAIL_RELEASE_DELAY_MS = 5000;
 export const ENEMY_JAIL_RELEASE_INTERVAL_MS = 900;
 export const ENEMY_JAIL_MOVE_SPEED = 0.5;

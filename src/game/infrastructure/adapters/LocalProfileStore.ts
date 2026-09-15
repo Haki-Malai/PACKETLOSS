@@ -11,15 +11,17 @@ export interface LocalRunRecord extends RunResult {
 }
 
 interface LocalProfile {
-    version: 1;
+    version: 2;
     nickname: string;
     motion: MenuMotion;
     records: LocalRunRecord[];
 }
 
 type ProfileStorage = Pick<Storage, 'getItem' | 'setItem'>;
+type LegacyRunRecord = Omit<LocalRunRecord, 'levelsCleared'>;
 
-const STORAGE_KEY = 'packetloss.profile.v1';
+const STORAGE_KEY = 'packetloss.profile.v2';
+const LEGACY_STORAGE_KEY = 'packetloss.profile.v1';
 const STORAGE_UNAVAILABLE = 'Local saving is unavailable. Changes last for this visit only.';
 
 function normalizeNickname(value: string): string {
@@ -38,7 +40,7 @@ function isNonnegativeNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-function isRunRecord(value: unknown): value is LocalRunRecord {
+function isRunRecordBase(value: unknown): value is LegacyRunRecord & Record<string, unknown> {
     if (!isObject(value)) return false;
     return (
         typeof value.id === 'string' &&
@@ -55,6 +57,28 @@ function isRunRecord(value: unknown): value is LocalRunRecord {
         isNonnegativeNumber(value.totalPoints) &&
         value.pointsCollected <= value.totalPoints
     );
+}
+
+function isRunRecord(value: unknown): value is LocalRunRecord {
+    return (
+        isRunRecordBase(value) &&
+        Number.isInteger(value.levelsCleared) &&
+        isNonnegativeNumber(value.levelsCleared)
+    );
+}
+
+function isLegacyRunRecord(value: unknown): value is LegacyRunRecord {
+    return isRunRecordBase(value) && value.levelsCleared === undefined;
+}
+
+/** Converts a validated current or legacy record into the current stored shape. */
+function normalizeRecord(record: LocalRunRecord | LegacyRunRecord): LocalRunRecord {
+    return {
+        ...record,
+        nickname: normalizeNickname(record.nickname),
+        levelsCleared:
+            'levelsCleared' in record ? record.levelsCleared : record.outcome === 'cleared' ? 1 : 0,
+    };
 }
 
 function recentFirst(a: LocalRunRecord, b: LocalRunRecord): number {
@@ -81,7 +105,7 @@ function retainedRecords(records: LocalRunRecord[]): LocalRunRecord[] {
 
 export class LocalProfileStore {
     private profile: LocalProfile = {
-        version: 1,
+        version: 2,
         nickname: 'PLAYER',
         motion: 'system',
         records: [],
@@ -93,33 +117,31 @@ export class LocalProfileStore {
     constructor(storage?: ProfileStorage) {
         try {
             this.storage = storage ?? window.localStorage;
-            const raw = this.storage.getItem(STORAGE_KEY);
+            const currentRaw = this.storage.getItem(STORAGE_KEY);
+            const legacy = currentRaw === null;
+            const raw = currentRaw ?? this.storage.getItem(LEGACY_STORAGE_KEY);
             if (raw === null) return;
 
             const value: unknown = JSON.parse(raw);
             if (
                 !isObject(value) ||
-                value.version !== 1 ||
+                (legacy ? value.version !== 1 : value.version !== 2) ||
                 typeof value.nickname !== 'string' ||
                 !isMotion(value.motion) ||
                 !Array.isArray(value.records) ||
-                !value.records.every(isRunRecord)
+                !value.records.every(legacy ? isLegacyRunRecord : isRunRecord)
             ) {
                 this.statusMessage = 'Saved local data could not be read. Using a fresh profile.';
                 return;
             }
             this.profile = {
-                version: 1,
+                version: 2,
                 nickname: normalizeNickname(value.nickname),
                 motion: value.motion,
-                records: retainedRecords(
-                    value.records.map((record) => ({
-                        ...record,
-                        nickname: normalizeNickname(record.nickname),
-                    }))
-                ),
+                records: retainedRecords(value.records.map(normalizeRecord)),
             };
             for (const record of this.profile.records) this.savedIds.add(record.id);
+            if (legacy) this.persist();
         } catch (error) {
             this.statusMessage =
                 error instanceof SyntaxError

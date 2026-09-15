@@ -87,6 +87,8 @@ function RecordSection({
                                 {record.nickname}
                                 <small>
                                     {record.outcome === 'cleared' ? 'Cleared' : 'Lost'} ·{' '}
+                                    {record.levelsCleared}{' '}
+                                    {record.levelsCleared === 1 ? 'level' : 'levels'} ·{' '}
                                     {duration(record.elapsedMs)} ·{' '}
                                     {new Date(record.completedAt).toLocaleDateString()}
                                 </small>

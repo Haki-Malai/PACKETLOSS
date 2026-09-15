@@ -135,6 +135,7 @@ describe('PacketMovementSystem portal blink', () => {
 
     const world = {
       lagZones: [],
+      levelMultiplier: 1.25,
       packet: {
         tile: { x: 0, y: 0 },
         moved: { x: 0, y: 0 },
@@ -179,6 +180,7 @@ describe('PacketMovementSystem portal blink', () => {
 
     expect(world.packet.direction.current).toBe('left');
     expect(advanceEntityMock).toHaveBeenCalledOnce();
+    expect(advanceEntityMock).toHaveBeenCalledWith(world.packet, 'left', 1.25);
     expect(canAdvanceOutwardMock).toHaveBeenCalledWith(expect.objectContaining({ direction: 'left' }), world.collisionGrid);
   });
 

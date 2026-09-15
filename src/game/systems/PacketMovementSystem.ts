@@ -11,6 +11,7 @@ export class PacketMovementSystem {
     private readonly portalService: PortalService,
   ) {}
 
+  /** Advances Packet movement and protection effects using the current level multiplier. */
   update(deltaMs = 0): void {
     if (this.world.packet.deathAnimationRemainingMs > 0) return;
     this.updatePortalBlink(deltaMs);
@@ -35,7 +36,7 @@ export class PacketMovementSystem {
       const slowed = this.world.lagZones.some((zone) => zone.ageMs < zone.durationMs
         && zone.tile.x === occupiedX && zone.tile.y === occupiedY);
       this.movementRules.advanceEntity(this.world.packet, this.world.packet.direction.current,
-        SPEED.packet * (slowed ? ENEMY_CONFIG.lag.slowMultiplier : 1));
+        SPEED.packet * this.world.levelMultiplier * (slowed ? ENEMY_CONFIG.lag.slowMultiplier : 1));
     }
 
     const teleported = this.portalService.tryTeleport(

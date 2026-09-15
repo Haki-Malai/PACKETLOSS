@@ -63,7 +63,15 @@ describe('InputSystem', () => {
     system.start();
     input.emitKeyDown({ code: 'KeyH', key: 'h', preventDefault: vi.fn() } as unknown as KeyboardEvent);
     expect(enemy.state.scared).toBe(allowPowerShortcut);
+    expect(world.debugPowerOverrideEnabled).toBe(allowPowerShortcut);
+    expect(world.enemyScaredTimers.get(enemy)).toBe(
+      allowPowerShortcut ? Number.POSITIVE_INFINITY : undefined,
+    );
     expect(world.lagZones).toHaveLength(allowPowerShortcut ? 0 : 1);
+    input.emitKeyDown({ code: 'KeyH', key: 'h', preventDefault: vi.fn() } as unknown as KeyboardEvent);
+    expect(enemy.state.scared).toBe(false);
+    expect(world.debugPowerOverrideEnabled).toBe(false);
+    expect(world.enemyScaredTimers.has(enemy)).toBe(false);
     input.emitKeyDown({ code: 'Escape', key: 'Escape', preventDefault: vi.fn() } as unknown as KeyboardEvent);
     expect(togglePause).toHaveBeenCalledOnce();
     system.destroy();
