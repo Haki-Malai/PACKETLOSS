@@ -9,6 +9,7 @@ import { mountTitleWordmark } from '../game/ui/TitleWordmark';
 import { StrictMode } from 'react';
 import { addScore, resetGameState } from '../state/gameState';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {
     TUTORIAL_LESSONS,
     type TutorialLessonId,
@@ -171,16 +172,35 @@ afterEach(async () => {
 });
 
 describe('GameShell', () => {
-    it('activates each menu panel highlighted action with Enter', async () => {
+    it('moves the shared menu highlight with arrows and activates it with Enter', async () => {
         const page = setup();
+        const user = userEvent.setup();
+        const start = page.action('start');
+        const profile = page.action('profile');
 
-        expect(page.key('Enter').defaultPrevented).toBe(true);
+        expect(start.classList.contains('packet-primary')).toBe(true);
+        expect(page.key('ArrowRight').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(profile);
+        expect(profile.classList.contains('packet-primary')).toBe(true);
+        expect(start.classList.contains('packet-primary')).toBe(false);
+        expect(page.key('ArrowLeft').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(start);
+        await user.keyboard('{Enter}');
         await flushStart();
         const game = page.games[0];
         expect(page.screen()).toBe('playing');
 
         game.emit({ paused: true, result: null });
-        expect(page.key('Enter').defaultPrevented).toBe(true);
+        const resume = page.action('resume');
+        const restart = page.action('restart');
+        expect(resume.classList.contains('packet-primary')).toBe(true);
+        expect(page.key('ArrowDown').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(restart);
+        expect(restart.classList.contains('packet-primary')).toBe(true);
+        expect(resume.classList.contains('packet-primary')).toBe(false);
+        expect(page.key('ArrowUp').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(resume);
+        await user.keyboard('{Enter}');
         expect(game.resume).toHaveBeenCalledOnce();
 
         const levelClear: LevelClearCheckpoint = {
@@ -193,7 +213,15 @@ describe('GameShell', () => {
             nextMultiplier: 1.25,
         };
         game.emit({ paused: true, result: null, levelClear });
-        expect(page.key('Enter').defaultPrevented).toBe(true);
+        const continueLevel = page.action('continue-level');
+        const mainMenu = page.action('main-menu');
+        expect(page.key('ArrowUp').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(mainMenu);
+        expect(mainMenu.classList.contains('packet-primary')).toBe(true);
+        expect(continueLevel.classList.contains('packet-primary')).toBe(false);
+        expect(page.key('ArrowDown').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(continueLevel);
+        await user.keyboard('{Enter}');
         expect(game.continueLevel).toHaveBeenCalledOnce();
     });
 
@@ -889,6 +917,7 @@ describe('GameShell', () => {
         fireEvent.click(page.action('profile'));
         const nickname = page.find<HTMLInputElement>('[data-control="nickname"]');
         fireEvent.change(nickname, { target: { value: ' <b>ME</b> ' } });
+        expect(page.key('ArrowDown', nickname).defaultPrevented).toBe(false);
         const typed = page.key(' ', nickname);
         expect(typed.defaultPrevented).toBe(false);
         const submit = new Event('submit', { cancelable: true, bubbles: true });
@@ -936,6 +965,7 @@ describe('GameShell', () => {
         expect(game.resume).not.toHaveBeenCalled();
         fireEvent.click(settings);
         expect(page.screen()).toBe('settings');
+        expect(page.action('back').classList.contains('packet-primary')).toBe(true);
         page.key('Tab');
         expect(page.document.activeElement).toBe(page.action('back'));
         page.key('Escape');

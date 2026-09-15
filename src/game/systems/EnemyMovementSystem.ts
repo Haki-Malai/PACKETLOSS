@@ -24,7 +24,33 @@ export class EnemyMovementSystem {
     this.returnNavigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService, 'returning', world.enemyJailBounds);
   }
 
-  /** Advances active and returning enemies using the current level multiplier. */
+  /** Returns the earliest enemy center, portal, or return-form transition within a simulation slice. */
+  getSimulationBoundaryMs(maximumMs: number): number {
+    let boundaryMs = maximumMs;
+    for (const enemy of this.world.enemies) {
+      if (!enemy.active) continue;
+      if (enemy.state.dead) {
+        const collapseRemainingMs = ENEMY_EAT_DURATION_MS - (enemy.eatenElapsedMs ?? 0);
+        if (collapseRemainingMs > Number.EPSILON) {
+          boundaryMs = Math.min(boundaryMs, collapseRemainingMs);
+          continue;
+        }
+        boundaryMs = Math.min(boundaryMs, this.movementRules.timeForDistance(
+          this.movementRules.getDistanceToCenter(enemy, enemy.direction), enemy.baseSpeed * 2));
+        continue;
+      }
+      if (!enemy.state.free || this.world.enemiesExitingJail.has(enemy)) continue;
+      const speed = enemy.baseSpeed * (enemy.state.scared ? 0.5 : 1);
+      const centerDistance = this.movementRules.getDistanceToCenter(enemy, enemy.direction);
+      const portalDistance = this.portalService.getDistanceToTeleport(
+        enemy, this.world.collisionGrid, this.world.tileSize);
+      const distance = portalDistance === null ? centerDistance : Math.min(centerDistance, portalDistance);
+      boundaryMs = Math.min(boundaryMs, this.movementRules.timeForDistance(distance, speed));
+    }
+    return boundaryMs;
+  }
+
+  /** Advances active and returning enemies for one bounded simulation slice. */
   update(deltaMs = 1000 / 60): void {
     if (!this.world.isMoving || this.world.outcome) return;
     this.world.enemies.forEach((enemy) => {
@@ -36,7 +62,7 @@ export class EnemyMovementSystem {
         return;
       }
 
-      enemy.speed = enemy.baseSpeed * this.world.levelMultiplier * (enemy.state.scared ? 0.5 : 1);
+      enemy.speed = enemy.baseSpeed * (enemy.state.scared ? 0.5 : 1);
       if (enemy.moved.x === 0 && enemy.moved.y === 0) {
         const playerTile = {
           x: Math.floor(this.world.packet.x / this.world.tileSize),
@@ -51,7 +77,12 @@ export class EnemyMovementSystem {
       const canAdvanceOutward = this.portalService.canAdvanceOutward(enemy, this.world.collisionGrid);
 
       if (canMoveCurrent || canAdvanceOutward) {
-        this.movementRules.advanceEntity(enemy, enemy.direction, enemy.speed);
+        const portalDistance = this.portalService.getDistanceToTeleport(
+          enemy, this.world.collisionGrid, this.world.tileSize);
+        this.movementRules.advanceEntity(enemy, enemy.direction,
+          this.movementRules.movementDistance(enemy.speed, deltaMs), portalDistance ?? Infinity);
+      } else {
+        this.movementRules.discardPendingDistance(enemy);
       }
 
       this.portalService.tryTeleport(enemy, this.world.collisionGrid, this.world.tick, this.world.tileSize);
@@ -64,18 +95,23 @@ export class EnemyMovementSystem {
     this.world.enemies.forEach((enemy) => this.returningEnemies.delete(enemy));
   }
 
+  /** Advances collapse timing, then moves a harmless enemy toward the jail. */
   private returnToJail(enemy: EnemyEntity, deltaMs: number): void {
     const elapsed = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
-    enemy.eatenElapsedMs = Math.min(ENEMY_EAT_DURATION_MS, (enemy.eatenElapsedMs ?? 0) + elapsed);
+    const previousElapsed = enemy.eatenElapsedMs ?? 0;
+    enemy.eatenElapsedMs = Math.min(ENEMY_EAT_DURATION_MS, previousElapsed + elapsed);
     if (enemy.eatenElapsedMs < ENEMY_EAT_DURATION_MS) return;
+    const movementElapsed = previousElapsed < ENEMY_EAT_DURATION_MS
+      ? Math.max(0, previousElapsed + elapsed - ENEMY_EAT_DURATION_MS) : elapsed;
+    if (movementElapsed <= 0) return;
 
-    enemy.speed = enemy.baseSpeed * this.world.levelMultiplier * 2;
+    enemy.speed = enemy.baseSpeed * 2;
     const centered = enemy.moved.x === 0 && enemy.moved.y === 0;
     if (centered && enemy.tile.x === this.world.enemyJailReturnTile.x && enemy.tile.y === this.world.enemyJailReturnTile.y) {
       enemy.state.dead = false;
       enemy.state.soonFree = !enemy.isCopy;
       enemy.eatenElapsedMs = null;
-      enemy.speed = enemy.baseSpeed * this.world.levelMultiplier;
+      enemy.speed = enemy.baseSpeed;
       this.returningEnemies.delete(enemy);
       if (enemy.isCopy) {
         enemy.active = false;
@@ -91,7 +127,8 @@ export class EnemyMovementSystem {
       this.returningEnemies.add(enemy);
     }
     // The route contains physical corridor edges only; returning enemies never use portals.
-    this.movementRules.advanceEntity(enemy, enemy.direction, enemy.speed);
+    this.movementRules.advanceEntity(enemy, enemy.direction,
+      this.movementRules.movementDistance(enemy.speed, movementElapsed));
     this.movementRules.syncEntityPosition(enemy);
   }
 

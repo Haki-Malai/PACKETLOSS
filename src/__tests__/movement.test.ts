@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyBufferedDirection, canMove, DEFAULT_TILE_SIZE, BufferedEntity } from '../game/domain/services/MovementRules';
+import { applyBufferedDirection, canMove, DEFAULT_TILE_SIZE, BufferedEntity, MovementRules } from '../game/domain/services/MovementRules';
 import { CollisionGrid, CollisionTile, CollisionTiles } from '../game/domain/world/CollisionGrid';
 
 const tileSize = DEFAULT_TILE_SIZE;
@@ -147,6 +147,14 @@ describe('applyBufferedDirection', () => {
     expect(canMoveSpy).not.toHaveBeenCalled();
   });
 
+  it('reverses immediately while keeping the current corridor position', () => {
+    const packet: BufferedEntity = { moved: { x: 4, y: 0 }, direction: { current: 'right', next: 'left' } };
+
+    expect(applyBufferedDirection(packet, collisionTiles, tileSize)).toBe('left');
+    expect(packet).toEqual({ moved: { x: 4, y: 0 }, direction: { current: 'left', next: 'left' } });
+    expect(canMove('left', 0, 4, collisionTiles, tileSize)).toBe(true);
+  });
+
   it('keeps the current direction if the buffered turn is blocked', () => {
     const packet: BufferedEntity = { moved: { x: 0, y: 0 }, direction: { current: 'right', next: 'up' } };
     const canMoveSpy = vi.fn(() => false);
@@ -156,5 +164,20 @@ describe('applyBufferedDirection', () => {
     expect(result).toBe('right');
     expect(packet.direction.current).toBe('right');
     expect(canMoveSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe('MovementRules distance carry', () => {
+  it('preserves fractional level speed across a tile center', () => {
+    const movement = new MovementRules(tileSize);
+    const entity = { tile: { x: 0, y: 0 }, moved: { x: 0, y: 0 } };
+
+    for (let tick = 0; tick < 11; tick += 1) {
+      movement.advanceEntity(entity, 'right', 1);
+      movement.advanceEntity(entity, 'right', 0.5625);
+    }
+
+    expect(entity.tile).toEqual({ x: 1, y: 0 });
+    expect(entity.moved.x).toBeCloseTo(1.1875);
   });
 });

@@ -48,6 +48,8 @@ export interface RuntimeControl {
 
 export interface UpdateCapableSystem {
   runsWhenPaused?: boolean;
+  updatePhase?: 'beforeSimulation' | 'simulation' | 'afterSimulation';
+  getSimulationBoundaryMs?(_maximumMs: number): number;
   start?(): void;
   update(deltaMs: number): void;
   destroy?(): void;

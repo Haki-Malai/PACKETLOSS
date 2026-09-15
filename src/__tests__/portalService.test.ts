@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PortalService } from '../game/domain/services/PortalService';
 import { CollisionGrid, CollisionTile } from '../game/domain/world/CollisionGrid';
 import { PortalPair } from '../game/domain/world/WorldState';
+import { MovementRules } from '../game/domain/services/MovementRules';
 
 const openTile = (): CollisionTile => ({
   collides: false,
@@ -48,6 +49,22 @@ describe('PortalService', () => {
     const secondTeleportSameTick = portals.tryTeleport(entity, grid, 10);
 
     expect(secondTeleportSameTick).toBe(false);
+  });
+
+  it('stops high-speed outward travel at the portal threshold before teleporting', () => {
+    const grid = new CollisionGrid([[
+      { ...openTile(), portal: true }, openTile(), { ...openTile(), portal: true },
+    ]]);
+    const portals = new PortalService(grid);
+    const movement = new MovementRules(16);
+    const entity = { tile: { x: 0, y: 0 }, moved: { x: 0, y: 0 }, direction: 'left' };
+
+    movement.advanceEntity(entity, 'left', 20, portals.getDistanceToTeleport(entity, grid, 16) ?? Infinity);
+
+    expect(entity.tile).toEqual({ x: 0, y: 0 });
+    expect(entity.moved).toEqual({ x: -8, y: 0 });
+    expect(portals.tryTeleport(entity, grid, 1, 16)).toBe(true);
+    expect(entity.tile).toEqual({ x: 2, y: 0 });
   });
 
   it('does not teleport when centered even with outward direction', () => {

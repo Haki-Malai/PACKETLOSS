@@ -70,8 +70,10 @@ export class EnemyPacketCollisionSystem {
 
   destroy(): void {}
 
+  /** Starts Packet death and drops any movement distance deferred at the contact boundary. */
   private applyPacketHitOutcome(): void {
     loseLife();
+    this.movementRules.discardPendingDistance(this.world.packet);
     this.world.packet.enemyEatRemainingMs = 0;
     this.world.packet.deathAnimationRemainingMs = PACKET_DEATH_ANIMATION.durationMs;
   }
@@ -99,8 +101,9 @@ export class EnemyPacketCollisionSystem {
     this.world.enemyEatChainCount += 1;
 
     this.world.enemiesExitingJail.delete(enemy);
+    this.movementRules.discardPendingDistance(enemy);
     clearEnemyScaredWindow(this.world, enemy);
-    enemy.speed = enemy.baseSpeed * this.world.levelMultiplier;
+    enemy.speed = enemy.baseSpeed;
     enemy.state.free = false;
     enemy.state.soonFree = false;
     enemy.state.dead = true;

@@ -31,6 +31,7 @@ const BROWSER_SCROLL_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'Arro
 const PAUSE_EVENT_KEYS = new Set([' ', 'Spacebar']);
 
 export class InputSystem {
+  readonly updatePhase = 'beforeSimulation' as const;
   private disposers: Array<() => void> = [];
   private activeTouchGesture: TouchGesture | null = null;
 
