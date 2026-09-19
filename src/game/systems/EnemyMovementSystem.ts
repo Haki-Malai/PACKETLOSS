@@ -11,6 +11,7 @@ import { ENEMY_EAT_DURATION_MS } from '../shared/enemyEating';
 
 export class EnemyMovementSystem {
   private readonly navigation: EnemyNavigationService;
+  private readonly physicalNavigation: EnemyNavigationService;
   private readonly patrolNavigation: EnemyNavigationService;
   private readonly returnNavigation: EnemyNavigationService;
   private readonly returningEnemies = new WeakSet<EnemyEntity>();
@@ -24,6 +25,7 @@ export class EnemyMovementSystem {
     private readonly rng: RandomSource,
   ) {
     this.navigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService);
+    this.physicalNavigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService, 'physical');
     this.patrolNavigation = new EnemyNavigationService(new CollisionGrid(world.collisionGrid.toArray()), world.tileSize, portalService);
     this.returnNavigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService, 'returning', world.enemyJailBounds);
     this.prepareFirewallPatrols();
@@ -47,7 +49,7 @@ export class EnemyMovementSystem {
       if (!enemy.state.free || this.world.enemiesExitingJail.has(enemy)) continue;
       const speed = enemy.baseSpeed * (enemy.state.scared ? 0.5 : 1);
       const centerDistance = this.movementRules.getDistanceToCenter(enemy, enemy.direction);
-      const portalDistance = this.portalService.getDistanceToTeleport(
+      const portalDistance = enemy.key === 'virus' ? null : this.portalService.getDistanceToTeleport(
         enemy, this.world.collisionGrid, this.world.tileSize);
       const distance = portalDistance === null ? centerDistance : Math.min(centerDistance, portalDistance);
       boundaryMs = Math.min(boundaryMs, this.movementRules.timeForDistance(distance, speed));
@@ -74,16 +76,18 @@ export class EnemyMovementSystem {
           x: Math.floor(this.world.packet.x / this.world.tileSize),
           y: Math.floor(this.world.packet.y / this.world.tileSize),
         };
-        const direction = this.decisions.chooseEnemyDirection(enemy, playerTile, this.navigation, this.rng);
+        const navigation = enemy.key === 'virus' ? this.physicalNavigation : this.navigation;
+        const direction = this.decisions.chooseEnemyDirection(enemy, playerTile, navigation, this.rng);
         if (!direction) return;
         enemy.direction = direction;
       }
       const collisionTiles = this.world.collisionGrid.getTilesAt(enemy.tile);
       const canMoveCurrent = this.movementRules.canMove(enemy.direction, enemy.moved.y, enemy.moved.x, collisionTiles, 'enemy');
-      const canAdvanceOutward = this.portalService.canAdvanceOutward(enemy, this.world.collisionGrid);
+      const canAdvanceOutward = enemy.key !== 'virus'
+        && this.portalService.canAdvanceOutward(enemy, this.world.collisionGrid);
 
       if (canMoveCurrent || canAdvanceOutward) {
-        const portalDistance = this.portalService.getDistanceToTeleport(
+        const portalDistance = enemy.key === 'virus' ? null : this.portalService.getDistanceToTeleport(
           enemy, this.world.collisionGrid, this.world.tileSize);
         this.movementRules.advanceEntity(enemy, enemy.direction,
           this.movementRules.movementDistance(enemy.speed, deltaMs), portalDistance ?? Infinity);
@@ -91,7 +95,9 @@ export class EnemyMovementSystem {
         this.movementRules.discardPendingDistance(enemy);
       }
 
-      this.portalService.tryTeleport(enemy, this.world.collisionGrid, this.world.tick, this.world.tileSize);
+      if (enemy.key !== 'virus') {
+        this.portalService.tryTeleport(enemy, this.world.collisionGrid, this.world.tick, this.world.tileSize);
+      }
       this.movementRules.syncEntityPosition(enemy);
     });
   }

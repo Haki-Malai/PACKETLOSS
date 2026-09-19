@@ -1,5 +1,6 @@
 import { InstancedMesh, Matrix4, Mesh, Quaternion, Scene, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
+import { Camera3D } from '../engine/camera3d';
 import { MovementRules } from '../game/domain/services/MovementRules';
 import { setPointTransform } from '../game/infrastructure/three/PickupPresentation';
 import {
@@ -34,20 +35,25 @@ function firstPointMatrix(mesh: InstancedMesh): Matrix4 {
 }
 
 describe('RenderSystem point rendering regression', () => {
-  it('spins power stars around a fixed local axis through their own center', () => {
+  it('turns the power star horizontally so its left tip becomes the facing tip', () => {
+    const camera = new Camera3D();
+    camera.present();
+    const towardViewer = camera.camera.getWorldDirection(new Vector3()).negate();
     const initial = new Matrix4();
     const sampled = new Matrix4();
-    setPointTransform(initial, 'power', 24, 8, 0);
-    const axis = new Vector3(0, 1, 0).transformDirection(initial);
-    const initialTip = new Vector3(1, 0, 0).transformDirection(initial);
-    for (const seconds of [1.5, 3, 4.5, 6]) {
-      setPointTransform(sampled, 'power', 24, 8, seconds);
-      expect(new Vector3(0, 1, 0).transformDirection(sampled).distanceTo(axis)).toBeLessThan(1e-10);
+    setPointTransform(initial, 'power', 0, 0, 0);
+    const vertical = new Vector3(0, 0, -1).transformDirection(initial);
+    const facingTips = [
+      new Vector3(0, 1, 0), new Vector3(-1, 0, 0), new Vector3(0, -1, 0),
+      new Vector3(1, 0, 0), new Vector3(0, 1, 0),
+    ];
+    for (const [quarterTurn, tip] of facingTips.entries()) {
+      setPointTransform(sampled, 'power', 0, 0, quarterTurn * 1.5);
+      expect(tip.transformDirection(sampled).distanceTo(towardViewer)).toBeLessThan(1e-10);
+      expect(new Vector3(0, 0, -1).transformDirection(sampled).distanceTo(vertical)).toBeLessThan(1e-10);
       const center = new Vector3().setFromMatrixPosition(sampled);
-      expect(center.x).toBe(24);
-      expect(center.z).toBe(8);
-      const tip = new Vector3(1, 0, 0).transformDirection(sampled);
-      expect(tip.dot(initialTip)).toBeCloseTo(seconds === 3 ? -1 : seconds === 6 ? 1 : 0);
+      expect(center.x).toBe(0);
+      expect(center.z).toBe(0);
     }
   });
 

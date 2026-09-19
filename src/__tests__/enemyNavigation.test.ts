@@ -23,6 +23,26 @@ describe('enemy navigation', () => {
       .toEqual(['right', 'right', 'right', 'right']);
   });
 
+  it('keeps Virus on physical corridors when a portal shortcut or outward teleport is available', () => {
+    const { world, movement, portals, enemyMovement } = createEnemyWorld([
+      '#########', '#P...P..#', '#########',
+    ], [{ key: 'virus', tile: { x: 2, y: 1 }, direction: 'left' }], { x: 5, y: 1 }, [
+      { from: { x: 1, y: 1 }, to: { x: 5, y: 1 } },
+    ]);
+    const virus = world.enemies[0];
+    const normalRoute = new EnemyNavigationService(world.collisionGrid, 16, portals)
+      .findPath(virus.tile, world.packet.tile);
+    expect(normalRoute?.[0]?.direction).toBe('left');
+
+    enemyMovement.update();
+    expect(virus.direction).toBe('right');
+
+    movement.setEntityTile(virus, { x: 5, y: 1 });
+    movement.setEntityTile(world.packet, { x: 7, y: 1 });
+    for (let step = 0; step < 40 && virus.tile.x === 5; step += 1) enemyMovement.update();
+    expect(virus.tile).toEqual({ x: 6, y: 1 });
+  });
+
   it('excludes blocked portal destinations and keeps pen gates closed for navigation', () => {
     const { world, portals } = createEnemyWorld(['#######', 'P.....#', '#######'], [], { x: 1, y: 1 }, [
       { from: { x: 0, y: 1 }, to: { x: 6, y: 1 } },
@@ -69,7 +89,7 @@ describe('enemy navigation', () => {
     expect(world.packet.tile.x).toBe(4);
     enemyMovement.update();
     expect(world.enemies[0].direction).toBe('left');
-    expect(world.enemies[0].x).toBe(71);
+    expect(world.enemies[0].x).toBeCloseTo(71.15);
   });
 
   it('sends Firewall to a random target before repeating a long patrol independently of the player', () => {
@@ -96,12 +116,20 @@ describe('enemy navigation', () => {
     expect(enemy.tile).toEqual(patrol.target);
     expect(enemy.moved).toEqual({ x: 0, y: 0 });
 
-    for (let step = 0; step < patrol.routeLength * 16; step += 1) {
+    let leftTarget = false;
+    let completedLoop = false;
+    for (let step = 0; step < patrol.routeLength * 20; step += 1) {
       movement.setEntityTile(world.packet, { x: step % 2 === 0 ? 1 : 5, y: 5 });
       enemyMovement.update();
+      const atTarget = enemy.tile.x === patrol.target.x && enemy.tile.y === patrol.target.y
+        && enemy.moved.x === 0 && enemy.moved.y === 0;
+      if (!atTarget) leftTarget = true;
+      if (leftTarget && atTarget) {
+        completedLoop = true;
+        break;
+      }
     }
-    expect(enemy.tile).toEqual(patrol.target);
-    expect(enemy.moved).toEqual({ x: 0, y: 0 });
+    expect(completedLoop).toBe(true);
   });
 
   it('rejects a Firewall map without a reachable sixteen-step patrol', () => {

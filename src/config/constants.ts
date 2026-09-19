@@ -11,8 +11,8 @@ export const SPEED = {
 } as const;
 
 export const ENEMY_CONFIG = {
-  firewall: { speed: 1 },
-  virus: { speed: 1 },
+  firewall: { speed: 1.15 },
+  virus: { speed: 0.85 },
   ping: { speed: 1, intervalMs: 3000, rangeTiles: 8, pulseDurationMs: 600 },
   spam: {
     speed: 1,
@@ -25,13 +25,13 @@ export const ENEMY_CONFIG = {
   lag: {
     speed: 0.5,
     dropIntervalMs: 1000,
-    zoneDurationMs: 4000,
+    zoneDurationMs: 20000,
     radiusTiles: 0.5,
     slowMultiplier: 0.5,
-    maxZones: 4,
+    maxZones: 2,
   },
   quarantine: { speed: 1, intervalMs: 5000, wallDurationMs: 7000, maxWalls: 4, wallsPerCast: 2, rangeTiles: 8 },
-  trojan: { speed: 1, intervalMs: 6000, retryMs: 1000, disguiseDurationMs: 10000, revealRangeTiles: 2, revealGraceMs: 900 },
+  trojan: { speed: 1, intervalMs: 6000, retryMs: 1000, disguiseDurationMs: 10000, revealRangeTiles: 2, revealGraceMs: 600 },
 } as const;
 
 export const FIREWALL_MIN_PATROL_STEPS = 16;

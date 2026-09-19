@@ -334,7 +334,7 @@ describe('guided tutorial checkpoints', () => {
     expect(getGameState().lives).toBe(3);
   });
 
-  it('rejects a Quarantine point collected before the walls and keeps Trojan hidden until approached', () => {
+  it('rejects a premature Quarantine point and retries if Trojan reveals before the Packet approaches', () => {
     const quarantine = createLesson('quarantine');
     quarantine.controller.resume();
     quarantine.movement.setEntityTile(quarantine.world.packet, { x: 1, y: 2 });
@@ -347,9 +347,12 @@ describe('guided tutorial checkpoints', () => {
     trojan.advance(480);
     expect(trojan.controller.getSnapshot().phase).toBe('explanation');
     trojan.controller.resume();
-    trojan.tick(undefined, ENEMY_CONFIG.trojan.disguiseDurationMs);
+    trojan.tick(undefined, ENEMY_CONFIG.trojan.disguiseDurationMs - 1);
     expect(trojan.controller.getSnapshot().phase).toBe('playing');
     expect(trojan.world.enemies.find((enemy) => enemy.key === 'trojan')?.disguised).toBe(true);
+    trojan.tick(undefined, 1);
+    expect(trojan.controller.getSnapshot().phase).toBe('retry');
+    expect(trojan.world.enemies.find((enemy) => enemy.key === 'trojan')?.disguised).toBe(false);
   });
 
   it('offers retry when required power or a zone expires instead of leaving an impossible goal', () => {

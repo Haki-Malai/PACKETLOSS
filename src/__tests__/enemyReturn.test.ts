@@ -57,7 +57,7 @@ describe('eaten enemy return', () => {
       }
     }
     expect(centers).toEqual([[1, 2], [1, 3], [2, 3], [3, 3], [3, 4], [3, 5]]);
-    expect(distance).toBe(96);
+    expect(distance).toBeCloseTo(96);
     expect(enemy.tile).toBe(contactTile);
     expect(enemy.state.dead).toBe(false);
     expect(enemy.state.soonFree).toBe(true);
@@ -68,8 +68,8 @@ describe('eaten enemy return', () => {
   });
 
   it.each([
-    { x: 1, offset: 4, expectedDirection: 'right', expectedX: 30 },
-    { x: 3, offset: 4, expectedDirection: 'left', expectedX: 58 },
+    { x: 1, offset: 4, expectedDirection: 'right', expectedX: 29.7 },
+    { x: 3, offset: 4, expectedDirection: 'left', expectedX: 58.3 },
   ])('chooses the shortest endpoint from a fractional edge at x=$x', ({ x, offset, expectedDirection, expectedX }) => {
     const { world, movement, enemyMovement } = createEnemyWorld(['#######', '#.....#', '#######'], [
       { key: 'virus', tile: { x, y: 1 } },
@@ -82,7 +82,7 @@ describe('eaten enemy return', () => {
     enemyMovement.update(ENEMY_EAT_DURATION_MS);
     enemyMovement.update();
     expect(enemy.direction).toBe(expectedDirection);
-    expect(enemy.x).toBe(expectedX);
+    expect(enemy.x).toBeCloseTo(expectedX);
   });
 
   it('retreats from an outward portal half-step and returns without taking the teleport shortcut', () => {
@@ -97,7 +97,7 @@ describe('eaten enemy return', () => {
     enemyMovement.update(ENEMY_EAT_DURATION_MS);
     enemyMovement.update();
     expect(enemy.direction).toBe('right');
-    expect(enemy.x).toBe(7);
+    expect(enemy.x).toBeCloseTo(6.7);
     expect(enemy.tile).toEqual({ x: 0, y: 1 });
     for (let tick = 0; tick < 40 && enemy.state.dead; tick += 1) {
       const previousX = enemy.x;
@@ -128,13 +128,16 @@ describe('eaten enemy return', () => {
     expect(world.packet.enemyEatRemainingMs).toBe(0);
     expect([enemy.x, enemy.y]).toEqual([24, 24]);
     enemyMovement.update();
-    expect([enemy.x, enemy.y]).toEqual([26, 24]);
+    expect(enemy.x).toBeCloseTo(25.7);
+    expect(enemy.y).toBe(24);
     world.isMoving = false;
     enemyMovement.update(1000);
-    expect([enemy.x, enemy.y]).toEqual([26, 24]);
+    expect(enemy.x).toBeCloseTo(25.7);
+    expect(enemy.y).toBe(24);
     world.isMoving = true;
     enemyMovement.update();
-    expect([enemy.x, enemy.y]).toEqual([28, 24]);
+    expect(enemy.x).toBeCloseTo(27.4);
+    expect(enemy.y).toBe(24);
   });
 
   it('chooses Firewall a new patrol after it reaches jail', () => {

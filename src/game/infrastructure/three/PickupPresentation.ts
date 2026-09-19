@@ -9,14 +9,18 @@ const pointPosition = new Vector3();
 const pointScale = new Vector3();
 const pointRotation = new Euler();
 const pointQuaternion = new Quaternion();
+const powerSpinAxis = new Vector3(0, 0, -1);
+const powerSpin = new Quaternion();
 
-/** Samples pickup placement, with power stars spinning about their fixed tilted local Y axis. */
+/** Samples pickup placement and a horizontal power-star turn that brings its left tip toward the viewer. */
 export function setPointTransform(matrix: Matrix4, kind: CollectibleKind, x: number, y: number, timeSeconds = 0): void {
   const radius = COLLECTIBLE_CONFIG[kind === 'power' ? 1 : 0].size / 2;
   if (kind === 'power') {
     const phase = (x * 0.071 + y * 0.053) % (Math.PI * 2);
-    pointRotation.set(0.28, timeSeconds * Math.PI / 3 + phase, 0.18, 'XZY');
+    // Match Camera3D's 20-degree tilt and 5-degree side lean before the local vertical spin.
+    pointRotation.set(Math.PI / 9, 0, -Math.PI / 36, 'ZXY');
     pointQuaternion.setFromEuler(pointRotation);
+    pointQuaternion.multiply(powerSpin.setFromAxisAngle(powerSpinAxis, timeSeconds * Math.PI / 3 + phase));
     pointPosition.set(x, radius + 0.7 + Math.sin(timeSeconds * Math.PI * 2 / 3 + phase) * 0.35, y);
     pointScale.setScalar(radius);
     matrix.compose(pointPosition, pointQuaternion, pointScale);

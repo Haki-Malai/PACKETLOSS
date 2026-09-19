@@ -246,7 +246,7 @@ describe('GameCompositionRoot startup', () => {
     expect(originals.map((enemy) => ({ tile: enemy.tile, direction: enemy.direction }))).toEqual(originalPlacements);
     expect(originals.every((enemy) => enemy.active && !enemy.state.free && enemy.state.soonFree
       && !enemy.state.scared && !enemy.state.dead)).toBe(true);
-    expect(originals.map((enemy) => enemy.speed)).toEqual([1, 1, 1, 1, 0.5, 1, 1]);
+    expect(originals.map((enemy) => enemy.speed)).toEqual([1.15, 0.85, 1, 1, 0.5, 1, 1]);
     expect(copies.every((enemy) => !enemy.active && !enemy.state.soonFree)).toBe(true);
     expect(composed.world.enemyEffects).toEqual([]);
     expect(composed.world.lagZones).toEqual([]);

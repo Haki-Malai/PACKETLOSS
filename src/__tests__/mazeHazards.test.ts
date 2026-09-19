@@ -227,8 +227,8 @@ describe('Quarantine terrain and Trojan ambushes', () => {
     expect(getGameState()).toEqual({ score: 0, lives: 3 });
     hazards.update(0);
     expect(trojan.disguised).toBe(false);
-    expect(trojan.revealRemainingMs).toBe(900);
-    hazards.update(899);
+    expect(trojan.revealRemainingMs).toBe(600);
+    hazards.update(599);
     enemyMovement.update();
     collision.update();
     expect(trojan.moved).toEqual({ x: 0, y: 0 });
@@ -273,16 +273,18 @@ describe('Quarantine terrain and Trojan ambushes', () => {
     expect(world.visitedPacketTiles.size).toBe(0);
   });
 
-  it('ignores another enemy on the fake point and stays hidden until the Packet approaches', () => {
+  it('ignores another enemy on the fake point and reveals when the disguise expires', () => {
     const scenario = trojanScenario(true);
     const { world, movement, hazards, trojan } = scenario;
     walkTrojanToDisguise(scenario);
     const otherEnemy = world.enemies[1];
     movement.setEntityTile(otherEnemy, trojan.tile);
-    hazards.update(ENEMY_CONFIG.trojan.disguiseDurationMs + 1000);
+    hazards.update(ENEMY_CONFIG.trojan.disguiseDurationMs - 1);
     expect(trojan.disguised).toBe(true);
-    expect(trojan.revealRemainingMs).toBe(0);
-    expect(world.enemyEffects.some((effect) => effect.kind === 'trojan')).toBe(false);
+    hazards.update(1);
+    expect(trojan.disguised).toBe(false);
+    expect(trojan.revealRemainingMs).toBe(600);
+    expect(world.enemyEffects.some((effect) => effect.kind === 'trojan')).toBe(true);
   });
 
   it('clears both abilities and the wall collision layer when the roster returns to jail', () => {
