@@ -329,7 +329,7 @@ describe('AssetPreviewScene', () => {
     scene.select(entry('enemy-lag-lag'));
     scene.sample(3500, camera);
     const zones = scene.scene.getObjectByName('enemy-effects')!.children.filter((child) => child.name === 'lag-zone-fill');
-    expect(zones.filter((zone) => zone.visible)).toHaveLength(3);
+    expect(zones.filter((zone) => zone.visible)).toHaveLength(2);
     scene.sample(0, camera);
     expect(zones.every((zone) => !zone.visible)).toBe(true);
     scene.select(entry('player-idle'));

@@ -115,10 +115,10 @@ export class EnemyAbilitySystem {
     enemy.lastLagTile = { ...enemy.tile };
     const tile = this.world.collisionGrid.getTileAt(enemy.tile.x, enemy.tile.y);
     if (tile.portal || tile.penGate) return;
+    if (this.world.lagZones.length >= ENEMY_CONFIG.lag.maxZones) return;
     const position = toWorldPosition(enemy.tile, { x: 0, y: 0 }, this.world.tileSize);
     this.world.lagZones = this.world.lagZones
-      .filter((zone) => zone.tile.x !== enemy.tile.x || zone.tile.y !== enemy.tile.y)
-      .slice(-(ENEMY_CONFIG.lag.maxZones - 1));
+      .filter((zone) => zone.tile.x !== enemy.tile.x || zone.tile.y !== enemy.tile.y);
     this.world.lagZones.push({
       tile: { ...enemy.tile }, ...position, radius: this.world.tileSize * ENEMY_CONFIG.lag.radiusTiles,
       ageMs: 0, durationMs: ENEMY_CONFIG.lag.zoneDurationMs,

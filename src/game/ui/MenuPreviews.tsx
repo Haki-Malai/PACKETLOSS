@@ -55,13 +55,13 @@ export function TitleHeading({ id, motion }: { id: string; motion: MenuMotion })
 
 const enemies = [
     ['Firewall', 'Travels to a random patrol area, then repeats a long loop without chasing you.'],
-    ['Virus', 'Chases you along the shortest route, including portal shortcuts.'],
+    ['Virus', 'Chases you along the shortest physical route without using portals.'],
     [
         'Ping',
         'Scans nearby every three seconds, even through walls, then chases your last detected position.',
     ],
     ['Spam', 'Splits into smaller copies every four seconds, up to four Spam at once.'],
-    ['Lag', 'Moves slowly and leaves temporary zones that cut your movement speed in half.'],
+    ['Lag', 'Moves slowly and leaves up to two 20-second zones that cut your movement speed in half.'],
     ['Quarantine', 'Extends maze walls with purple sections that can trap you. They vanish after seven seconds or when you collect a power core.'],
     ['Trojan', 'Hides as a data bit on cleared routes, away from real points. When it reveals its horse form, escape before it becomes dangerous.'],
 ] as const;

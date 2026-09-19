@@ -24,7 +24,7 @@ export const TUTORIAL_LESSONS = [
   },
   {
     id: 'virus', title: 'Meet Virus',
-    introduction: 'Virus follows the shortest route to your current position, including portal shortcuts. Keep moving to stay ahead.',
+    introduction: 'Virus follows the shortest physical route to your current position but cannot use portals. Keep moving to stay ahead.',
     objective: 'Reach the marked data bit at the bottom-right while Virus follows you.',
   },
   {

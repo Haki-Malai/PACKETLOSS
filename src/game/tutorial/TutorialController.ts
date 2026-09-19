@@ -196,7 +196,7 @@ export class TutorialController {
       if (this.collected && this.enemyCenters.size >= (this.lesson === 'firewall' ? 3 : 2)) {
         this.setPhase('success', this.lesson === 'firewall'
           ? 'You stayed clear of Firewall’s patrol. Watch its route to find a safe opening.'
-          : 'You kept moving while Virus chased your position. It can also take portal shortcuts.');
+          : 'You kept moving while Virus chased your position along physical corridors. It cannot use portals.');
       }
     } else if (this.lesson === 'power') {
       this.updatePower(firstCollection);
@@ -265,7 +265,7 @@ export class TutorialController {
       }
       this.witnessed = true;
       this.lagZone = { ...zone.tile };
-      this.setPhase('explanation', 'That yellow zone is real: it lasts four seconds and halves your speed. Find a route back and cross it before it disappears.',
+      this.setPhase('explanation', 'That yellow zone is real: it lasts twenty seconds and halves your speed. Find a route back and cross it before it disappears.',
         'Navigate through the yellow zone to the marked square.', { x: 5, y: 5 });
       return;
     }

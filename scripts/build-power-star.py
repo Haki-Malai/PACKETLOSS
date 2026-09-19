@@ -58,11 +58,11 @@ def create_star():
             base = [index for index, point in enumerate(coordinates) if point[axis] == sign * extent]
             tip = [0, 0, 0]
             tip[axis] = sign
-            spike(base, tip, ("d8dde3", "c0c7cf", "edf0f4", "7c858f"))
+            spike(base, tip, ("d8dde3", "c0c7cf", "edf0f4", "a4adb7"))
     for signs in itertools.product((-1, 1), repeat=3):
         base = [index for index, point in enumerate(coordinates)
                 if all(component == 0 or component * sign > 0 for component, sign in zip(point, signs))]
-        spike(base, Vector(signs).normalized() * 0.74, ("afb8c3", "e2e7ee", "78838f"))
+        spike(base, Vector(signs).normalized() * 0.74, ("afb8c3", "e2e7ee", "a1adba"))
 
     mesh = bpy.data.meshes.new("power-star")
     mesh.from_pydata(vertices, [], faces)

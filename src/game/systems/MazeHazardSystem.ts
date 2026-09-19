@@ -61,7 +61,7 @@ export class MazeHazardSystem {
     }
   }
 
-  /** Keeps Trojan hidden until the Packet approaches, then grants a stationary reveal window. */
+  /** Reveals Trojan on approach or disguise expiry, then grants a stationary escape window. */
   private updateDisguise(enemy: EnemyEntity, elapsed: number): boolean {
     if (enemy.revealRemainingMs > 0) {
       enemy.revealRemainingMs = Math.max(0, enemy.revealRemainingMs - elapsed);
@@ -72,7 +72,7 @@ export class MazeHazardSystem {
     const packet = this.world.packet;
     const near = Math.hypot(packet.x - enemy.x, packet.y - enemy.y)
       <= ENEMY_CONFIG.trojan.revealRangeTiles * this.world.tileSize;
-    if (near) {
+    if (near || enemy.disguiseRemainingMs === 0) {
       enemy.disguised = false;
       enemy.disguiseRemainingMs = 0;
       enemy.revealRemainingMs = ENEMY_CONFIG.trojan.revealGraceMs;

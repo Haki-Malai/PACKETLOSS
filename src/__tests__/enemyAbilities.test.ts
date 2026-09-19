@@ -79,6 +79,30 @@ describe('enemy abilities', () => {
     expect(copy.state.scared).toBe(false);
   });
 
+  it('limits Lag to two zones without replacing either before its twenty-second expiry', () => {
+    const { world, movement, abilities } = createEnemyWorld(['#######', '#.....#', '#######'], [
+      { key: 'lag', tile: { x: 1, y: 1 } },
+    ], { x: 1, y: 1 });
+    const lag = world.enemies[0];
+    abilities.update(0);
+    movement.setEntityTile(lag, { x: 2, y: 1 });
+    abilities.update(1000);
+    movement.setEntityTile(lag, { x: 3, y: 1 });
+    abilities.update(1000);
+    movement.setEntityTile(lag, { x: 4, y: 1 });
+    abilities.update(1000);
+    expect(world.lagZones.map((zone) => zone.tile.x)).toEqual([2, 3]);
+
+    abilities.update(17999);
+    expect(world.lagZones.map((zone) => zone.tile.x)).toEqual([2, 3]);
+    abilities.update(1);
+    expect(world.lagZones.map((zone) => zone.tile.x)).toEqual([3]);
+
+    movement.setEntityTile(lag, { x: 5, y: 1 });
+    abilities.update(999);
+    expect(world.lagZones.map((zone) => zone.tile.x)).toEqual([3, 5]);
+  });
+
   it('retries a blocked split after one second and avoids portals and overlapping actors', () => {
     const { world, movement, abilities } = createEnemyWorld([
       '#######', '#######', '#.P...#', '#######',
@@ -112,7 +136,7 @@ describe('enemy abilities', () => {
     packetMovement.update();
     expect(world.packet.x).toBe(33.5);
     expect(world.packet.tile.x).toBe(1);
-    abilities.update(4000);
+    abilities.update(20000);
     expect(world.lagZones).toHaveLength(0);
     for (let tick = 0; tick < 7; tick += 1) packetMovement.update();
     expect(world.packet.tile).toEqual({ x: 2, y: 1 });

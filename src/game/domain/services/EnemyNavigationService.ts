@@ -42,11 +42,12 @@ export class EnemyNavigationService {
   private readonly patrolOptions = new Map<string, readonly PatrolOption[]>();
   private readonly patrolOutcomes = new Map<string, PatrolOutcome>();
 
+  /** Uses physical mode for portal-free pursuit and returning mode for jail ingress. */
   constructor(
     private readonly grid: CollisionGrid,
     private readonly tileSize: number,
     private readonly portals: PortalService,
-    private readonly mode: 'normal' | 'returning' = 'normal',
+    private readonly mode: 'normal' | 'physical' | 'returning' = 'normal',
     private readonly jailBounds?: EnemyJailBounds,
   ) {}
 
