@@ -29,7 +29,7 @@ function prepareComposition() {
   Object.assign(mount, { id: 'game-root' });
   document.body.appendChild(mount);
   vi.stubGlobal('document', document);
-  const { map } = createMapFixture([[createCollisionTile()]]);
+  const map = createHarnessMap('demo-map');
   vi.spyOn(TiledMapRepository.prototype, 'loadMap').mockResolvedValue(map);
   return { document, mount };
 }
@@ -114,7 +114,7 @@ describe('GameCompositionRoot startup', () => {
 
   it('uses the first-visit map and models without loading them again', async () => {
     const { mount } = prepareComposition();
-    const { map } = createMapFixture([[createCollisionTile()]]);
+    const map = createHarnessMap('demo-map');
     const assets = createCharacterAssets();
     const loadMap = vi.spyOn(TiledMapRepository.prototype, 'loadMap');
     loadMap.mockClear();
@@ -151,6 +151,29 @@ describe('GameCompositionRoot startup', () => {
     await expect(new GameCompositionRoot().compose(runtimeControl)).rejects.toBe(failure);
     expect(disposeAssets).toHaveBeenCalledOnce();
     expect(disposeRenderer).toHaveBeenCalledOnce();
+    expect(mount.children).toHaveLength(0);
+  });
+
+  it('rejects a map without a qualifying Firewall patrol and releases startup resources', async () => {
+    const { mount } = prepareComposition();
+    const { map } = createMapFixture([[createCollisionTile()]]);
+    vi.spyOn(TiledMapRepository.prototype, 'loadMap').mockResolvedValue(map);
+    const assets = createCharacterAssets();
+    const disposeAssets = vi.spyOn(assets, 'dispose');
+    const disposeRenderer = vi.fn();
+    const destroyInput = vi.fn();
+    vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(assets);
+    vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
+      return { dispose: disposeRenderer } as unknown as ThreeRendererAdapter;
+    });
+    vi.mocked(BrowserInputAdapter).mockImplementationOnce(function () {
+      return { destroy: destroyInput } as unknown as BrowserInputAdapter;
+    });
+
+    await expect(new GameCompositionRoot().compose(runtimeControl)).rejects.toThrow('at least 16 steps');
+    expect(destroyInput).toHaveBeenCalledOnce();
+    expect(disposeRenderer).toHaveBeenCalledOnce();
+    expect(disposeAssets).toHaveBeenCalledOnce();
     expect(mount.children).toHaveLength(0);
   });
 

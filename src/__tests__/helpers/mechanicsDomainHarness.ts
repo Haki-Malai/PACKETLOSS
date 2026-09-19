@@ -129,9 +129,8 @@ export class MechanicsDomainHarness {
       this.movementRules,
       SPEED.enemy,
       () => {
-        this.decisions.reset();
-        this.enemyMovementSystem.reset();
         this.enemyReleaseSystem.resetToJail();
+        this.enemyMovementSystem.reset();
       },
     );
     this.animationSystem = new AnimationSystem(this.world, SPEED.enemy);

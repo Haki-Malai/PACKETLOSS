@@ -53,7 +53,7 @@ export function TitleHeading({ id, motion }: { id: string; motion: MenuMotion })
 }
 
 const enemies = [
-    ['Firewall', 'Patrols a fixed route. Watch its loop before crossing its path.'],
+    ['Firewall', 'Travels to a random patrol area, then repeats a long loop without chasing you.'],
     ['Virus', 'Chases you along the shortest route, including portal shortcuts.'],
     [
         'Ping',

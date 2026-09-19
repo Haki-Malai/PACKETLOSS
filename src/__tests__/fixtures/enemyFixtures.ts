@@ -51,10 +51,11 @@ export function createEnemyWorld(
   });
   const portals = new PortalService(collisionGrid, portalPairs);
   const rng = new SeededRandom(1337);
+  const decisions = new EnemyDecisionService();
   return {
-    world, movement, portals,
+    world, movement, portals, decisions,
     abilities: new EnemyAbilitySystem(world, movement, portals, rng),
-    enemyMovement: new EnemyMovementSystem(world, movement, new EnemyDecisionService(), portals, rng),
+    enemyMovement: new EnemyMovementSystem(world, movement, decisions, portals, rng),
     packetMovement: new PacketMovementSystem(world, movement, portals),
   };
 }

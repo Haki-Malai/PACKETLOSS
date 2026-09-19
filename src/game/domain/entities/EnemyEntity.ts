@@ -1,6 +1,6 @@
 import { Direction } from '../valueObjects/Direction';
 import { MovementProgress } from '../valueObjects/MovementProgress';
-import { TileBounds, TilePosition } from '../valueObjects/TilePosition';
+import { TilePosition } from '../valueObjects/TilePosition';
 import { RenderableEntity } from './PacketEntity';
 
 export type EnemyAnimationState = 'default' | 'scared';
@@ -38,7 +38,6 @@ export class EnemyEntity implements RenderableEntity {
   pingTarget: TilePosition | null = null;
   lastLagTile: TilePosition | null = null;
   eatenElapsedMs: number | null = null;
-  movementBounds: TileBounds | null = null;
 
   constructor(params: {
     key: EnemyKey;

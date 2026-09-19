@@ -1,3 +1,4 @@
+import { FIREWALL_MIN_PATROL_STEPS } from '../../../config/constants';
 import { RandomSource } from '../../shared/random/RandomSource';
 import { EnemyEntity } from '../entities/EnemyEntity';
 import { Direction, OPPOSITE_DIRECTION } from '../valueObjects/Direction';
@@ -22,12 +23,52 @@ export interface EnemySimulationConfig {
   startDirection: Direction;
 }
 
+export interface FirewallPatrolSelection {
+  readonly target: TilePosition;
+  readonly routeLength: number;
+}
+
 export class EnemyDecisionService {
-  private patrols = new WeakMap<EnemyEntity, { route: NavigationStep[]; index: number }>();
+  private patrols = new WeakMap<EnemyEntity, {
+    target: TilePosition;
+    route: NavigationStep[];
+    index: number;
+    joined: boolean;
+  }>();
 
   /** Discards cached patrol progress so restored enemies restart from their jail placement. */
   reset(): void {
-    this.patrols = new WeakMap<EnemyEntity, { route: NavigationStep[]; index: number }>();
+    this.patrols = new WeakMap();
+  }
+
+  /** Chooses and caches a reachable long patrol for Firewall's next release. */
+  prepareFirewallPatrol(
+    enemy: EnemyEntity,
+    origin: TilePosition,
+    navigation: EnemyNavigationService,
+    rng: RandomSource,
+  ): FirewallPatrolSelection | null {
+    if (enemy.key !== 'firewall') return null;
+    const options = navigation.findPatrolOptions(origin, FIREWALL_MIN_PATROL_STEPS);
+    const option = options[rng.int(options.length)];
+    if (!option) {
+      throw new Error(
+        `Firewall requires a reachable patrol loop of at least ${FIREWALL_MIN_PATROL_STEPS} steps from ` +
+        `(${origin.x}, ${origin.y}).`,
+      );
+    }
+    const heading = option.headings[rng.int(option.headings.length)];
+    if (!heading) {
+      throw new Error(`Firewall patrol target (${option.target.x}, ${option.target.y}) has no usable route.`);
+    }
+    const route = navigation.createPatrol(option.target, heading);
+    this.patrols.set(enemy, {
+      target: { ...option.target },
+      route: [...route],
+      index: 0,
+      joined: false,
+    });
+    return { target: { ...option.target }, routeLength: route.length };
   }
 
   chooseEnemyDirection(
@@ -36,7 +77,9 @@ export class EnemyDecisionService {
     navigation: EnemyNavigationService,
     rng: RandomSource,
   ): Direction | null {
-    if (!enemy.state.scared && enemy.key === 'firewall') return this.choosePatrolDirection(enemy, navigation);
+    if (!enemy.state.scared && enemy.key === 'firewall') {
+      return this.choosePatrolDirection(enemy, navigation, rng);
+    }
     const target = enemy.key === 'virus' ? playerTile : enemy.key === 'ping' ? enemy.pingTarget : null;
     if (!enemy.state.scared && target) {
       const path = navigation.findPath(enemy.tile, target);
@@ -44,19 +87,30 @@ export class EnemyDecisionService {
       if (path?.length === 0 && enemy.key === 'ping') enemy.pingTarget = null;
       if (path?.length === 0 && enemy.key === 'virus') return null;
     }
-    const steps = this.getSteps(enemy, navigation);
+    const steps = navigation.getSteps(enemy.tile);
     const forward = steps.filter((step) => step.direction !== OPPOSITE_DIRECTION[enemy.direction]);
     const choices = forward.length > 0 ? forward : steps;
     return choices.length > 0 ? choices[rng.int(choices.length)].direction : null;
   }
 
-  private choosePatrolDirection(enemy: EnemyEntity, navigation: EnemyNavigationService): Direction | null {
+  private choosePatrolDirection(
+    enemy: EnemyEntity,
+    navigation: EnemyNavigationService,
+    rng: RandomSource,
+  ): Direction | null {
     let patrol = this.patrols.get(enemy);
     if (!patrol) {
-      patrol = { route: navigation.createPatrol(enemy.tile, enemy.direction, enemy.movementBounds ?? undefined), index: 0 };
-      this.patrols.set(enemy, patrol);
+      this.prepareFirewallPatrol(enemy, enemy.tile, navigation, rng);
+      patrol = this.patrols.get(enemy);
     }
-    if (patrol.route.length === 0) return null;
+    if (!patrol || patrol.route.length === 0) return null;
+    if (!patrol.joined) {
+      if (patrol.target.x !== enemy.tile.x || patrol.target.y !== enemy.tile.y) {
+        return navigation.findPath(enemy.tile, patrol.target)?.[0]?.direction ?? null;
+      }
+      patrol.joined = true;
+      patrol.index = 0;
+    }
     let step = patrol.route[patrol.index];
     if (step.tile.x !== enemy.tile.x || step.tile.y !== enemy.tile.y) {
       const rejoin = navigation.findPathToAny(enemy.tile, patrol.route.map((entry) => entry.tile));
@@ -67,15 +121,6 @@ export class EnemyDecisionService {
     }
     patrol.index = (patrol.index + 1) % patrol.route.length;
     return step.direction;
-  }
-
-  /** Keeps tutorial-authored enemies inside their optional tile bounds. */
-  private getSteps(enemy: EnemyEntity, navigation: EnemyNavigationService): NavigationStep[] {
-    const bounds = enemy.movementBounds;
-    return navigation.getSteps(enemy.tile).filter((step) => !bounds || (
-      step.destination.x >= bounds.minX && step.destination.x <= bounds.maxX &&
-      step.destination.y >= bounds.minY && step.destination.y <= bounds.maxY
-    ));
   }
 
   chooseDirectionAtCenter(

@@ -19,8 +19,8 @@ export const TUTORIAL_LESSONS = [
   },
   {
     id: 'firewall', title: 'Meet Firewall',
-    introduction: 'Firewall starts at the top-left and stays on its short patrol instead of chasing you. Every enemy body is dangerous unless it is scared. Contact here lets you retry this lesson.',
-    objective: 'Find a route to the marked data bit while Firewall follows its patrol.',
+    introduction: 'Firewall picks a patrol destination, travels there, and repeats a long loop instead of chasing you. Every enemy body is dangerous unless it is scared. Contact here lets you retry this lesson.',
+    objective: 'Find a route to the marked data bit while Firewall travels to its patrol.',
   },
   {
     id: 'virus', title: 'Meet Virus',
@@ -44,8 +44,8 @@ export const TUTORIAL_LESSONS = [
   },
   {
     id: 'power', title: 'Turn the chase around',
-    introduction: 'Firewall starts on the same top-left patrol. Steer to the nearby large power core before entering its route, then catch the scared enemy while power lasts. Power cores also clear existing Lag zones and stop Ping scans, Spam copies, and new Lag zones while those enemies are scared.',
-    objective: 'Move around the wall to collect the power core, then enter Firewall’s patrol.',
+    introduction: 'Firewall follows its usual long patrol. Steer to the nearby large power core, then follow the marker and catch the scared enemy while power lasts. Power cores also clear existing Lag zones and stop Ping scans, Spam copies, and new Lag zones while those enemies are scared.',
+    objective: 'Move around the wall to collect the power core, then catch Firewall.',
   },
 ] as const satisfies readonly {
   id: TutorialLessonId;

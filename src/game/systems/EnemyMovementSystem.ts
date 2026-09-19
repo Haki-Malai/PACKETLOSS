@@ -22,6 +22,7 @@ export class EnemyMovementSystem {
   ) {
     this.navigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService);
     this.returnNavigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService, 'returning', world.enemyJailBounds);
+    this.prepareFirewallPatrols();
   }
 
   /** Returns the earliest enemy center, portal, or return-form transition within a simulation slice. */
@@ -90,9 +91,11 @@ export class EnemyMovementSystem {
     });
   }
 
-  /** Clears return-route progress after the enemy roster is restored to jail. */
+  /** Clears route progress and chooses a fresh Firewall patrol after a roster reset. */
   reset(): void {
+    this.decisions.reset();
     this.world.enemies.forEach((enemy) => this.returningEnemies.delete(enemy));
+    this.prepareFirewallPatrols();
   }
 
   /** Advances collapse timing, then moves a harmless enemy toward the jail. */
@@ -116,6 +119,8 @@ export class EnemyMovementSystem {
       if (enemy.isCopy) {
         enemy.active = false;
         this.world.enemyAnimations.delete(enemy);
+      } else {
+        this.prepareFirewallPatrol(enemy);
       }
       return;
     }
@@ -146,5 +151,21 @@ export class EnemyMovementSystem {
     const nextCost = nextPath ? 1 - fraction + nextPath.length : Infinity;
     // An outward portal half-step has no physical next tile, so retreat to its center.
     return nextCost < anchorCost ? outward : OPPOSITE_DIRECTION[outward];
+  }
+
+  /** Chooses new patrols for active Firewall instances at their current lifecycle origin. */
+  private prepareFirewallPatrols(): void {
+    this.world.enemies.forEach((enemy) => {
+      if (enemy.active && enemy.key === 'firewall') this.prepareFirewallPatrol(enemy);
+    });
+  }
+
+  /** Chooses Firewall's next patrol from its release tile or current tutorial position. */
+  private prepareFirewallPatrol(enemy: EnemyEntity): void {
+    const origin = enemy.state.free ? enemy.tile : {
+      x: this.world.enemyJailReturnTile.x,
+      y: Math.max(0, this.world.enemyJailBounds.y - 1),
+    };
+    this.decisions.prepareFirewallPatrol(enemy, origin, this.navigation, this.rng);
   }
 }
