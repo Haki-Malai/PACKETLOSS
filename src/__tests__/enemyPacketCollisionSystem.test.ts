@@ -11,6 +11,7 @@ import { MovementRules } from '../game/domain/services/MovementRules';
 import { PortalService } from '../game/domain/services/PortalService';
 import { WorldState } from '../game/domain/world/WorldState';
 import { CollectibleSystem } from '../game/systems/CollectibleSystem';
+import { handleDebugKeyDown } from '../game/systems/DebugInput';
 import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
 import { PacketMovementSystem } from '../game/systems/PacketMovementSystem';
 import { createCollisionTile, createMapFixture } from './fixtures/pointLayoutFixtures';
@@ -278,7 +279,7 @@ describe('EnemyPacketCollisionSystem', () => {
     }
   });
 
-  it('suppresses non-scared packet-hit collisions while post-portal shield is active', () => {
+  it('prevents a dangerous collision after the V shortcut starts portal protection', () => {
     const harness = new MechanicsDomainHarness({ seed: 4106, fixture: 'default-map', enemyCount: 1, autoStartSystems: false });
 
     try {
@@ -290,15 +291,26 @@ describe('EnemyPacketCollisionSystem', () => {
       const collisionTile = { x: 16, y: 16 };
       harness.movementRules.setEntityTile(harness.world.packet, collisionTile);
       harness.movementRules.setEntityTile(enemy, collisionTile);
-      harness.world.packet.portalBlinkRemainingMs = PACKET_PORTAL_BLINK.durationMs;
+      handleDebugKeyDown(harness.world, {
+        code: 'KeyV', preventDefault: () => undefined,
+      } as KeyboardEvent, true);
+      expect(harness.world.packet.portalBlinkRemainingMs).toBe(Infinity);
       enemy.state.free = true;
       enemy.state.scared = false;
+      harness.packetSystem.update(PACKET_PORTAL_BLINK.durationMs + PACKET_PORTAL_BLINK.intervalMs);
+      harness.movementRules.setEntityTile(harness.world.packet, collisionTile);
 
       harness.enemyPacketCollisionSystem.update();
 
       expect(getGameState().lives).toBe(3);
       expect(harness.world.packet.tile).toEqual(collisionTile);
       expect(harness.world.packet.deathRecoveryRemainingMs).toBe(0);
+
+      handleDebugKeyDown(harness.world, {
+        code: 'KeyV', preventDefault: () => undefined,
+      } as KeyboardEvent, true);
+      harness.enemyPacketCollisionSystem.update();
+      expect(getGameState().lives).toBe(2);
     } finally {
       harness.destroy();
     }

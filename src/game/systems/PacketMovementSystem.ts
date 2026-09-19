@@ -75,7 +75,7 @@ export class PacketMovementSystem {
       this.world.tick,
       this.world.tileSize,
     );
-    if (teleported) {
+    if (teleported && this.world.packet.portalBlinkRemainingMs !== Infinity) {
       this.world.packet.portalBlinkRemainingMs = PACKET_PORTAL_BLINK.durationMs;
       this.world.packet.portalBlinkElapsedMs = 0;
     }

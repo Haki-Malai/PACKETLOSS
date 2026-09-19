@@ -4,6 +4,7 @@ import { createHarness } from './fixtures/inputFixtures';
 import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import type { BrowserInputAdapter } from '../game/infrastructure/adapters/BrowserInputAdapter';
 import { InputSystem } from '../game/systems/InputSystem';
+import { PACKET_PORTAL_BLINK } from '../config/constants';
 
 const environment = vi.hoisted(() => ({ isDev: true }));
 vi.mock('../config/environment', () => ({ get IS_DEV() { return environment.isDev; } }));
@@ -13,9 +14,11 @@ afterEach(() => {
 });
 
 describe('InputSystem', () => {
-  it('ignores freeze, inspection, clipboard and power shortcuts in production while movement and pause work', () => {
+  it('ignores development shortcuts in production while movement and pause work', () => {
     environment.isDev = false;
     const { input, world, togglePause, system } = createHarness();
+    world.levelMultiplier = 1;
+    world.packet.portalBlinkRemainingMs = 0;
     const enemy = new EnemyEntity({
       key: 'lag', tile: { x: 2, y: 2 }, direction: 'right', speed: 0.5,
       displayWidth: 11, displayHeight: 11,
@@ -27,12 +30,15 @@ describe('InputSystem', () => {
     const preventDefault = vi.fn();
     for (const event of [
       { code: 'KeyF', key: 'f' },
+      { code: 'KeyV', key: 'v' },
       { code: 'KeyC', key: 'c' },
       { code: 'KeyH', key: 'h' },
       { code: 'KeyC', key: 'c', altKey: true },
       { code: 'KeyC', key: 'C', shiftKey: true },
     ]) input.emitKeyDown({ ...event, preventDefault } as unknown as KeyboardEvent);
     expect(world.debugFrozen).toBe(false);
+    expect(world.levelMultiplier).toBe(1);
+    expect(world.packet.portalBlinkRemainingMs).toBe(0);
     expect(world.collisionDebugEnabled).toBe(false);
     expect(enemy.state.scared).toBe(false);
     expect(copy).not.toHaveBeenCalled();
@@ -79,16 +85,20 @@ describe('InputSystem', () => {
 
   it.each(['paused', 'lost', 'cleared'] as const)('ignores movement, pause and debug keys while %s', (state) => {
     const { input, world, togglePause, system } = createHarness();
+    world.levelMultiplier = 1;
+    world.packet.portalBlinkRemainingMs = 0;
     if (state === 'paused') world.isMoving = false;
     else world.outcome = state;
     input.setKeyDown('ArrowUp', true);
     system.update();
     const preventDefault = vi.fn();
-    for (const code of ['Space', 'Escape', 'KeyH', 'KeyC', 'KeyF']) {
-      input.emitKeyDown({ code, key: code, altKey: true, preventDefault } as unknown as KeyboardEvent);
+    for (const code of ['Space', 'Escape', 'KeyH', 'KeyC', 'KeyF', 'KeyV']) {
+      input.emitKeyDown({ code, key: code, preventDefault } as unknown as KeyboardEvent);
     }
     expect(world.packet.direction.next).toBe('left');
     expect(world.collisionDebugEnabled).toBe(false);
+    expect(world.levelMultiplier).toBe(1);
+    expect(world.packet.portalBlinkRemainingMs).toBe(0);
     expect(togglePause).not.toHaveBeenCalled();
     expect(preventDefault).not.toHaveBeenCalled();
     system.destroy();
@@ -198,24 +208,62 @@ describe('InputSystem', () => {
     expect(world.collisionDebugEnabled).toBe(false);
   });
 
-  it('toggles a development freeze without changing pause state', () => {
+  it('compounds speed without resetting the active run and retains freeze on Shift+F', () => {
     const { input, world, togglePause } = createHarness();
     const preventDefault = vi.fn();
+    world.levelMultiplier = 1;
+    world.tick = 17;
+    const packet = world.packet;
+    const enemies = world.enemies;
 
     input.emitKeyDown({
       code: 'KeyF', key: 'f', repeat: false, preventDefault,
     } as unknown as KeyboardEvent);
     expect(preventDefault).toHaveBeenCalledOnce();
-    expect(world.debugFrozen).toBe(true);
+    expect(world.levelMultiplier).toBe(1.25);
+    expect(world.debugFrozen).toBe(false);
     expect(world.isMoving).toBe(true);
+    expect(world.tick).toBe(17);
+    expect(world.packet).toBe(packet);
+    expect(world.enemies).toBe(enemies);
     expect(togglePause).not.toHaveBeenCalled();
 
     input.emitKeyDown({
       code: 'KeyF', key: 'f', repeat: false, preventDefault,
     } as unknown as KeyboardEvent);
     expect(preventDefault).toHaveBeenCalledTimes(2);
+    expect(world.levelMultiplier).toBe(1.5625);
+
+    input.emitKeyDown({
+      code: 'KeyF', key: 'F', shiftKey: true, repeat: false, preventDefault,
+    } as unknown as KeyboardEvent);
+    expect(world.debugFrozen).toBe(true);
+    expect(world.levelMultiplier).toBe(1.5625);
+    input.emitKeyDown({
+      code: 'KeyF', key: 'F', shiftKey: true, repeat: false, preventDefault,
+    } as unknown as KeyboardEvent);
     expect(world.debugFrozen).toBe(false);
     expect(world.isMoving).toBe(true);
+    expect(togglePause).not.toHaveBeenCalled();
+  });
+
+  it('toggles persistent portal blinking and protection with V', () => {
+    const { input, world, togglePause } = createHarness();
+    const preventDefault = vi.fn();
+    world.packet.portalBlinkRemainingMs = PACKET_PORTAL_BLINK.durationMs;
+    world.packet.portalBlinkElapsedMs = 240;
+
+    input.emitKeyDown({ code: 'KeyV', key: 'v', repeat: false, preventDefault } as unknown as KeyboardEvent);
+    expect(world.packet.portalBlinkRemainingMs).toBe(Infinity);
+    expect(world.packet.portalBlinkElapsedMs).toBe(0);
+    world.packet.portalBlinkElapsedMs = 1300;
+
+    input.emitKeyDown({ code: 'KeyV', key: 'v', repeat: false, preventDefault } as unknown as KeyboardEvent);
+    expect(world.packet.portalBlinkRemainingMs).toBe(0);
+    expect(world.packet.portalBlinkElapsedMs).toBe(0);
+    input.emitKeyDown({ code: 'KeyV', key: 'v', repeat: false, preventDefault } as unknown as KeyboardEvent);
+    expect(world.packet.portalBlinkRemainingMs).toBe(Infinity);
+    expect(preventDefault).toHaveBeenCalledTimes(3);
     expect(togglePause).not.toHaveBeenCalled();
   });
 

@@ -46,8 +46,10 @@ function resetPacketForLevel(world: WorldState, movementRules: MovementRules): v
   movementRules.setEntityTile(world.packet, world.packetSpawnTile);
   world.packet.active = true;
   world.packet.direction = { current: 'right', next: 'right' };
-  world.packet.portalBlinkRemainingMs = 0;
-  world.packet.portalBlinkElapsedMs = 0;
+  if (world.packet.portalBlinkRemainingMs !== Infinity) {
+    world.packet.portalBlinkRemainingMs = 0;
+    world.packet.portalBlinkElapsedMs = 0;
+  }
   world.packet.deathAnimationRemainingMs = 0;
   world.packet.enemyEatRemainingMs = 0;
   world.packet.deathRecoveryRemainingMs = 0;
