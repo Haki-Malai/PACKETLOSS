@@ -3,6 +3,7 @@ import { PacketEntity } from '../entities/PacketEntity';
 import { MovementProgress } from '../valueObjects/MovementProgress';
 import { TilePosition } from '../valueObjects/TilePosition';
 import { CollisionGrid, CollisionTile } from './CollisionGrid';
+import type { WallConnection } from './MazeFootprint';
 
 export interface WorldProperty {
   name: string;
@@ -76,8 +77,7 @@ export interface EnemyEffect {
   readonly target?: { readonly x: number; readonly y: number };
 }
 
-export interface QuarantineWall {
-  readonly tile: Readonly<TilePosition>;
+export interface QuarantineWall extends WallConnection {
   readonly source: { readonly x: number; readonly y: number };
   readonly ageMs: number;
   readonly durationMs: number;
@@ -192,6 +192,6 @@ export class WorldState {
   /** Removes Quarantine geometry records and their collision overlay together. */
   clearQuarantineWalls(): void {
     this.quarantineWalls = [];
-    this.collisionGrid.setTemporaryWalls([]);
+    this.collisionGrid.setTemporaryEdges([]);
   }
 }

@@ -1,4 +1,5 @@
 import { TilePosition } from '../valueObjects/TilePosition';
+import type { WallConnection } from './MazeFootprint';
 
 export interface CollisionTile {
   collides: boolean;
@@ -35,24 +36,25 @@ const BOUNDARY_COLLISION_TILE: CollisionTile = Object.freeze({
 export class CollisionGrid {
   readonly width: number;
   readonly height: number;
-  private temporaryWalls = new Set<string>();
+  private temporaryEdges = new Set<string>();
 
   constructor(private readonly grid: CollisionTile[][]) {
     this.height = grid.length;
     this.width = grid[0]?.length ?? 0;
   }
 
-  /** Reads authored collision with the current temporary wall layer applied. */
+  /** Reads authored collision with temporary passage closures applied symmetrically. */
   getTileAt(x: number, y: number): CollisionTile {
-    if (!this.isInBounds(x, y) || this.temporaryWalls.has(`${x},${y}`)) {
-      return BOUNDARY_COLLISION_TILE;
-    }
-
-    const row = this.grid[y];
-    if (!row) {
-      return BOUNDARY_COLLISION_TILE;
-    }
-    return row[x] ?? BOUNDARY_COLLISION_TILE;
+    if (!this.isInBounds(x, y)) return BOUNDARY_COLLISION_TILE;
+    const tile = this.grid[y]?.[x];
+    if (!tile) return BOUNDARY_COLLISION_TILE;
+    const up = this.temporaryEdges.has(`${x},${y - 1},down`);
+    const right = this.temporaryEdges.has(`${x},${y},right`);
+    const down = this.temporaryEdges.has(`${x},${y},down`);
+    const left = this.temporaryEdges.has(`${x - 1},${y},right`);
+    return up || right || down || left ? {
+      ...tile, up: tile.up || up, right: tile.right || right, down: tile.down || down, left: tile.left || left,
+    } : tile;
   }
 
   getTilesAt(tile: TilePosition): CollisionTiles {
@@ -70,9 +72,9 @@ export class CollisionGrid {
     return this.grid.map((row) => row.map((tile) => ({ ...tile })));
   }
 
-  /** Replaces temporary blockers without modifying the authored map or its collision flags. */
-  setTemporaryWalls(tiles: readonly Readonly<TilePosition>[]): void {
-    this.temporaryWalls = new Set(tiles.map((tile) => `${tile.x},${tile.y}`));
+  /** Replaces temporary closed connections without modifying authored collision flags. */
+  setTemporaryEdges(connections: readonly WallConnection[]): void {
+    this.temporaryEdges = new Set(connections.map(({ tile, side }) => `${tile.x},${tile.y},${side}`));
   }
 
   private isInBounds(x: number, y: number): boolean {

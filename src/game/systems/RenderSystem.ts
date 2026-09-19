@@ -204,6 +204,7 @@ export class RenderSystem {
     this.syncEffects();
     this.syncEnemyEating();
     this.enemyEffects.sync(this.world.enemyEffects, this.world.lagZones);
+    this.maze.syncQuarantineWalls(this.world.quarantineWalls);
     this.quarantineWalls.sync(this.world.quarantineWalls);
     this.tutorialMarker?.sync(this.getTutorialMarkers?.() ?? []);
     this.debug?.sync();

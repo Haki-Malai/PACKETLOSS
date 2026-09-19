@@ -1,11 +1,9 @@
 import { BufferGeometry, ExtrudeGeometry, Float32BufferAttribute, Path, Shape } from 'three';
-import type { WorldMapData, WorldTile } from '../../domain/world/WorldState';
-
-export interface MazeFootprint {
-  width: number;
-  height: number;
-  solid: Uint8Array;
-}
+import type { WorldMapData } from '../../domain/world/WorldState';
+import { buildMazeWallFootprint } from '../../domain/world/MazeFootprint';
+import type { MazeFootprint } from '../../domain/world/MazeFootprint';
+export { buildMazeWallFootprint, buildMazePenFootprint } from '../../domain/world/MazeFootprint';
+export type { MazeFootprint } from '../../domain/world/MazeFootprint';
 
 export interface WallContourPoint {
   x: number;
@@ -14,26 +12,6 @@ export interface WallContourPoint {
 
 export const WALL_HEIGHT = 12;
 
-const EMPTY = '................';
-const FULL = '################';
-const LEFT = '##..............';
-const RIGHT = '..............##';
-const BOTH = '##............##';
-const repeat = (row: string, count: number): string[] => Array.from({ length: count }, () => row);
-const TILE_FOOTPRINTS: Readonly<Record<number, readonly string[]>> = {
-  0: repeat(LEFT, 16),
-  1: repeat(BOTH, 16),
-  2: [FULL, FULL, ...repeat(LEFT, 14)],
-  5: [FULL, FULL, ...repeat(EMPTY, 12), '#...............', LEFT],
-  6: [FULL, FULL, ...repeat(EMPTY, 12), '#...............', '##.............#'],
-  7: [BOTH, '#.............##', ...repeat(RIGHT, 12), '#.............##', BOTH],
-  10: [BOTH, '#.............##', ...repeat(RIGHT, 12), FULL, FULL],
-  14: [BOTH, '#..............#', ...repeat(EMPTY, 12), '#..............#', BOTH],
-  15: [...repeat(EMPTY, 14), '...............#', RIGHT],
-  16: [FULL, FULL, ...repeat(BOTH, 4), FULL, FULL, FULL, FULL, ...repeat(BOTH, 4), FULL, FULL],
-  23: [RIGHT, '...............#', ...repeat(EMPTY, 12), '...............#', RIGHT],
-};
-
 interface BoundaryEdge {
   start: WallContourPoint;
   end: WallContourPoint;
@@ -41,54 +19,6 @@ interface BoundaryEdge {
   visited: boolean;
 }
 
-export function buildMazeWallFootprint(map: WorldMapData): MazeFootprint {
-  return buildFootprint(map, (tile) => tile.localId === null || tile.localId < 16 || tile.localId > 21);
-}
-
-export function buildMazePenFootprint(map: WorldMapData): MazeFootprint {
-  return buildFootprint(map, (tile) => tile.localId === 16);
-}
-
-function buildFootprint(
-  map: WorldMapData,
-  includeTile: (_tile: WorldTile) => boolean,
-): MazeFootprint {
-  const width = map.width * map.tileWidth;
-  const height = map.height * map.tileHeight;
-  const solid = new Uint8Array(width * height);
-
-  for (const row of map.tiles) {
-    for (const tile of row) {
-      if (tile.gid === null || !includeTile(tile)) {
-        continue;
-      }
-      const source = tile.localId === null ? undefined : TILE_FOOTPRINTS[tile.localId];
-      if (!source) {
-        continue;
-      }
-      const sourceWidth = source[0]?.length ?? 0;
-      const sourceHeight = source.length;
-      const cosine = Math.round(Math.cos(tile.rotation));
-      const sine = Math.round(Math.sin(tile.rotation));
-      for (let y = 0; y < map.tileHeight; y += 1) {
-        for (let x = 0; x < map.tileWidth; x += 1) {
-          const localX = (x + 0.5) / map.tileWidth - 0.5;
-          const localY = (y + 0.5) / map.tileHeight - 0.5;
-          const sourceX = Math.floor(
-            ((localX * cosine + localY * sine) * (tile.flipX ? -1 : 1) + 0.5) * sourceWidth,
-          );
-          const sourceY = Math.floor(
-            ((-localX * sine + localY * cosine) * (tile.flipY ? -1 : 1) + 0.5) * sourceHeight,
-          );
-          if (source[sourceY]?.[sourceX] === '#') {
-            solid[(tile.y * map.tileHeight + y) * width + tile.x * map.tileWidth + x] = 1;
-          }
-        }
-      }
-    }
-  }
-  return { width, height, solid };
-}
 
 export function traceWallContours(footprint: MazeFootprint): WallContourPoint[][] {
   const edges: BoundaryEdge[] = [];
@@ -230,6 +160,60 @@ export function buildMazeWallEdgeGeometry(
     }
   }
   return new BufferGeometry().setAttribute('position', new Float32BufferAttribute(positions, 3));
+}
+
+/** Splits contour runs where authored and temporary pixels meet, preserving one outline per exposed edge. */
+export function splitMazeWallEdgesByOwnership(
+  edges: BufferGeometry, authored: MazeFootprint,
+): { authored: BufferGeometry; temporary: BufferGeometry } {
+  const source = edges.getAttribute('position');
+  const original: number[] = [];
+  const added: number[] = [];
+  const isOriginal = (x: number, z: number): boolean => {
+    const column = Math.floor(x);
+    const row = Math.floor(z);
+    return column >= 0 && column < authored.width && row >= 0 && row < authored.height
+      && Boolean(authored.solid[row * authored.width + column]);
+  };
+  for (let index = 0; index < source.count; index += 2) {
+    const x1 = source.getX(index);
+    const y1 = source.getY(index);
+    const z1 = source.getZ(index);
+    const x2 = source.getX(index + 1);
+    const y2 = source.getY(index + 1);
+    const z2 = source.getZ(index + 1);
+    const dx = x2 - x1;
+    const dz = z2 - z1;
+    if (y1 !== y2) {
+      const target = [-0.5, 0.5].some((x) => [-0.5, 0.5].some((z) => isOriginal(x1 + x, z1 + z)))
+        ? original : added;
+      target.push(x1, y1, z1, x2, y2, z2);
+      continue;
+    }
+    const length = Math.abs(dx) + Math.abs(dz);
+    if (length === 0) continue;
+    const stepX = dx / length;
+    const stepZ = dz / length;
+    let start = 0;
+    let previous = false;
+    for (let step = 0; step <= length; step += 1) {
+      const x = x1 + stepX * (step + 0.5);
+      const z = z1 + stepZ * (step + 0.5);
+      const current = step < length && (isOriginal(x + stepZ * 0.5, z - stepX * 0.5)
+        || isOriginal(x - stepZ * 0.5, z + stepX * 0.5));
+      if (step > start && (step === length || current !== previous)) {
+        const target = previous ? original : added;
+        target.push(x1 + stepX * start, y1, z1 + stepZ * start,
+          x1 + stepX * step, y2, z1 + stepZ * step);
+        start = step;
+      }
+      previous = current;
+    }
+  }
+  return {
+    authored: new BufferGeometry().setAttribute('position', new Float32BufferAttribute(original, 3)),
+    temporary: new BufferGeometry().setAttribute('position', new Float32BufferAttribute(added, 3)),
+  };
 }
 
 export function buildMazeWallGeometryFromFootprint(footprint: MazeFootprint): BufferGeometry {

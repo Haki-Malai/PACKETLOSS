@@ -6,12 +6,15 @@ import { PortalService } from '../domain/services/PortalService';
 import { DIRECTIONS } from '../domain/valueObjects/Direction';
 import type { TilePosition } from '../domain/valueObjects/TilePosition';
 import { WorldState } from '../domain/world/WorldState';
+import { buildMazeWallFootprint, connectionCenterIsOpen, connectionTouchesAuthoredWall } from '../domain/world/MazeFootprint';
+import type { WallConnection } from '../domain/world/MazeFootprint';
 import type { RandomSource } from '../shared/random/RandomSource';
 import type { CollectibleSystem } from './CollectibleSystem';
 
 /** Owns temporary maze blockers and Trojan ambushes using simulation time and seeded randomness. */
 export class MazeHazardSystem {
   private readonly navigation: EnemyNavigationService;
+  private readonly permanentWalls = buildMazeWallFootprint(this.world.map);
 
   /** Shares live movement rules and point state; fake points never enter the collectible system. */
   constructor(
@@ -124,24 +127,29 @@ export class MazeHazardSystem {
     return true;
   }
 
-  /** Builds a bounded random group of walls; disconnected routes reopen when their timers expire. */
+  /** Extends authored rails across open connections; closed routes reopen when timers expire. */
   private createWalls(enemy: EnemyEntity): void {
     const config = ENEMY_CONFIG.quarantine;
     const capacity = Math.min(config.wallsPerCast, config.maxWalls - this.world.quarantineWalls.length);
     if (capacity <= 0) return;
-    const candidates: TilePosition[] = [];
+    const candidates: WallConnection[] = [];
     for (let y = Math.max(0, enemy.tile.y - config.rangeTiles); y <= Math.min(this.world.map.height - 1, enemy.tile.y + config.rangeTiles); y += 1) {
       for (let x = Math.max(0, enemy.tile.x - config.rangeTiles); x <= Math.min(this.world.map.width - 1, enemy.tile.x + config.rangeTiles); x += 1) {
         const tile = { x, y };
         if (Math.abs(x - enemy.tile.x) + Math.abs(y - enemy.tile.y) > config.rangeTiles) continue;
-        if (this.isOpenPlacement(tile) && this.isClearOfActors(tile, 1.5)) candidates.push(tile);
+        for (const side of ['right', 'down'] as const) {
+          const neighbor = { x: x + (side === 'right' ? 1 : 0), y: y + (side === 'down' ? 1 : 0) };
+          if (Math.abs(neighbor.x - enemy.tile.x) + Math.abs(neighbor.y - enemy.tile.y) > config.rangeTiles) continue;
+          const connection = { tile, side };
+          if (this.canCloseConnection(connection, neighbor)) candidates.push(connection);
+        }
       }
     }
     const count = Math.min(capacity, candidates.length);
     for (let i = 0; i < count; i += 1) {
-      const [tile] = candidates.splice(this.rng.int(candidates.length), 1);
+      const [connection] = candidates.splice(this.rng.int(candidates.length), 1);
       this.world.quarantineWalls.push({
-        tile, source: { x: enemy.x, y: enemy.y }, ageMs: 0, durationMs: config.wallDurationMs,
+        ...connection, source: { x: enemy.x, y: enemy.y }, ageMs: 0, durationMs: config.wallDurationMs,
       });
     }
     if (count === 0) return;
@@ -152,9 +160,20 @@ export class MazeHazardSystem {
     });
   }
 
+  /** Accepts only actor-free open passages whose new rail joins permanent wall geometry. */
+  private canCloseConnection(connection: WallConnection, neighbor: TilePosition): boolean {
+    const { tile, side } = connection;
+    return this.isOpenPlacement(tile) && this.isOpenPlacement(neighbor)
+      && this.isClearOfActors(tile, 1.5) && this.isClearOfActors(neighbor, 1.5)
+      && this.movement.canMove(side, 0, 0, this.world.collisionGrid.getTilesAt(tile))
+      && connectionCenterIsOpen(this.world.map, this.permanentWalls, connection)
+      && connectionTouchesAuthoredWall(this.world.map, this.permanentWalls, connection);
+  }
+
   /** Allows walkable directional-wall corridors while reserving solid tiles, portals, spawn, and jail. */
   private isOpenPlacement(tile: Readonly<TilePosition>): boolean {
-    if (this.world.map.tiles[tile.y]?.[tile.x]?.gid == null) return false;
+    const authored = this.world.map.tiles[tile.y]?.[tile.x];
+    if (authored?.gid == null || (authored.localId !== null && authored.localId >= 16 && authored.localId <= 21)) return false;
     const collision = this.world.collisionGrid.getTileAt(tile.x, tile.y);
     if (collision.penGate || collision.portal) return false;
     const neighbors = this.world.collisionGrid.getTilesAt(tile);
@@ -180,8 +199,8 @@ export class MazeHazardSystem {
       || Math.hypot(position.x - enemy.x, position.y - enemy.y) > this.world.tileSize * 1.5);
   }
 
-  /** Publishes the same active wall tiles consumed by rendering to movement and navigation. */
+  /** Publishes the same active wall connections consumed by rendering to movement and navigation. */
   private syncCollision(): void {
-    this.world.collisionGrid.setTemporaryWalls(this.world.quarantineWalls.map((wall) => wall.tile));
+    this.world.collisionGrid.setTemporaryEdges(this.world.quarantineWalls);
   }
 }

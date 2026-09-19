@@ -70,7 +70,7 @@ describe('maze hazard presentation', () => {
 
   it('reuses a bounded wall pool while seeking, removes expired pieces, and disposes every owned resource once', () => {
     const walls = new QuarantineWalls(16);
-    const records: QuarantineWall[] = [{ tile: { x: 4, y: 2 }, source: { x: 120, y: 56 }, ageMs: 500, durationMs: 7000 }];
+    const records: QuarantineWall[] = [{ tile: { x: 4, y: 2 }, side: 'right', source: { x: 120, y: 56 }, ageMs: 500, durationMs: 7000 }];
     const resources = new Set<BufferGeometry | Material>();
     walls.group.traverse((object) => {
       if (!(object instanceof Mesh)) return;
@@ -83,7 +83,7 @@ describe('maze hazard presentation', () => {
     walls.sync(records);
     const active = walls.group.getObjectByName('quarantine-wall')!;
     expect(active.visible).toBe(true);
-    expect(active.position.toArray()).toEqual([72, 0, 40]);
+    expect(active.position.toArray()).toEqual([80, 0, 40]);
     walls.sync([{ ...records[0], ageMs: 7000 }]);
     expect(active.visible).toBe(false);
     walls.sync(records);
