@@ -66,6 +66,20 @@ function walkTrojanToDisguise(scenario: ReturnType<typeof trojanScenario>): void
 describe('Quarantine terrain and Trojan ambushes', () => {
   beforeEach(() => resetGameState());
 
+  it('closes one passage from both sides without blocking a tile’s other exits', () => {
+    const { world, movement } = createEnemyWorld(openRows, [], { x: 1, y: 1 });
+    const tile = { x: 5, y: 3 };
+    const authored = world.collisionGrid.toArray();
+    world.collisionGrid.setTemporaryEdges([{ tile, side: 'right' }]);
+    expect(movement.canMove('right', 0, 0, world.collisionGrid.getTilesAt(tile))).toBe(false);
+    expect(movement.canMove('left', 0, 0, world.collisionGrid.getTilesAt({ x: 6, y: 3 }))).toBe(false);
+    expect(movement.canMove('up', 0, 0, world.collisionGrid.getTilesAt(tile))).toBe(true);
+    expect(movement.canMove('down', 0, 0, world.collisionGrid.getTilesAt(tile))).toBe(true);
+    expect(world.collisionGrid.toArray()).toEqual(authored);
+    world.collisionGrid.setTemporaryEdges([]);
+    expect(movement.canMove('right', 0, 0, world.collisionGrid.getTilesAt(tile))).toBe(true);
+  });
+
   it('temporarily cuts off a corridor and restores the exact authored collision when walls expire', () => {
     const fixture = createEnemyWorld([
       '##############', '#............#', '##############', '##############', '##############',
@@ -73,6 +87,7 @@ describe('Quarantine terrain and Trojan ambushes', () => {
     ], [{ key: 'quarantine', tile: { x: 10, y: 1 } }], { x: 2, y: 1 });
     const { world, movement, portals } = fixture;
     for (let x = 1; x <= 12; x += 1) {
+      world.map.tiles[1][x].rotation = Math.PI / 2;
       for (const collision of [world.map.tiles[1][x].collision, world.collisionGrid.getTileAt(x, 1)]) {
         Object.assign(collision, { collides: true, up: true, down: true });
       }
@@ -89,19 +104,21 @@ describe('Quarantine terrain and Trojan ambushes', () => {
     expect(navigation.findPath(world.packet.tile, { x: 12, y: 1 })).toBeNull();
     expect(world.map.tiles[1][5].collision).toMatchObject({ collides: true, up: true, down: true, left: false, right: false });
     expect(collectibles.getPointCount()).toBe(1);
-    for (const { tile } of world.quarantineWalls) {
-      expect(world.collisionGrid.getTileAt(tile.x, tile.y)).toMatchObject({ up: true, down: true, left: true, right: true });
-      expect(movement.canMove('right', 0, 0, world.collisionGrid.getTilesAt({ x: tile.x - 1, y: tile.y }))).toBe(false);
+    for (const { tile, side } of world.quarantineWalls) {
+      const neighbor = { x: tile.x + (side === 'right' ? 1 : 0), y: tile.y + (side === 'down' ? 1 : 0) };
+      expect(world.collisionGrid.getTileAt(tile.x, tile.y)[side]).toBe(true);
+      expect(world.collisionGrid.getTileAt(neighbor.x, neighbor.y)[side === 'right' ? 'left' : 'up']).toBe(true);
+      expect(movement.canMove(side, 0, 0, world.collisionGrid.getTilesAt(tile))).toBe(false);
     }
     // A returned/inactive owner must not recreate walls as the last existing walls expire.
     world.enemies[0].active = false;
-    const blockedTiles = world.quarantineWalls.map((wall) => wall.tile);
+    const blockedConnections = world.quarantineWalls.map((wall) => ({ tile: wall.tile, side: wall.side }));
     hazards.update(6999);
     expect(world.quarantineWalls).toHaveLength(2);
     hazards.update(1);
     expect(world.quarantineWalls).toHaveLength(0);
     expect(world.collisionGrid.toArray()).toEqual(before);
-    for (const tile of blockedTiles) expect(world.collisionGrid.getTileAt(tile.x, tile.y)).toEqual(before[tile.y][tile.x]);
+    for (const { tile } of blockedConnections) expect(world.collisionGrid.getTileAt(tile.x, tile.y)).toEqual(before[tile.y][tile.x]);
     expect(navigation.findPath(world.packet.tile, { x: 12, y: 1 })).not.toBeNull();
   });
 

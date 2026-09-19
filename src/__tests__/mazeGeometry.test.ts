@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Box3, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CollisionGrid } from '../game/domain/world/CollisionGrid';
+import { connectionTouchesAuthoredWall, extendMazeWallFootprint } from '../game/domain/world/MazeFootprint';
 import { parseTiledMap, type TiledMap } from '../game/infrastructure/map/TiledParser';
 import {
   buildMazePenFootprint,
@@ -11,6 +12,7 @@ import {
   buildMazeWallGeometry,
   buildMazeWallGeometryFromFootprint,
   traceWallContours,
+  splitMazeWallEdgesByOwnership,
 } from '../game/infrastructure/three/MazeGeometry';
 import type { MazeFootprint, WallContourPoint } from '../game/infrastructure/three/MazeGeometry';
 import { MazeScene } from '../game/infrastructure/three/MazeScene';
@@ -104,6 +106,51 @@ describe('procedural maze footprints', () => {
 });
 
 describe('continuous wall geometry', () => {
+  it('joins a thin temporary rail to rotated authored walls and keeps the other opening clear', () => {
+    const map = fixture(2);
+    map.tiles[0].forEach((tile) => { tile.localId = 1; tile.rotation = Math.PI / 2; });
+    const base = buildMazeWallFootprint(map);
+    const connection = { tile: { x: 0, y: 0 }, side: 'right' as const };
+    expect(connectionTouchesAuthoredWall(map, base, connection)).toBe(true);
+    const joined = extendMazeWallFootprint(map, base, [connection]);
+    expect(base.solid[8 * base.width + 16]).toBe(0);
+    expect(joined.solid[8 * joined.width + 16]).toBe(1);
+    expect(joined.solid[8 * joined.width + 8]).toBe(0);
+    expect(joined.solid[8 * joined.width + 24]).toBe(0);
+    const outlines = buildMazeWallEdgeGeometry(joined);
+    const split = splitMazeWallEdgesByOwnership(outlines, base);
+    expect(split.authored.getAttribute('position').count).toBeGreaterThan(0);
+    expect(split.temporary.getAttribute('position').count).toBeGreaterThan(0);
+    const geometry = buildMazeWallGeometryFromFootprint(joined);
+    expect(traceWallContours(joined).length).toBeLessThanOrEqual(traceWallContours(base).length);
+    geometry.dispose();
+    outlines.dispose();
+    split.authored.dispose();
+    split.temporary.dispose();
+  });
+
+  it('reuses joined wall geometry between samples and disposes each replaced shape', () => {
+    const map = fixture(2);
+    map.tiles[0].forEach((tile) => { tile.localId = 1; tile.rotation = Math.PI / 2; });
+    const maze = new MazeScene({ map });
+    const walls = maze.group.getObjectByName('walls') as Mesh;
+    const original = vi.spyOn(walls.geometry, 'dispose');
+    const record = { tile: { x: 0, y: 0 }, side: 'right' as const,
+      source: { x: 0, y: 0 }, ageMs: 100, durationMs: 7000 };
+    maze.syncQuarantineWalls([record]);
+    expect(original).toHaveBeenCalledOnce();
+    const joined = walls.geometry;
+    const joinedDispose = vi.spyOn(joined, 'dispose');
+    expect((maze.group.getObjectByName('quarantine-wall-edges') as { count: number }).count).toBeGreaterThan(0);
+    maze.syncQuarantineWalls([{ ...record, ageMs: 200 }]);
+    expect(walls.geometry).toBe(joined);
+    maze.syncQuarantineWalls([]);
+    expect(joinedDispose).toHaveBeenCalledOnce();
+    const restored = vi.spyOn(walls.geometry, 'dispose');
+    maze.dispose();
+    expect(restored).toHaveBeenCalledOnce();
+  });
+
   it('removes tile joins before extruding the outline', () => {
     const footprint = footprintFromRows(['########', '########']);
     expect(traceWallContours(footprint)).toEqual([

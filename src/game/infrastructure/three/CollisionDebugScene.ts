@@ -9,6 +9,8 @@ export class CollisionDebugScene {
   readonly group = new Group();
   private readonly edges = new BufferGeometry();
   private readonly markers = new BufferGeometry();
+  private readonly temporaryEdges = new BufferGeometry();
+  private temporaryEdgeKey = '';
   private readonly linesMaterial = new LineBasicMaterial({ vertexColors: true, depthTest: false, depthWrite: false });
   private readonly fillGeometry = new PlaneGeometry(1, 1);
   private readonly fillMaterial = new MeshBasicMaterial({
@@ -43,6 +45,15 @@ export class CollisionDebugScene {
     const edges = new LineSegments(this.edges, this.linesMaterial);
     edges.renderOrder = 101;
     this.group.add(edges);
+    this.temporaryEdges.setAttribute('position', new BufferAttribute(new Float32Array(24), 3));
+    const purple = new Color('#b846ff');
+    const temporaryColors = new Float32Array(24);
+    for (let index = 0; index < 8; index += 1) temporaryColors.set([purple.r, purple.g, purple.b], index * 3);
+    this.temporaryEdges.setAttribute('color', new BufferAttribute(temporaryColors, 3));
+    this.temporaryEdges.setDrawRange(0, 0);
+    const temporary = new LineSegments(this.temporaryEdges, this.linesMaterial);
+    temporary.renderOrder = 101;
+    this.group.add(temporary);
 
     this.fillGeometry.rotateX(-Math.PI / 2);
     this.fills = new InstancedMesh(this.fillGeometry, this.fillMaterial, filled.length);
@@ -69,6 +80,7 @@ export class CollisionDebugScene {
   sync(): void {
     this.group.visible = this.world.collisionDebugEnabled;
     if (!this.group.visible) return;
+    this.syncTemporaryEdges();
     const position = this.markers.getAttribute('position') as BufferAttribute;
     const colors = this.markers.getAttribute('color') as BufferAttribute;
     let index = 0;
@@ -95,8 +107,26 @@ export class CollisionDebugScene {
     this.markers.setDrawRange(0, index);
   }
 
+  /** Refreshes the purple collision overlay only when closed passage topology changes. */
+  private syncTemporaryEdges(): void {
+    const key = this.world.quarantineWalls.map(({ tile, side }) => `${tile.x},${tile.y},${side}`).sort().join('|');
+    if (key === this.temporaryEdgeKey) return;
+    this.temporaryEdgeKey = key;
+    const position = this.temporaryEdges.getAttribute('position') as BufferAttribute;
+    const size = this.world.tileSize;
+    this.world.quarantineWalls.forEach(({ tile, side }, index) => {
+      const x = (tile.x + (side === 'right' ? 1 : 0)) * size;
+      const z = (tile.y + (side === 'down' ? 1 : 0)) * size;
+      position.setXYZ(index * 2, x, 0.12, z);
+      position.setXYZ(index * 2 + 1, x + (side === 'down' ? size : 0), 0.12, z + (side === 'right' ? size : 0));
+    });
+    position.needsUpdate = true;
+    this.temporaryEdges.setDrawRange(0, this.world.quarantineWalls.length * 2);
+  }
+
   dispose(): void {
     this.edges.dispose();
+    this.temporaryEdges.dispose();
     this.markers.dispose();
     this.linesMaterial.dispose();
     this.fillGeometry.dispose();

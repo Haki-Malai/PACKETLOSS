@@ -1,13 +1,16 @@
 import {
-  BoxGeometry, BufferGeometry, Color, EdgesGeometry, Group, InstancedMesh,
+  BoxGeometry, BufferGeometry, Color, EdgesGeometry, Float32BufferAttribute, Group, InstancedMesh,
   Material, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Vector3,
 } from 'three';
 import type { WorldMapData, WorldTile } from '../../domain/world/WorldState';
+import type { QuarantineWall } from '../../domain/world/WorldState';
+import { extendMazeWallFootprint } from '../../domain/world/MazeFootprint';
 import {
   buildMazePenFootprint,
   buildMazeWallEdgeGeometry,
   buildMazeWallFootprint,
   buildMazeWallGeometryFromFootprint,
+  splitMazeWallEdgesByOwnership,
   WALL_HEIGHT,
 } from './MazeGeometry';
 import type { MazeFootprint } from './MazeGeometry';
@@ -19,10 +22,18 @@ const PEN_SHEET_HEIGHT = 0.2;
 export class MazeScene {
   readonly group = new Group();
   private readonly resources = new Set<BufferGeometry | Material | InstancedMesh>();
+  private readonly map: WorldMapData;
+  private readonly wallFootprint: MazeFootprint;
+  private readonly penFootprint: MazeFootprint | undefined;
+  private readonly walls: Mesh<BufferGeometry, MeshStandardMaterial>;
+  private wallEdges: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
+  private quarantineEdges: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
+  private wallTopologyKey = '';
 
   constructor(world: { map: WorldMapData }) {
     this.group.name = 'maze';
     const { map } = world;
+    this.map = map;
     const floorGeometry = this.own(new PlaneGeometry(map.tileWidth, map.tileHeight));
     floorGeometry.rotateX(-Math.PI / 2);
     const floorMaterial = this.own(createMazeFloorMaterial());
@@ -38,25 +49,54 @@ export class MazeScene {
     floor.computeBoundingSphere();
     this.group.add(floor);
 
-    const penFootprint = tiles.some((tile) => tile.localId === 16) ? buildMazePenFootprint(map) : undefined;
-    const wallFootprint = buildMazeWallFootprint(map);
-    const wallGeometry = this.own(buildMazeWallGeometryFromFootprint(wallFootprint));
+    this.penFootprint = tiles.some((tile) => tile.localId === 16) ? buildMazePenFootprint(map) : undefined;
+    this.wallFootprint = buildMazeWallFootprint(map);
+    const wallGeometry = this.own(buildMazeWallGeometryFromFootprint(this.wallFootprint));
     const wallMaterial = this.createWallMaterial('#1e0d20');
-    const walls = new Mesh(wallGeometry, wallMaterial);
-    walls.name = 'walls';
-    this.group.add(walls);
-    const edges = this.createOutlineStrips(
-      buildMazeWallEdgeGeometry(wallFootprint, penFootprint),
+    this.walls = new Mesh(wallGeometry, wallMaterial);
+    this.walls.name = 'walls';
+    this.group.add(this.walls);
+    this.wallEdges = this.createOutlineStrips(
+      buildMazeWallEdgeGeometry(this.wallFootprint, this.penFootprint),
       new Color('#b579a1'),
     );
-    edges.name = 'wall-edges';
-    this.group.add(edges);
+    this.wallEdges.name = 'wall-edges';
+    this.quarantineEdges = this.createOutlineStrips(
+      new BufferGeometry().setAttribute('position', new Float32BufferAttribute([], 3)), new Color('#b846ff'),
+    );
+    this.quarantineEdges.name = 'quarantine-wall-edges';
+    this.quarantineEdges.material.transparent = true;
+    this.group.add(this.wallEdges, this.quarantineEdges);
 
-    if (penFootprint) {
-      this.addPen(penFootprint);
+    if (this.penFootprint) {
+      this.addPen(this.penFootprint);
     }
 
     this.addSigns(map, tiles);
+  }
+
+  /** Rebuilds continuous wall contours only when passage closures change; pulse sampling is allocation-free. */
+  syncQuarantineWalls(records: readonly QuarantineWall[]): void {
+    const active = records.filter((record) => record.ageMs < record.durationMs);
+    const key = active.map(({ tile, side }) => `${tile.x},${tile.y},${side}`).sort().join('|');
+    if (key !== this.wallTopologyKey) {
+      this.wallTopologyKey = key;
+      const combined = extendMazeWallFootprint(this.map, this.wallFootprint, active);
+      const geometry = this.own(buildMazeWallGeometryFromFootprint(combined));
+      this.resources.delete(this.walls.geometry);
+      this.walls.geometry.dispose();
+      this.walls.geometry = geometry;
+      const contours = buildMazeWallEdgeGeometry(combined, this.penFootprint);
+      const split = splitMazeWallEdgesByOwnership(contours, this.wallFootprint);
+      contours.dispose();
+      this.wallEdges = this.replaceOutlineStrips(this.wallEdges, split.authored, new Color('#b579a1'));
+      this.quarantineEdges = this.replaceOutlineStrips(this.quarantineEdges, split.temporary, new Color('#b846ff'));
+      this.quarantineEdges.material.transparent = true;
+    }
+    let youngestAge = Infinity;
+    for (const record of active) youngestAge = Math.min(youngestAge, record.ageMs);
+    this.quarantineEdges.material.opacity = active.length > 0
+      ? 0.82 + 0.18 * Math.sin(youngestAge * 0.012) : 1;
   }
 
   dispose(): void {
@@ -99,6 +139,24 @@ export class MazeScene {
     source.dispose();
     // Solid strips share normal depth testing and MSAA with the walls.
     return lines;
+  }
+
+  /** Replaces an outline batch and disposes its former mesh, geometry, and material immediately. */
+  private replaceOutlineStrips(
+    previous: InstancedMesh<BoxGeometry, MeshBasicMaterial>, source: BufferGeometry, color: Color,
+  ): InstancedMesh<BoxGeometry, MeshBasicMaterial> {
+    const name = previous.name;
+    this.group.remove(previous);
+    this.resources.delete(previous);
+    this.resources.delete(previous.geometry);
+    this.resources.delete(previous.material);
+    previous.dispose();
+    previous.geometry.dispose();
+    previous.material.dispose();
+    const next = this.createOutlineStrips(source, color);
+    next.name = name;
+    this.group.add(next);
+    return next;
   }
 
   private addSigns(map: WorldMapData, tiles: WorldTile[]): void {

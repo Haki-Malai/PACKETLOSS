@@ -144,6 +144,13 @@ export class AssetPreviewScene {
       if (entry.id.endsWith('-chase')) this.setBounds(64, 48, 15);
       if (entry.id.endsWith('-split')) this.setBounds(50, 50, 15);
       if (entry.id.endsWith('-walls')) this.setBounds(80, 64, 18);
+      if (entry.id === 'enemy-quarantine-walls') {
+        const map = buildPreviewMap('quarantine-demo', NO_TRANSFORM);
+        this.maze = new MazeScene({ map });
+        this.maze.group.position.set(CENTER - map.widthInPixels / 2, 0, CENTER - map.heightInPixels / 2);
+        this.quarantineWalls.group.position.copy(this.maze.group.position);
+        this.scene.add(this.maze.group);
+      }
       if (entry.id === 'enemy-ping-ping') {
         const diameter = ENEMY_CONFIG.ping.rangeTiles * TILE_SIZE * 2 + 4;
         this.setBounds(diameter, diameter, 15);
@@ -298,6 +305,7 @@ export class AssetPreviewScene {
     }
     this.enemyEffects.sync([], []);
     this.quarantineWalls.sync([]);
+    this.quarantineWalls.group.position.set(0, 0, 0);
     this.trojanDisguise?.sync(false, 0);
     this.points.forEach((point) => { point.visible = false; });
     this.shadow.visible = false;
@@ -364,9 +372,8 @@ export class AssetPreviewScene {
       }
     }
     if (id === 'enemy-quarantine-walls' && elapsed >= 500 && elapsed < 7500) {
-      for (const [x, y] of [[9, 8], [8, 9]]) {
-        walls.push({ tile: { x, y }, source: { x: CENTER, y: CENTER }, ageMs: elapsed - 500, durationMs: 7000 });
-      }
+      walls.push({ tile: { x: 1, y: 1 }, side: 'right', source: { x: 4, y: 4 },
+        ageMs: elapsed - 500, durationMs: 7000 });
       effects.push({ kind: 'quarantine', x: CENTER, y: CENTER, radius: TILE_SIZE * 2,
         ageMs: elapsed - 500, durationMs: 650 });
     }
@@ -377,6 +384,7 @@ export class AssetPreviewScene {
         kind: 'trojan', x: CENTER, y: CENTER, radius: TILE_SIZE * 1.5, ageMs: elapsed - 2000, durationMs: 900,
       });
     }
+    this.maze?.syncQuarantineWalls(walls);
     this.quarantineWalls.sync(walls);
     this.enemyEffects.sync(effects, zones);
   }
@@ -424,6 +432,11 @@ function buildPreviewMap(id: string, transform: AssetPreviewTransform): WorldMap
   let rows: TileCell[][];
   if (id === 'wall-straight') rows = [[0], [0], [0]];
   else if (id === 'wall-corner') rows = [[2, { id: 0, rotation: 90 }], [0, null]];
+  else if (id === 'quarantine-demo') rows = [
+    [null, { id: 0, rotation: 90 }, { id: 0, rotation: 90 }, null],
+    [null, { id: 1, rotation: 90 }, { id: 1, rotation: 90 }, null],
+    [null, { id: 0, rotation: 270 }, { id: 0, rotation: 270 }, null],
+  ];
   else if (id === 'other-prison-run') rows = [[16, 16, 16]];
   else if (id === 'other-prison-junction') rows = [[{ id: 0, flipX: true }, 16, 0]];
   else if (id === 'other-sign') rows = [[17, 18, 19, 20, 21]];
