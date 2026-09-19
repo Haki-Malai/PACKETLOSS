@@ -5,7 +5,8 @@ import { RenderableEntity } from './PacketEntity';
 
 export type EnemyAnimationState = 'default' | 'scared';
 
-export type EnemyArchetype = 'firewall' | 'virus' | 'ping' | 'spam' | 'lag';
+export const ENEMY_KEYS = ['firewall', 'virus', 'ping', 'spam', 'lag', 'quarantine', 'trojan'] as const;
+export type EnemyArchetype = typeof ENEMY_KEYS[number];
 export type EnemyKey = EnemyArchetype;
 
 export interface EnemyState {
@@ -36,8 +37,12 @@ export class EnemyEntity implements RenderableEntity {
   tile: TilePosition;
   abilityRemainingMs: number | null = null;
   pingTarget: TilePosition | null = null;
+  ambushTarget: TilePosition | null = null;
   lastLagTile: TilePosition | null = null;
   eatenElapsedMs: number | null = null;
+  disguised = false;
+  disguiseRemainingMs = 0;
+  revealRemainingMs = 0;
 
   constructor(params: {
     key: EnemyKey;
@@ -66,9 +71,14 @@ export class EnemyEntity implements RenderableEntity {
     };
   }
 
+  /** Clears cooldowns, saved targets, and any Trojan approach, disguise, or reveal state. */
   resetAbilities(): void {
     this.abilityRemainingMs = null;
     this.pingTarget = null;
+    this.ambushTarget = null;
     this.lastLagTile = null;
+    this.disguised = false;
+    this.disguiseRemainingMs = 0;
+    this.revealRemainingMs = 0;
   }
 }

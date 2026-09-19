@@ -27,6 +27,7 @@ export class EnemyEffects {
     this.group.name = 'enemy-effects';
   }
 
+  /** Reuses bounded effect slots for simulation records and seekable gallery demonstrations. */
   sync(effects: readonly EnemyEffect[], zones: readonly LagZone[]): void {
     if (this.disposed) return;
     // Records are replaced as they age; reuse slots instead of keying allocation by object identity.
@@ -52,7 +53,7 @@ export class EnemyEffects {
       ring.position.set(effect.x, 0.12, effect.y);
       const radius = effect.radius * (0.04 + progress * 0.96);
       ring.scale.set(radius, 1, radius);
-      ring.material.color.setHex(effect.kind === 'ping' ? 0x68ff72 : 0xb87cff);
+      ring.material.color.setHex({ ping: 0x68ff72, split: 0xb87cff, quarantine: 0xb846ff, trojan: 0xff3849 }[effect.kind]);
       ring.material.opacity = (1 - progress) * 0.8;
       if (effect.target) {
         target.position.set(effect.target.x, 0.14, effect.target.y);

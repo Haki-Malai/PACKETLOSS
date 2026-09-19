@@ -103,7 +103,7 @@ describe('maze.json contract', () => {
     expect(typeof getPropertyValue(enemyHome?.properties, 'startX')).toBe('number');
     expect(typeof getPropertyValue(enemyHome?.properties, 'endX')).toBe('number');
     expect(typeof getPropertyValue(enemyHome?.properties, 'gridY')).toBe('number');
-    expect(getPropertyValue(enemyHome?.properties, 'enemyCount')).toBe(5);
+    expect(getPropertyValue(enemyHome?.properties, 'enemyCount')).toBe(7);
   });
 
   it('contains portal spawn objects that define production teleport anchors', () => {

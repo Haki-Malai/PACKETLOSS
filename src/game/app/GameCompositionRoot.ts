@@ -2,7 +2,7 @@ import { Camera3D } from '../../engine/camera3d';
 import { clamp } from '../../engine/math';
 import { ENEMY_CONFIG, INITIAL_LIVES, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { resetGameState } from '../../state/gameState';
-import { EnemyEntity, EnemyKey } from '../domain/entities/EnemyEntity';
+import { EnemyEntity, ENEMY_KEYS } from '../domain/entities/EnemyEntity';
 import { PacketEntity } from '../domain/entities/PacketEntity';
 import { EnemyDecisionService } from '../domain/services/EnemyDecisionService';
 import { EnemyJailService, getObjectNumberProperty } from '../domain/services/EnemyJailService';
@@ -24,6 +24,7 @@ import { CollectibleSystem } from '../systems/CollectibleSystem';
 import { DebugOverlaySystem } from '../systems/DebugOverlaySystem';
 import { IS_DEV } from '../../config/environment';
 import { EnemyAbilitySystem } from '../systems/EnemyAbilitySystem';
+import { MazeHazardSystem } from '../systems/MazeHazardSystem';
 import { EnemyMovementSystem } from '../systems/EnemyMovementSystem';
 import { EnemyPacketCollisionSystem } from '../systems/EnemyPacketCollisionSystem';
 import { EnemyReleaseSystem } from '../systems/EnemyReleaseSystem';
@@ -37,7 +38,6 @@ import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
 import type { PreloadedGameResources } from './preloadGameResources';
 import { ComposedGame, RuntimeControl } from './contracts';
 
-const ENEMY_KEYS: EnemyKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
 // Keep the development constructor outside the startup try/catch so production can omit its module.
 const DevelopmentDebugSystem = IS_DEV ? DebugOverlaySystem : null;
 
@@ -194,6 +194,8 @@ export class GameCompositionRoot {
 
       const inputSystem = new InputSystem(input, world, runtimeControl, !this.options.tutorialLesson);
       const enemyAbilitySystem = new EnemyAbilitySystem(world, movementRules, portalService, gameplayRng);
+      const collectibleSystem = new CollectibleSystem(world, tutorialPoints);
+      const mazeHazardSystem = new MazeHazardSystem(world, movementRules, gameplayRng, collectibleSystem);
       const packetSystem = new PacketMovementSystem(world, movementRules, portalService);
       const enemyReleaseSystem = this.options.tutorialLesson
         ? null
@@ -212,7 +214,6 @@ export class GameCompositionRoot {
       );
       const animationSystem = new AnimationSystem(world, SPEED.enemy);
       const cameraSystem = new CameraSystem(world, camera, renderer, canvas, !!this.options.tutorialLesson);
-      const collectibleSystem = new CollectibleSystem(world, tutorialPoints);
       const tutorial = this.options.tutorialLesson
         ? new TutorialController(this.options.tutorialLesson, world, movementRules, collectibleSystem)
         : undefined;
@@ -224,6 +225,7 @@ export class GameCompositionRoot {
       const updateSystems = [
         inputSystem,
         enemyAbilitySystem,
+        mazeHazardSystem,
         packetSystem,
         ...(enemyReleaseSystem ? [enemyReleaseSystem] : []),
         enemyMovementSystem,

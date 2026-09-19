@@ -8,12 +8,14 @@ import {
 } from '../../config/constants';
 import type { EnemyKey } from '../../game/domain/entities/EnemyEntity';
 import { createEmptyCollisionTile } from '../../game/domain/world/CollisionGrid';
-import type { EnemyEffect, LagZone, WorldMapData } from '../../game/domain/world/WorldState';
+import type { EnemyEffect, LagZone, QuarantineWall, WorldMapData } from '../../game/domain/world/WorldState';
 import { ArcadeAssets } from '../../game/infrastructure/three/ArcadeAssets';
 import { EnemyEffects } from '../../game/infrastructure/three/EnemyEffects';
 import { EnemyEatPresentation } from '../../game/infrastructure/three/EnemyEatPresentation';
 import { WALL_HEIGHT } from '../../game/infrastructure/three/MazeGeometry';
 import { MazeScene } from '../../game/infrastructure/three/MazeScene';
+import { QuarantineWalls } from '../../game/infrastructure/three/QuarantineWalls';
+import { TrojanDisguise } from '../../game/infrastructure/three/TrojanDisguise';
 import {
   createEatEffectMesh, sampleEatEffect, setPointTransform,
 } from '../../game/infrastructure/three/PickupPresentation';
@@ -53,6 +55,8 @@ export class AssetPreviewScene {
   private readonly enemies = new Map<EnemyKey, Group>();
   private readonly spamCopies: Group[] = [];
   private readonly enemyEffects = new EnemyEffects();
+  private readonly quarantineWalls = new QuarantineWalls(TILE_SIZE);
+  private trojanDisguise: TrojanDisguise | undefined;
   private readonly points = new Map<CollectibleKind, Mesh<BufferGeometry, MeshStandardMaterial>>();
   private readonly shadow: Mesh;
   private readonly floor = new Mesh(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2), createMazeFloorMaterial());
@@ -63,6 +67,7 @@ export class AssetPreviewScene {
   private entry = ASSET_CATALOG[0];
   private disposed = false;
 
+  /** Allocates reusable preview actors and effects while leaving shared asset ownership with the caller. */
   constructor(private readonly assets: ArcadeAssets) {
     try {
       addGameplayLighting(this.scene);
@@ -76,7 +81,7 @@ export class AssetPreviewScene {
         edge, 0, edge, -edge, 0, edge, -edge, 0, edge, -edge, 0, -edge,
       ], 3));
       this.guide.visible = false;
-      this.scene.add(this.floor, this.guide, this.enemyEffects.group);
+      this.scene.add(this.floor, this.guide, this.enemyEffects.group, this.quarantineWalls.group);
 
       this.packet = assets.createPacket();
       this.packet.position.set(CENTER, 0, CENTER);
@@ -88,6 +93,7 @@ export class AssetPreviewScene {
         enemy.name = `enemy-${key}`;
         enemy.position.set(CENTER, 0, CENTER);
         enemy.add(assets.createContactShadow(SPRITE_SIZE.enemy));
+        if (key === 'trojan') this.trojanDisguise = new TrojanDisguise(enemy, assets);
         this.enemies.set(key, enemy);
         this.scene.add(enemy);
       }
@@ -118,6 +124,7 @@ export class AssetPreviewScene {
     }
   }
 
+  /** Resets the previous sample and frames the selected asset or ability demonstration. */
   select(entry: AssetPreviewEntry, transform: AssetPreviewTransform = NO_TRANSFORM): void {
     if (this.disposed) return;
     if (!ASSET_CATALOG.some((candidate) => candidate.id === entry.id)) throw new Error(`Unknown preview asset: ${entry.id}`);
@@ -136,6 +143,7 @@ export class AssetPreviewScene {
       if (entry.id.endsWith('-patrol') || entry.id.endsWith('-lag')) this.setBounds(52, 52, 15);
       if (entry.id.endsWith('-chase')) this.setBounds(64, 48, 15);
       if (entry.id.endsWith('-split')) this.setBounds(50, 50, 15);
+      if (entry.id.endsWith('-walls')) this.setBounds(80, 64, 18);
       if (entry.id === 'enemy-ping-ping') {
         const diameter = ENEMY_CONFIG.ping.rangeTiles * TILE_SIZE * 2 + 4;
         this.setBounds(diameter, diameter, 15);
@@ -253,11 +261,13 @@ export class AssetPreviewScene {
     this.disposeOwnedResources();
   }
 
+  /** Releases preview-owned geometry and effects without disposing shared character and point assets. */
   private disposeOwnedResources(): void {
     this.effect?.material.dispose();
     this.enemyEating?.dispose();
     this.maze?.dispose();
     this.enemyEffects.dispose();
+    this.quarantineWalls.dispose();
     this.floor.geometry.dispose();
     this.floor.material.dispose();
     this.guide.geometry.dispose();
@@ -265,6 +275,7 @@ export class AssetPreviewScene {
     this.scene.clear();
   }
 
+  /** Restores reusable actors and hides transient effects before selecting or seeking a sample. */
   private clearSelection(): void {
     this.packet.visible = false;
     this.packetShadow.visible = true;
@@ -286,6 +297,8 @@ export class AssetPreviewScene {
       this.assets.setEnemyAppearance(copy, 'spam', false, 0);
     }
     this.enemyEffects.sync([], []);
+    this.quarantineWalls.sync([]);
+    this.trojanDisguise?.sync(false, 0);
     this.points.forEach((point) => { point.visible = false; });
     this.shadow.visible = false;
     if (this.enemyEating) {
@@ -306,11 +319,13 @@ export class AssetPreviewScene {
     this.assets.sampleAnimation(0);
   }
 
+  /** Samples authored ability examples with the same visual helpers used by live gameplay. */
   private sampleEnemyDemo(elapsed: number): void {
     const id = this.entry.id;
     const enemy = this.enemies.get(this.enemyKey())!;
     const effects: EnemyEffect[] = [];
     const zones: LagZone[] = [];
+    const walls: QuarantineWall[] = [];
     if (id === 'enemy-firewall-patrol' || id === 'enemy-lag-lag') {
       const speed = id === 'enemy-lag-lag' ? ENEMY_CONFIG.lag.speed : ENEMY_CONFIG.firewall.speed;
       const position = patrolAt(elapsed, speed);
@@ -348,6 +363,21 @@ export class AssetPreviewScene {
           radius: TILE_SIZE * ENEMY_CONFIG.lag.radiusTiles, ageMs: elapsed - bornAt, durationMs: ENEMY_CONFIG.lag.zoneDurationMs });
       }
     }
+    if (id === 'enemy-quarantine-walls' && elapsed >= 500 && elapsed < 7500) {
+      for (const [x, y] of [[9, 8], [8, 9]]) {
+        walls.push({ tile: { x, y }, source: { x: CENTER, y: CENTER }, ageMs: elapsed - 500, durationMs: 7000 });
+      }
+      effects.push({ kind: 'quarantine', x: CENTER, y: CENTER, radius: TILE_SIZE * 2,
+        ageMs: elapsed - 500, durationMs: 650 });
+    }
+    if (id === 'enemy-trojan-disguise') {
+      this.trojanDisguise?.sync(elapsed < 2000, elapsed >= 2000 ? Math.max(0, 2900 - elapsed) : 0,
+        elapsed < 2000 ? ENEMY_CONFIG.trojan.disguiseDurationMs - elapsed : 0);
+      if (elapsed >= 2000 && elapsed < 2900) effects.push({
+        kind: 'trojan', x: CENTER, y: CENTER, radius: TILE_SIZE * 1.5, ageMs: elapsed - 2000, durationMs: 900,
+      });
+    }
+    this.quarantineWalls.sync(walls);
     this.enemyEffects.sync(effects, zones);
   }
 

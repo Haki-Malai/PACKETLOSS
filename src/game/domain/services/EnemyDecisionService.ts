@@ -71,6 +71,7 @@ export class EnemyDecisionService {
     return { target: { ...option.target }, routeLength: route.length };
   }
 
+  /** Pursues an assigned Trojan ambush tile through the same legal steps as normal movement. */
   chooseEnemyDirection(
     enemy: EnemyEntity,
     playerTile: TilePosition,
@@ -80,12 +81,15 @@ export class EnemyDecisionService {
     if (!enemy.state.scared && enemy.key === 'firewall') {
       return this.choosePatrolDirection(enemy, navigation, rng);
     }
-    const target = enemy.key === 'virus' ? playerTile : enemy.key === 'ping' ? enemy.pingTarget : null;
+    const target = enemy.key === 'virus' ? playerTile
+      : enemy.key === 'ping' ? enemy.pingTarget
+        : enemy.key === 'trojan' ? enemy.ambushTarget : null;
     if (!enemy.state.scared && target) {
       const path = navigation.findPath(enemy.tile, target);
       if (path?.length) return path[0].direction;
       if (path?.length === 0 && enemy.key === 'ping') enemy.pingTarget = null;
       if (path?.length === 0 && enemy.key === 'virus') return null;
+      if (path?.length === 0 && enemy.key === 'trojan') return null;
     }
     const steps = navigation.getSteps(enemy.tile);
     const forward = steps.filter((step) => step.direction !== OPPOSITE_DIRECTION[enemy.direction]);
@@ -93,6 +97,7 @@ export class EnemyDecisionService {
     return choices.length > 0 ? choices[rng.int(choices.length)].direction : null;
   }
 
+  /** Rejoins the authored loop and takes legal detours while temporary walls interrupt it. */
   private choosePatrolDirection(
     enemy: EnemyEntity,
     navigation: EnemyNavigationService,
@@ -118,6 +123,12 @@ export class EnemyDecisionService {
       if (rejoin.steps.length > 0) return rejoin.steps[0].direction;
       patrol.index = rejoin.targetIndex;
       step = patrol.route[patrol.index];
+    }
+    const available = navigation.getSteps(enemy.tile);
+    if (!available.some((candidate) => candidate.direction === step.direction)) {
+      const forward = available.filter((candidate) => candidate.direction !== OPPOSITE_DIRECTION[enemy.direction]);
+      const choices = forward.length > 0 ? forward : available;
+      return choices.length > 0 ? choices[rng.int(choices.length)].direction : null;
     }
     patrol.index = (patrol.index + 1) % patrol.route.length;
     return step.direction;

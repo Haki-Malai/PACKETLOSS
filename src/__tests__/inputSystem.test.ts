@@ -30,6 +30,7 @@ describe('InputSystem', () => {
     const preventDefault = vi.fn();
     for (const event of [
       { code: 'KeyF', key: 'f' },
+      { code: 'KeyG', key: 'g' },
       { code: 'KeyV', key: 'v' },
       { code: 'KeyC', key: 'c' },
       { code: 'KeyH', key: 'h' },
@@ -92,7 +93,7 @@ describe('InputSystem', () => {
     input.setKeyDown('ArrowUp', true);
     system.update();
     const preventDefault = vi.fn();
-    for (const code of ['Space', 'Escape', 'KeyH', 'KeyC', 'KeyF', 'KeyV']) {
+    for (const code of ['Space', 'Escape', 'KeyH', 'KeyC', 'KeyF', 'KeyG', 'KeyV']) {
       input.emitKeyDown({ code, key: code, preventDefault } as unknown as KeyboardEvent);
     }
     expect(world.packet.direction.next).toBe('left');
@@ -208,7 +209,7 @@ describe('InputSystem', () => {
     expect(world.collisionDebugEnabled).toBe(false);
   });
 
-  it('compounds speed without resetting the active run and retains freeze on Shift+F', () => {
+  it('compounds and reverses speed without resetting the active run and retains freeze on Shift+F', () => {
     const { input, world, togglePause } = createHarness();
     const preventDefault = vi.fn();
     world.levelMultiplier = 1;
@@ -235,10 +236,26 @@ describe('InputSystem', () => {
     expect(world.levelMultiplier).toBe(1.5625);
 
     input.emitKeyDown({
+      code: 'KeyG', key: 'g', repeat: false, preventDefault,
+    } as unknown as KeyboardEvent);
+    expect(world.levelMultiplier).toBe(1.25);
+    input.emitKeyDown({
+      code: 'KeyG', key: 'g', repeat: false, preventDefault,
+    } as unknown as KeyboardEvent);
+    expect(world.levelMultiplier).toBe(1);
+    input.emitKeyDown({
+      code: 'KeyG', key: 'g', repeat: false, preventDefault,
+    } as unknown as KeyboardEvent);
+    expect(world.levelMultiplier).toBe(0.8);
+    expect(world.tick).toBe(17);
+    expect(world.packet).toBe(packet);
+    expect(world.enemies).toBe(enemies);
+
+    input.emitKeyDown({
       code: 'KeyF', key: 'F', shiftKey: true, repeat: false, preventDefault,
     } as unknown as KeyboardEvent);
     expect(world.debugFrozen).toBe(true);
-    expect(world.levelMultiplier).toBe(1.5625);
+    expect(world.levelMultiplier).toBe(0.8);
     input.emitKeyDown({
       code: 'KeyF', key: 'F', shiftKey: true, repeat: false, preventDefault,
     } as unknown as KeyboardEvent);

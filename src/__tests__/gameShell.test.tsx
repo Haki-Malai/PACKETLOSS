@@ -541,9 +541,11 @@ describe('GameShell', () => {
             ).toEqual(['Move', 'Collect', 'Survive', 'Pause']);
             expect(
                 Array.from(page.root.querySelectorAll('h3')).map((node) => node.textContent)
-            ).toEqual(['Firewall', 'Virus', 'Ping', 'Spam', 'Lag']);
+            ).toEqual(['Firewall', 'Virus', 'Ping', 'Spam', 'Lag', 'Quarantine', 'Trojan']);
+            expect(page.find('[aria-labelledby="packet-basics-heading"]').querySelectorAll('dl')).toHaveLength(2);
             const guide = page.find('[aria-labelledby="packet-enemies-heading"]');
             expect(guide.getAttribute('aria-labelledby')).toBe('packet-enemies-heading');
+            expect(guide.querySelectorAll('ul')).toHaveLength(2);
             expect(mountEnemyPortraits).toHaveBeenCalledExactlyOnceWith(guide, 'reduced');
             for (const preview of guide.querySelectorAll('[data-enemy]')) {
                 expect(preview.querySelector('img')?.src).toContain(
@@ -582,12 +584,12 @@ describe('GameShell', () => {
         fireEvent.click(page.action('help'));
         await flushStart();
         expect(page.screen()).toBe('help');
-        expect(page.root.querySelectorAll('.packet-enemy-name')).toHaveLength(5);
+        expect(page.root.querySelectorAll('.packet-enemy-name')).toHaveLength(7);
         expect(
             Array.from(page.root.querySelectorAll<HTMLImageElement>('img')).map(
                 (portrait) => portrait.alt
             )
-        ).toEqual(['Firewall enemy', 'Virus enemy', 'Ping enemy', 'Spam enemy', 'Lag enemy']);
+        ).toEqual(['Firewall enemy', 'Virus enemy', 'Ping enemy', 'Spam enemy', 'Lag enemy', 'Quarantine enemy', 'Trojan enemy']);
         fireEvent.click(page.action('back'));
         expect(page.screen()).toBe('title');
         expect(page.createGame).not.toHaveBeenCalled();

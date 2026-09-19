@@ -33,6 +33,8 @@ export class PacketMovementSystem {
   /** Advances Packet movement and protection effects using the current level multiplier. */
   update(deltaMs = 1000 / 60): void {
     if (this.world.packet.deathAnimationRemainingMs > 0) return;
+    const previousX = this.world.packet.x;
+    const previousY = this.world.packet.y;
     this.updatePortalBlink(deltaMs);
     this.updateDeathRecovery(deltaMs);
 
@@ -81,6 +83,7 @@ export class PacketMovementSystem {
     }
 
     this.movementRules.syncEntityPosition(this.world.packet);
+    if (this.world.packet.x !== previousX || this.world.packet.y !== previousY) this.world.recordPacketVisit();
   }
 
   private updatePortalBlink(deltaMs: number): void {

@@ -40,7 +40,7 @@ export function createCharacterModels(): CharacterModels {
   };
   return {
     firewall: model('firewall', 11), virus: model('virus', 11), ping: model('ping', 11),
-    spam: model('spam', 11), lag: model('lag', 11),
+    spam: model('spam', 11), lag: model('lag', 11), quarantine: model('quarantine', 11), trojan: model('trojan', 11),
   };
 }
 

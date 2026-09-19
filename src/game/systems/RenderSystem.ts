@@ -15,6 +15,8 @@ import { CollisionDebugScene } from '../infrastructure/three/CollisionDebugScene
 import { EnemyEffects } from '../infrastructure/three/EnemyEffects';
 import { EnemyEatPresentation } from '../infrastructure/three/EnemyEatPresentation';
 import { MazeScene } from '../infrastructure/three/MazeScene';
+import { QuarantineWalls } from '../infrastructure/three/QuarantineWalls';
+import { TrojanDisguise } from '../infrastructure/three/TrojanDisguise';
 import { createEatEffectMesh, sampleEatEffect, setPointTransform } from '../infrastructure/three/PickupPresentation';
 import { addGameplayLighting } from '../infrastructure/three/ScenePresentation';
 import { TutorialMarker } from '../infrastructure/three/TutorialMarker';
@@ -39,6 +41,8 @@ export class RenderSystem {
   private readonly points = new Map<CollectibleKind, InstancedMesh>();
   private readonly effects = new Map<EatEffect, Mesh<BufferGeometry, MeshBasicMaterial>>();
   private readonly enemyEffects = new EnemyEffects();
+  private readonly quarantineWalls: QuarantineWalls;
+  private readonly trojans = new Map<EnemyEntity, TrojanDisguise>();
   private readonly tutorialMarker: TutorialMarker | undefined;
   private readonly pointMatrix = new Matrix4();
   private readonly powerPoints: Array<{ x: number; y: number }> = [];
@@ -65,8 +69,9 @@ export class RenderSystem {
     this.presentation = new EntityPresentation(world);
     addGameplayLighting(this.scene);
     this.maze = new MazeScene(world);
+    this.quarantineWalls = new QuarantineWalls(world.tileSize);
     this.debug = IS_DEV ? new CollisionDebugScene(world) : undefined;
-    this.scene.add(this.maze.group, this.enemyEffects.group);
+    this.scene.add(this.maze.group, this.enemyEffects.group, this.quarantineWalls.group);
     if (this.debug) this.scene.add(this.debug.group);
     if (getTutorialMarkers) {
       this.tutorialMarker = new TutorialMarker(world.tileSize);
@@ -86,6 +91,7 @@ export class RenderSystem {
       model.visible = enemy.active;
       model.getObjectByName('character-model')!.scale.setScalar(enemy.isCopy ? ENEMY_CONFIG.spam.copyScale : 1);
       model.add(this.assets.createContactShadow(enemy.displayWidth));
+      if (enemy.key === 'trojan') this.trojans.set(enemy, new TrojanDisguise(model, assets));
       this.enemies.set(enemy, model);
       this.scene.add(model);
     }
@@ -189,6 +195,7 @@ export class RenderSystem {
       this.assets.setEnemyAppearance(model, collapsing ? 'scared' : resolveEnemyAppearance(this.world, enemy), collapsing || enemy.state.scared);
       this.assets.setEnemyReturnProgress(model,
         enemy.state.dead ? Math.min(1, (enemy.eatenElapsedMs ?? ENEMY_EAT_DURATION_MS) / ENEMY_EAT_DURATION_MS) : null);
+      this.trojans.get(enemy)?.sync(enemy.disguised, enemy.revealRemainingMs, enemy.disguiseRemainingMs);
     });
     const presentationTime = lerp(this.previousAnimationTime, this.animationTime, animationAlpha);
     this.assets.sampleAnimation(presentationTime);
@@ -197,6 +204,7 @@ export class RenderSystem {
     this.syncEffects();
     this.syncEnemyEating();
     this.enemyEffects.sync(this.world.enemyEffects, this.world.lagZones);
+    this.quarantineWalls.sync(this.world.quarantineWalls);
     this.tutorialMarker?.sync(this.getTutorialMarkers?.() ?? []);
     this.debug?.sync();
     this.renderer.render(this.scene, this.camera.camera);
@@ -215,6 +223,8 @@ export class RenderSystem {
     this.enemyEating.clear();
     this.cancelledEnemyEating.clear();
     this.enemyEffects.dispose();
+    this.quarantineWalls.dispose();
+    this.trojans.clear();
     this.tutorialMarker?.dispose();
     this.assets.dispose();
     this.scene.clear();

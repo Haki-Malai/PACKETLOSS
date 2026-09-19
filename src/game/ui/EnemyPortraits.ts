@@ -8,13 +8,13 @@ import {
     WebGLRenderer,
 } from 'three';
 import { Camera3D } from '../../engine/camera3d';
-import type { EnemyKey } from '../domain/entities/EnemyEntity';
+import { ENEMY_KEYS } from '../domain/entities/EnemyEntity';
 import type { MenuMotion } from '../infrastructure/adapters/LocalProfileStore';
 import { ArcadeAssets } from '../infrastructure/three/ArcadeAssets';
 import { addGameplayLighting } from '../infrastructure/three/ScenePresentation';
 import { observeMenuMotion } from './MenuMotion';
 
-const ENEMIES: readonly EnemyKey[] = ['firewall', 'virus', 'ping', 'spam', 'lag'];
+const ENEMIES = ENEMY_KEYS;
 const PORTRAIT_SIZE = 80;
 const FRAME_INTERVAL_MS = 1000 / 30;
 

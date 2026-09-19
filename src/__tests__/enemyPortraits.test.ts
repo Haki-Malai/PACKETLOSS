@@ -7,7 +7,7 @@ import { mountEnemyPortraits } from '../game/ui/EnemyPortraits';
 import { createCharacterAssets } from './fixtures/characterFixtures';
 import { FakeDocument, FakeElement } from './helpers/fakeDom';
 
-const ENEMIES = ['firewall', 'virus', 'ping', 'spam', 'lag'] as const;
+const ENEMIES = ['firewall', 'virus', 'ping', 'spam', 'lag', 'quarantine', 'trojan'] as const;
 const boundary = vi.hoisted(() => ({
     renderer: {
         outputColorSpace: '',
