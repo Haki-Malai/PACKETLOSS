@@ -1,6 +1,7 @@
 import { InstancedMesh, Matrix4, Mesh, Quaternion, Scene, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { MovementRules } from '../game/domain/services/MovementRules';
+import { setPointTransform } from '../game/infrastructure/three/PickupPresentation';
 import {
   createCollisionTile, createMapFixture, createRenderHarness, createWorld,
 } from './fixtures/renderFixtures';
@@ -33,6 +34,23 @@ function firstPointMatrix(mesh: InstancedMesh): Matrix4 {
 }
 
 describe('RenderSystem point rendering regression', () => {
+  it('spins power stars around a fixed local axis through their own center', () => {
+    const initial = new Matrix4();
+    const sampled = new Matrix4();
+    setPointTransform(initial, 'power', 24, 8, 0);
+    const axis = new Vector3(0, 1, 0).transformDirection(initial);
+    const initialTip = new Vector3(1, 0, 0).transformDirection(initial);
+    for (const seconds of [1.5, 3, 4.5, 6]) {
+      setPointTransform(sampled, 'power', 24, 8, seconds);
+      expect(new Vector3(0, 1, 0).transformDirection(sampled).distanceTo(axis)).toBeLessThan(1e-10);
+      const center = new Vector3().setFromMatrixPosition(sampled);
+      expect(center.x).toBe(24);
+      expect(center.z).toBe(8);
+      const tip = new Vector3(1, 0, 0).transformDirection(sampled);
+      expect(tip.dot(initialTip)).toBeCloseTo(seconds === 3 ? -1 : seconds === 6 ? 1 : 0);
+    }
+  });
+
   it('renders points on colliding tiles and non-colliding connector tiles', () => {
     const { map, collisionGrid } = createMapFixture([[
       createCollisionTile({ collides: true, left: true }),

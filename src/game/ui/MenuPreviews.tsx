@@ -62,7 +62,7 @@ const enemies = [
     ],
     ['Spam', 'Splits into smaller copies every four seconds, up to four Spam at once.'],
     ['Lag', 'Moves slowly and leaves temporary zones that cut your movement speed in half.'],
-    ['Quarantine', 'Builds purple walls that can trap you. They disappear after seven seconds or when you collect a power core.'],
+    ['Quarantine', 'Extends maze walls with purple sections that can trap you. They vanish after seven seconds or when you collect a power core.'],
     ['Trojan', 'Hides as a data bit on cleared routes, away from real points. When it reveals its horse form, escape before it becomes dangerous.'],
 ] as const;
 

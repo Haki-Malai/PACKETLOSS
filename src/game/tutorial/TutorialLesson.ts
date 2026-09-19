@@ -44,8 +44,8 @@ export const TUTORIAL_LESSONS = [
   },
   {
     id: 'quarantine', title: 'Meet Quarantine',
-    introduction: 'Quarantine builds temporary purple walls that can close a route or trap you. Keep moving until it changes the maze.',
-    objective: 'Watch Quarantine create its first purple walls.',
+    introduction: 'Quarantine grows purple sections from existing maze walls to close passages or trap you. Keep moving until it changes a route.',
+    objective: 'Watch Quarantine extend a maze wall.',
   },
   {
     id: 'trojan', title: 'Meet Trojan',
