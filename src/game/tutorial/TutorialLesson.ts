@@ -19,12 +19,12 @@ export const TUTORIAL_LESSONS = [
   },
   {
     id: 'firewall', title: 'Meet Firewall',
-    introduction: 'Firewall picks a patrol destination, travels there, and repeats a long loop instead of chasing you. Every enemy body is dangerous unless it is scared. Contact here lets you retry this lesson.',
+    introduction: 'Firewall moves faster than you as it travels to a patrol destination and repeats a long loop. Every enemy body is dangerous unless it is scared. Contact here lets you retry this lesson.',
     objective: 'Find a route to the marked data bit while Firewall travels to its patrol.',
   },
   {
     id: 'virus', title: 'Meet Virus',
-    introduction: 'Virus follows the shortest physical route to your current position but cannot use portals. Keep moving to stay ahead.',
+    introduction: 'Virus follows the shortest physical route to your current position more slowly than you move, but cannot use portals. Keep moving to stay ahead.',
     objective: 'Reach the marked data bit at the bottom-right while Virus follows you.',
   },
   {

@@ -1,7 +1,6 @@
 import {
     ACESFilmicToneMapping,
     Box3,
-    Group,
     Scene,
     SRGBColorSpace,
     Vector3,
@@ -16,13 +15,14 @@ import { observeMenuMotion } from './MenuMotion';
 
 const ENEMIES = ENEMY_KEYS;
 const PORTRAIT_SIZE = 80;
+const PORTRAIT_WORLD_SIZE = 18;
 const FRAME_INTERVAL_MS = 1000 / 30;
 
 interface Portrait {
     host: HTMLElement;
     canvas: HTMLCanvasElement;
     context: CanvasRenderingContext2D;
-    model: Group;
+    index: number;
 }
 
 /** Shared authored idle clips, rendered through one context without a gameplay simulation. */
@@ -67,6 +67,7 @@ export function mountEnemyPortraits(host: HTMLElement, motion: MenuMotion): () =
         renderer?.forceContextLoss();
     };
 
+    /** Samples every model in one atlas pass and copies each tile into its menu canvas. */
     const render = (): void => {
         if (!assets || !renderer || disposed) return;
         const deviceRatio = window.devicePixelRatio;
@@ -74,7 +75,7 @@ export function mountEnemyPortraits(host: HTMLElement, motion: MenuMotion): () =
             Number.isFinite(deviceRatio) && deviceRatio > 0 ? Math.min(deviceRatio, 2) : 1;
         if (ratio !== pixelRatio) {
             pixelRatio = ratio;
-            renderer.setDrawingBufferSize(PORTRAIT_SIZE, PORTRAIT_SIZE, ratio);
+            renderer.setDrawingBufferSize(PORTRAIT_SIZE * ENEMIES.length, PORTRAIT_SIZE, ratio);
             for (const portrait of portraits) {
                 portrait.canvas.width = Math.floor(PORTRAIT_SIZE * ratio);
                 portrait.canvas.height = Math.floor(PORTRAIT_SIZE * ratio);
@@ -82,13 +83,22 @@ export function mountEnemyPortraits(host: HTMLElement, motion: MenuMotion): () =
             camera.present(1, ratio);
         }
         assets.sampleAnimation(elapsedMs / 1000);
+        renderer.render(scene, camera.camera);
+        const sourceWidth = Math.floor(PORTRAIT_SIZE * ENEMIES.length * ratio) / ENEMIES.length;
+        const sourceHeight = Math.floor(PORTRAIT_SIZE * ratio);
         for (const portrait of portraits) {
-            portrait.model.visible = true;
-            renderer.render(scene, camera.camera);
             portrait.context.clearRect(0, 0, portrait.canvas.width, portrait.canvas.height);
-            // Copy before the next model replaces the nonpersistent WebGL drawing buffer.
-            portrait.context.drawImage(source, 0, 0, portrait.canvas.width, portrait.canvas.height);
-            portrait.model.visible = false;
+            portrait.context.drawImage(
+                source,
+                portrait.index * sourceWidth,
+                0,
+                sourceWidth,
+                sourceHeight,
+                0,
+                0,
+                portrait.canvas.width,
+                portrait.canvas.height
+            );
             if (!portrait.canvas.parentElement) portrait.host.appendChild(portrait.canvas);
             portrait.host.setAttribute('data-ready', 'true');
         }
@@ -140,17 +150,17 @@ export function mountEnemyPortraits(host: HTMLElement, motion: MenuMotion): () =
             assets = loaded;
             addGameplayLighting(scene);
             scene.background = null;
-            camera.setBounds(32, 32);
-            camera.setViewport(PORTRAIT_SIZE, PORTRAIT_SIZE);
-            camera.setZoom(PORTRAIT_SIZE / 18);
-            camera.startFollow({ x: 16, y: 16 }, 1, 1);
+            camera.setBounds(PORTRAIT_WORLD_SIZE * ENEMIES.length, 32);
+            camera.setViewport(PORTRAIT_SIZE * ENEMIES.length, PORTRAIT_SIZE);
+            camera.setZoom(PORTRAIT_SIZE / PORTRAIT_WORLD_SIZE);
+            camera.startFollow({ x: (PORTRAIT_WORLD_SIZE * ENEMIES.length) / 2, y: 16 }, 1, 1);
             camera.snapToFollowTarget();
             renderer = new WebGLRenderer({ canvas: source, antialias: true, alpha: true });
             renderer.outputColorSpace = SRGBColorSpace;
             renderer.toneMapping = ACESFilmicToneMapping;
             renderer.setClearColor(0x000000, 0);
             source.addEventListener('webglcontextlost', dispose);
-            for (const key of ENEMIES) {
+            for (const [index, key] of ENEMIES.entries()) {
                 const slot = host.querySelector<HTMLElement>(`[data-enemy="${key}"]`);
                 if (!slot) continue;
                 const canvas = document.createElement('canvas');
@@ -160,10 +170,9 @@ export function mountEnemyPortraits(host: HTMLElement, motion: MenuMotion): () =
                 if (!context) throw new Error('Enemy portraits require a 2D canvas.');
                 const model = loaded.createEnemy(key);
                 const center = new Box3().setFromObject(model).getCenter(new Vector3());
-                model.position.set(16 - center.x, -center.y, 16 - center.z);
-                model.visible = false;
+                model.position.set(PORTRAIT_WORLD_SIZE * (index + 0.5) - center.x, -center.y, 16 - center.z);
                 scene.add(model);
-                portraits.push({ host: slot, canvas, context, model });
+                portraits.push({ host: slot, canvas, context, index });
             }
             synchronize();
         })

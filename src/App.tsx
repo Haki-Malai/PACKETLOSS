@@ -5,7 +5,6 @@ import { MenuButton, MenuPanel, buttonLayout } from './game/ui/MenuPanel';
 import { resolveMapVariantFromEnv } from './game/app/mapRuntimeConfig';
 import { IS_DEV } from './config/environment';
 import { useEnvironment } from './config/EnvironmentContext';
-import { preloadGameResources } from './game/app/preloadGameResources';
 import type { PreloadedGameResources } from './game/app/preloadGameResources';
 import type { MapVariant } from './game/app/mapRuntimeConfig';
 import { preloadMenuPreviews } from './game/ui/MenuPreviews';
@@ -63,7 +62,9 @@ function GameBootstrap({ mapVariant }: { mapVariant: MapVariant }) {
         /** Prepares network assets and lazy runtime/menu modules before revealing the title. */
         async function initialize() {
             const [resourceResult, previewResult, runtimeResult] = await Promise.allSettled([
-                preloadGameResources(abort.signal),
+                import('./game/app/preloadGameResources').then(({ preloadGameResources }) =>
+                    preloadGameResources(abort.signal)
+                ),
                 preloadMenuPreviews(),
                 import('./game/app/createPacketGame'),
             ]);

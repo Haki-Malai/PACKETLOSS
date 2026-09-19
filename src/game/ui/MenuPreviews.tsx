@@ -54,8 +54,8 @@ export function TitleHeading({ id, motion }: { id: string; motion: MenuMotion })
 }
 
 const enemies = [
-    ['Firewall', 'Travels to a random patrol area, then repeats a long loop without chasing you.'],
-    ['Virus', 'Chases you along the shortest physical route without using portals.'],
+    ['Firewall', 'Moves faster than you to a random patrol area, then repeats a long loop without chasing.'],
+    ['Virus', 'Chases you more slowly along the shortest physical route without using portals.'],
     [
         'Ping',
         'Scans nearby every three seconds, even through walls, then chases your last detected position.',

@@ -97,10 +97,9 @@ export function useGameSession(options: GameShellOptions) {
             owner.generation += 1;
             owner.game?.destroy();
             owner.game = null;
-            options.preloadedResources?.dispose();
             debug?.publish(EMPTY_DEBUG);
         };
-    }, [debug, options.preloadedResources]);
+    }, [debug]);
 
     /** Applies state immediately for runtime callbacks, then schedules React's update if active. */
     function update(patch: Partial<ShellState>) {

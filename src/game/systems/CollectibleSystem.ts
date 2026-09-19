@@ -1,6 +1,7 @@
 import { COLLECTIBLE_CONFIG, ENEMY_SCARED_DURATION_MS } from '../../config/constants';
 import { addScore } from '../../state/gameState';
 import { isBodyOverlap } from '../domain/services/EnemyPacketCollisionService';
+import { getObjectNumberProperty } from '../domain/services/EnemyJailService';
 import { setActiveEnemiesScaredWindow } from '../domain/services/EnemyScaredStateService';
 import { buildPointLayout } from '../domain/services/PointLayoutService';
 import { TilePosition } from '../domain/valueObjects/TilePosition';
@@ -18,19 +19,6 @@ export interface CollectiblePoint {
 
 function tileKey(tile: TilePosition): string {
   return `${tile.x},${tile.y}`;
-}
-
-function getObjectNumberProperty(
-  object: {
-    properties?: Array<{
-      name: string;
-      value: unknown;
-    }>;
-  },
-  name: string,
-): number | undefined {
-  const property = object.properties?.find((entry) => entry.name === name);
-  return typeof property?.value === 'number' ? property.value : undefined;
 }
 
 export class CollectibleSystem {

@@ -137,17 +137,20 @@ describe('enemy help portraits', () => {
         const views: Array<{ key: string; root: Vector3; center: Vector3; extent: number }> = [];
         boundary.renderer.render.mockImplementation((scene, camera) => {
             scene.updateMatrixWorld(true);
-            for (const model of scene.children.filter(
+            const models = scene.children.filter(
                 (child) => child instanceof Group && child.visible
-            )) {
-                operations.push(`render:${model.name}`);
+            );
+            operations.push(`render:${models.map((model) => model.name).join(',')}`);
+            for (const model of models) {
+                const index = ENEMIES.indexOf(model.name as (typeof ENEMIES)[number]);
                 const bounds = new Box3().setFromObject(model.getObjectByName('enemy-collapse')!);
                 let extent = 0;
                 for (const x of [bounds.min.x, bounds.max.x]) {
                     for (const y of [bounds.min.y, bounds.max.y]) {
                         for (const z of [bounds.min.z, bounds.max.z]) {
                             const point = new Vector3(x, y, z).project(camera);
-                            extent = Math.max(extent, Math.abs(point.x), Math.abs(point.y));
+                            const cellX = (point.x + 1) * ENEMIES.length - (2 * index + 1);
+                            extent = Math.max(extent, Math.abs(cellX), Math.abs(point.y));
                         }
                     }
                 }
@@ -162,8 +165,14 @@ describe('enemy help portraits', () => {
         const dispose = mountEnemyPortraits(host as unknown as HTMLElement, 'full');
         await flushLoading();
         expect(WebGLRenderer).toHaveBeenCalledOnce();
-        expect(boundary.renderer.setDrawingBufferSize).toHaveBeenCalledExactlyOnceWith(80, 80, 2);
-        expect(operations).toEqual(ENEMIES.flatMap((key) => [`render:${key}`, 'copy']));
+        expect(boundary.renderer.setDrawingBufferSize).toHaveBeenCalledExactlyOnceWith(560, 80, 2);
+        expect(operations).toEqual([`render:${ENEMIES.join(',')}`, ...ENEMIES.map(() => 'copy')]);
+        for (const [index, slot] of slots.entries()) {
+            const canvas = slot.querySelector('canvas')!;
+            expect(contexts.get(canvas)?.drawImage).toHaveBeenCalledExactlyOnceWith(
+                expect.anything(), index * 160, 0, 160, 160, 0, 0, 160, 160
+            );
+        }
         expect(slots.every((slot) => slot.getAttribute('data-ready') === 'true')).toBe(true);
         expect(slots.every((slot) => slot.querySelector('img') !== null)).toBe(true);
         expect(frames.size).toBe(1);
@@ -201,7 +210,7 @@ describe('enemy help portraits', () => {
         expect(browser.requestAnimationFrame).not.toHaveBeenCalled();
         browser.devicePixelRatio = 1;
         browser.dispatchEvent(new Event('resize'));
-        expect(boundary.renderer.setDrawingBufferSize).toHaveBeenLastCalledWith(80, 80, 1);
+        expect(boundary.renderer.setDrawingBufferSize).toHaveBeenLastCalledWith(560, 80, 1);
         expect(sample).toHaveBeenLastCalledWith(0);
         for (const slot of slots) {
             const canvas = slot.querySelector('canvas')!;

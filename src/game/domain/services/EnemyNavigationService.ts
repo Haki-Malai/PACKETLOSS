@@ -81,6 +81,7 @@ export class EnemyNavigationService {
     return this.findPathToAny(start, [target])?.steps ?? null;
   }
 
+  /** Finds the cheapest target with stable direction ties using half-tile cost buckets. */
   findPathToAny(start: TilePosition, targets: readonly TilePosition[]): NavigationPath | null {
     const targetIndices = new Map<string, number>();
     targets.forEach((tile, index) => {
@@ -89,39 +90,37 @@ export class EnemyNavigationService {
     const startKey = tileKey(start);
     const costs = new Map([[startKey, 0]]);
     const parents = new Map<string, NavigationStep>();
-    const queue = [{ tile: start, cost: 0 }];
+    const buckets: Array<Array<{ tile: TilePosition; cost: number }> | undefined> = [
+      [{ tile: start, cost: 0 }],
+    ];
 
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      const key = tileKey(current.tile);
-      if (costs.get(key) !== current.cost) continue;
-      const targetIndex = targetIndices.get(key);
-      if (targetIndex !== undefined) {
-        const steps: NavigationStep[] = [];
-        let cursor = key;
-        while (cursor !== startKey) {
-          const step = parents.get(cursor)!;
-          steps.push(step);
-          cursor = tileKey(step.tile);
+    for (let bucketCost = 0; bucketCost < buckets.length; bucketCost += 1) {
+      const bucket = buckets[bucketCost];
+      if (!bucket) continue;
+      for (const current of bucket) {
+        const key = tileKey(current.tile);
+        if (costs.get(key) !== current.cost) continue;
+        const targetIndex = targetIndices.get(key);
+        if (targetIndex !== undefined) {
+          const steps: NavigationStep[] = [];
+          let cursor = key;
+          while (cursor !== startKey) {
+            const step = parents.get(cursor)!;
+            steps.push(step);
+            cursor = tileKey(step.tile);
+          }
+          return { steps: steps.reverse(), targetIndex };
         }
-        return { steps: steps.reverse(), targetIndex };
-      }
 
-      for (const step of this.getSteps(current.tile)) {
-        const nextKey = tileKey(step.destination);
-        const cost = current.cost + step.cost;
-        if (cost >= (costs.get(nextKey) ?? Infinity)) continue;
-        costs.set(nextKey, cost);
-        parents.set(nextKey, step);
-        // Insert after equal costs to preserve the authored up/right/down/left tie order.
-        let low = 0;
-        let high = queue.length;
-        while (low < high) {
-          const middle = (low + high) >>> 1;
-          if (queue[middle].cost <= cost) low = middle + 1;
-          else high = middle;
+        for (const step of this.getSteps(current.tile)) {
+          const nextKey = tileKey(step.destination);
+          const cost = current.cost + step.cost * 2;
+          if (cost >= (costs.get(nextKey) ?? Infinity)) continue;
+          costs.set(nextKey, cost);
+          parents.set(nextKey, step);
+          // Appending preserves up/right/down/left order for equal-cost paths.
+          (buckets[cost] ??= []).push({ tile: step.destination, cost });
         }
-        queue.splice(low, 0, { tile: step.destination, cost });
       }
     }
     return null;
@@ -136,8 +135,8 @@ export class EnemyNavigationService {
 
     const reachableTiles = new Map<string, TilePosition>();
     const queue = [{ ...origin }];
-    while (queue.length > 0) {
-      const tile = queue.shift()!;
+    for (let head = 0; head < queue.length; head += 1) {
+      const tile = queue[head];
       const key = tileKey(tile);
       if (reachableTiles.has(key)) continue;
       reachableTiles.set(key, tile);
