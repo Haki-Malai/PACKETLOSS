@@ -1,13 +1,11 @@
 import { COLLECTIBLE_CONFIG, ENEMY_SCARED_DURATION_MS } from '../../config/constants';
 import { addScore } from '../../state/gameState';
+import { isBodyOverlap } from '../domain/services/EnemyPacketCollisionService';
 import { setActiveEnemiesScaredWindow } from '../domain/services/EnemyScaredStateService';
 import { buildPointLayout } from '../domain/services/PointLayoutService';
 import { TilePosition } from '../domain/valueObjects/TilePosition';
 import { WorldState } from '../domain/world/WorldState';
 import { createEatEffect, type CollectibleKind, type EatEffect } from '../shared/pickupEffects';
-
-const POINT_CONSUME_MOVEMENT_EPSILON = 0.001;
-const POINT_CONSUME_POSITION_EPSILON = 0.01;
 
 export type { CollectibleKind, EatEffect } from '../shared/pickupEffects';
 
@@ -63,7 +61,7 @@ export class CollectibleSystem {
   }
 
   update(deltaMs: number): void {
-    this.consumePointAtPacketTile();
+    this.consumeTouchingPoint();
     this.updateEatEffects(deltaMs);
   }
 
@@ -89,15 +87,13 @@ export class CollectibleSystem {
     return this.pointsByTile.size;
   }
 
-  private consumePointAtPacketTile(): void {
+  /** Collects one point as soon as its visible footprint overlaps the Packet. */
+  private consumeTouchingPoint(): void {
     if (this.world.outcome || this.world.packet.deathAnimationRemainingMs > 0) return;
-    const key = tileKey(this.world.packet.tile);
-    const point = this.pointsByTile.get(key);
-    if (!point || !this.isPacketCenteredOnPoint(point)) {
-      return;
-    }
+    const point = this.findTouchingPoint();
+    if (!point) return;
 
-    this.pointsByTile.delete(key);
+    this.pointsByTile.delete(tileKey(point.tile));
 
     const baseScore = point.kind === 'power' ? COLLECTIBLE_CONFIG[1].score : COLLECTIBLE_CONFIG[0].score;
     const scoreDelta = Math.round(baseScore * this.world.levelMultiplier);
@@ -123,18 +119,26 @@ export class CollectibleSystem {
     this.world.enemyEatChainCount = 0;
   }
 
-  private isPacketCenteredOnPoint(point: CollectiblePoint): boolean {
-    if (
-      Math.abs(this.world.packet.moved.x) > POINT_CONSUME_MOVEMENT_EPSILON ||
-      Math.abs(this.world.packet.moved.y) > POINT_CONSUME_MOVEMENT_EPSILON
-    ) {
-      return false;
-    }
+  /** Checks point tiles within the Packet's reach, including a neighboring tile before its center is crossed. */
+  private findTouchingPoint(): CollectiblePoint | undefined {
+    const packet = this.world.packet;
+    const radius = Math.min(packet.displayWidth, packet.displayHeight) / 2;
+    const packetBody = { x: packet.x, y: packet.y, radius };
+    const maxPointRadius = Math.max(COLLECTIBLE_CONFIG[0].size, COLLECTIBLE_CONFIG[1].size) / 2;
+    const reach = radius + maxPointRadius;
+    const minX = Math.floor((packet.x - reach) / this.world.tileSize);
+    const maxX = Math.floor((packet.x + reach) / this.world.tileSize);
+    const minY = Math.floor((packet.y - reach) / this.world.tileSize);
+    const maxY = Math.floor((packet.y + reach) / this.world.tileSize);
 
-    return (
-      Math.abs(this.world.packet.x - point.x) <= POINT_CONSUME_POSITION_EPSILON &&
-      Math.abs(this.world.packet.y - point.y) <= POINT_CONSUME_POSITION_EPSILON
-    );
+    for (let y = minY; y <= maxY; y += 1) {
+      for (let x = minX; x <= maxX; x += 1) {
+        const point = this.pointsByTile.get(tileKey({ x, y }));
+        if (!point) continue;
+        const pointRadius = COLLECTIBLE_CONFIG[point.kind === 'power' ? 1 : 0].size / 2;
+        if (isBodyOverlap(packetBody, { x: point.x, y: point.y, radius: pointRadius })) return point;
+      }
+    }
   }
 
   private updateEatEffects(deltaMs: number): void {

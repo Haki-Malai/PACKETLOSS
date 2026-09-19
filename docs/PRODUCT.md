@@ -12,6 +12,7 @@ The Packet moves along the maze corridors. Perpendicular direction inputs queue 
 
 - Data bits are worth 10 points and disappear when collected.
 - Power cores are worth 50 points and temporarily make active enemies scared.
+- The Packet collects either pickup as soon as its body touches it, even before reaching the tile center.
 - Eating scared enemies awards increasing bonuses: 200, 400, 800, then 1,600 points.
 - A new power core refreshes the scared period and resets the enemy bonus chain.
 
@@ -31,7 +32,7 @@ The default roster starts with one Firewall, Virus, Ping, Spam, and Lag, release
 | Spam | Attempts to split every four seconds into an unoccupied adjacent tile. Copies can reproduce, up to four Spam total. Blocked attempts retry after one second. Copies are 80% size and award the normal scared-enemy chain score when eaten. |
 | Lag | Roams at half normal enemy speed and drops a zone on newly traversed tiles at most once per second. Zones last four seconds and halve player speed without stacking. The body is lethal; zones only slow. |
 
-Power cores disable detection, splitting, and new zone creation and immediately clear existing Lag zones. Ability cooldowns restart after release and scared mode. There are at most eight enemies: the five originals and three reusable Spam copies. Abilities and lingering effects continue during player death and freeze while paused. Later-level speed applies to movement, releases, abilities, power windows, death/recovery, effects, and gameplay animation, while movement still stops exactly at tile centers to preserve queued turns and data collection.
+Power cores disable detection, splitting, and new zone creation and immediately clear existing Lag zones. Ability cooldowns restart after release and scared mode. There are at most eight enemies: the five originals and three reusable Spam copies. Abilities and lingering effects continue during player death and freeze while paused. Later-level speed applies to movement, releases, abilities, power windows, death/recovery, effects, and gameplay animation, while movement still stops exactly at tile centers to preserve queued turns and check every crossed corridor for pickups.
 
 The player starts with three lives. Contact with a dangerous enemy costs one life and holds the Packet at the contact position for a 900 ms level-one digital-glitch death animation. Its body stays recognizable as it stutters through horizontally displaced cyan and magenta scan slices and echoes, scrambled binary digits, and brief signal dropouts, then cuts out. During this phase the Packet cannot move, collect data, or suffer another hit; enemies and gameplay timers continue. With lives remaining, the Packet then returns to its spawn and begins the usual blinking recovery period that prevents another immediate hit. Every original enemy is restored to its initial jail placement, Spam copies retire, transient enemy effects are cleared, and the normal staggered release cycle restarts. At zero lives, the death animation finishes without a respawn or enemy reset, the Packet stays hidden, and the run ends with **PACKET LOST**. Pausing freezes the death timer and animation. Score and lives appear in the HUD.
 
