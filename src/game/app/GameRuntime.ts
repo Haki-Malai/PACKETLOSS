@@ -24,6 +24,9 @@ export class GameRuntime implements PacketGame {
   private presentationReady = false;
   private starting: Promise<void> | null = null;
   private elapsedMs = 0;
+  private beforeSystems: UpdateCapableSystem[] = [];
+  private simulationSystems: UpdateCapableSystem[] = [];
+  private afterSystems: UpdateCapableSystem[] = [];
   private totalPoints = 0;
   private currentLevel = 1;
   private levelsCleared = 0;
@@ -46,6 +49,7 @@ export class GameRuntime implements PacketGame {
     return this.starting;
   }
 
+  /** Composes the run once and groups its update systems by phase. */
   private async initialize(): Promise<void> {
     let composed: ComposedGame;
     try {
@@ -66,8 +70,11 @@ export class GameRuntime implements PacketGame {
     this.result = null;
     this.levelClear = null;
     composed.world.levelMultiplier = 1;
+    this.beforeSystems = composed.updateSystems.filter((system) => system.updatePhase === 'beforeSimulation');
+    this.simulationSystems = composed.updateSystems.filter((system) => !system.updatePhase || system.updatePhase === 'simulation');
+    this.afterSystems = composed.updateSystems.filter((system) => system.updatePhase === 'afterSimulation');
 
-    this.loop = new FixedStepLoop(this.update, this.render);
+    this.loop = new FixedStepLoop(this.update, this.render, this.recordActiveTime);
     this.started = true;
     try {
       this.bindFocusListeners();
@@ -121,9 +128,11 @@ export class GameRuntime implements PacketGame {
     this.presentationReady = false;
     this.composed.input.reset();
     this.composed.scheduler.setPaused(false);
+    this.loop?.resetClock();
     this.notifyState();
   }
 
+  /** Resets the frame clock on resume so paused time never enters the run duration. */
   private setPaused(paused: boolean): void {
     if (!this.composed || (!this.composed.tutorial && this.composed.world.outcome)
       || this.composed.world.isMoving === !paused) return;
@@ -131,6 +140,7 @@ export class GameRuntime implements PacketGame {
     this.composed.world.isMoving = !paused;
     this.composed.input.reset();
     this.composed.scheduler.setPaused(paused);
+    if (!paused) this.loop?.resetClock();
     this.notifyState();
   }
 
@@ -144,6 +154,7 @@ export class GameRuntime implements PacketGame {
     });
   }
 
+  /** Stops the loop and releases the composed run and its system lists. */
   destroy(): void {
     if (this.destroyed) {
       return;
@@ -158,6 +169,9 @@ export class GameRuntime implements PacketGame {
 
     this.loop?.stop();
     this.loop = null;
+    this.beforeSystems = [];
+    this.simulationSystems = [];
+    this.afterSystems = [];
 
     if (this.composed) {
       this.destroyComposedGame(this.composed);
@@ -264,6 +278,11 @@ export class GameRuntime implements PacketGame {
     this.resume();
   }
 
+  /** Counts real active frame time even when simulation steps are clamped to avoid catch-up spikes. */
+  private readonly recordActiveTime = (elapsedMs: number): void => {
+    if (this.composed?.world.isMoving && !this.composed.world.debugFrozen) this.elapsedMs += elapsedMs;
+  };
+
   /** Advances scaled gameplay in bounded slices while frame-owned systems run once. */
   private readonly update = (deltaMs: number): void => {
     if (!this.composed || this.destroyed) {
@@ -283,17 +302,13 @@ export class GameRuntime implements PacketGame {
     this.composed.renderSystems.forEach((system) => {
       system.capturePreviousState?.();
     });
-    this.elapsedMs += deltaMs;
     const simulationDeltaMs = deltaMs * this.composed.world.levelMultiplier;
-    const beforeSystems = this.composed.updateSystems.filter((system) => system.updatePhase === 'beforeSimulation');
-    const simulationSystems = this.composed.updateSystems.filter((system) => !system.updatePhase || system.updatePhase === 'simulation');
-    const afterSystems = this.composed.updateSystems.filter((system) => system.updatePhase === 'afterSimulation');
-    beforeSystems.forEach((system) => system.update(deltaMs));
+    this.beforeSystems.forEach((system) => system.update(deltaMs));
 
     let remainingMs = simulationDeltaMs;
     while (remainingMs > Number.EPSILON && this.composed?.world.isMoving) {
       const maximumSliceMs = Math.min(remainingMs, MOVEMENT_STEP_MS);
-      const sliceMs = simulationSystems.reduce((boundaryMs, system) => {
+      const sliceMs = this.simulationSystems.reduce((boundaryMs, system) => {
         const candidate = system.getSimulationBoundaryMs?.(boundaryMs) ?? boundaryMs;
         return candidate > Number.EPSILON ? Math.min(boundaryMs, candidate) : boundaryMs;
       }, maximumSliceMs);
@@ -302,7 +317,7 @@ export class GameRuntime implements PacketGame {
       tutorial?.beforeUpdate();
       this.composed.world.nextTick();
       this.composed.scheduler.update(sliceMs);
-      simulationSystems.forEach((system) => system.update(sliceMs));
+      this.simulationSystems.forEach((system) => system.update(sliceMs));
       tutorial?.update(sliceMs);
       if (tutorial && tutorial.getSnapshot() !== tutorialSnapshot) {
         if (tutorial.getSnapshot().phase === 'playing') this.notifyState();
@@ -313,7 +328,7 @@ export class GameRuntime implements PacketGame {
       remainingMs -= sliceMs;
     }
     if (!this.composed) return;
-    afterSystems.forEach((system) => system.update(deltaMs));
+    this.afterSystems.forEach((system) => system.update(deltaMs));
     this.presentationReady = this.composed.world.isMoving;
   };
 

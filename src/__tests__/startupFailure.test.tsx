@@ -96,6 +96,16 @@ describe('game startup and development asset route', () => {
         expect(mocks.createPacketGame).not.toHaveBeenCalled();
     });
 
+    it('keeps prepared models available through Strict Mode effect replay until page disposal', async () => {
+        await boot();
+        await settle();
+        expect(screen.getByRole('button', { name: 'Start game' })).toBeDefined();
+        expect(mocks.disposePreloadedResources).not.toHaveBeenCalled();
+
+        pagehide();
+        expect(mocks.disposePreloadedResources).toHaveBeenCalledOnce();
+    });
+
     it('offers a retry when the first asset load fails', async () => {
         let failing = true;
         mocks.preloadGameResources.mockImplementation(() =>

@@ -108,11 +108,14 @@ describe('GameRuntime', () => {
   let windowRemoveEventListener: ReturnType<typeof vi.fn>;
   let documentAddEventListener: ReturnType<typeof vi.fn>;
   let documentRemoveEventListener: ReturnType<typeof vi.fn>;
+  let nowMs = 0;
 
   beforeEach(() => {
     resetGameState();
     nextFrame = null;
     frameId = 0;
+    nowMs = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
     const windowListeners = new Map<string, Set<EventCallback>>();
     const documentListeners = new Map<string, Set<EventCallback>>();
     const documentState = { hidden: false };
@@ -154,7 +157,10 @@ describe('GameRuntime', () => {
 
     vi.stubGlobal('window', {
       requestAnimationFrame: vi.fn((callback: (_timestamp: number) => void) => {
-        nextFrame = callback;
+        nextFrame = (timestamp) => {
+          nowMs = timestamp;
+          callback(timestamp);
+        };
         frameId += 1;
         return frameId;
       }),
@@ -184,6 +190,7 @@ describe('GameRuntime', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('starts composed systems and drives update/render during animation frames', async () => {
@@ -222,7 +229,7 @@ describe('GameRuntime', () => {
       level: 1,
       score,
       lives: 3,
-      elapsedMs: 17,
+      elapsedMs: 20,
       pointsCollected: 1,
       totalPoints: 1,
       nextMultiplier: 1.25,
@@ -281,13 +288,35 @@ describe('GameRuntime', () => {
     nextFrame?.(60);
     expect(onStateChange.mock.lastCall?.[0].levelClear).toMatchObject({
       level: 2,
-      elapsedMs: 50,
+      elapsedMs: 60,
       pointsCollected: 2,
       totalPoints: 2,
       nextMultiplier: 1.5625,
     });
     runtime.continueLevel();
     expect(spies.world.levelMultiplier).toBe(1.5625);
+    runtime.destroy();
+  });
+
+  it('counts real active time through a clamped frame and excludes paused time', async () => {
+    const { composed, spies } = createComposedGame();
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime(
+      { compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot,
+      onStateChange,
+    );
+    await runtime.start();
+
+    nextFrame?.(1000);
+    expect(spies.world.nextTick.mock.calls.length).toBeLessThanOrEqual(8);
+    runtime.pause();
+    nextFrame?.(2000);
+    runtime.resume();
+    nextFrame?.(2017);
+    spies.world.outcome = 'lost';
+    nextFrame?.(2034);
+
+    expect(onStateChange.mock.lastCall?.[0].result?.elapsedMs).toBe(1034);
     runtime.destroy();
   });
 
@@ -312,8 +341,8 @@ describe('GameRuntime', () => {
     expect(result).toMatchObject({
       outcome: 'lost', score: 100, lives: 0, pointsCollected: 0, totalPoints: 1, levelsCleared: 0,
     });
-    expect(result?.elapsedMs).toBeGreaterThanOrEqual(917);
-    expect(result?.elapsedMs).toBeLessThanOrEqual(934);
+    expect(result?.elapsedMs).toBeGreaterThanOrEqual(934);
+    expect(result?.elapsedMs).toBeLessThanOrEqual(951);
     expect(world.packet.tile).toEqual({ x: 0, y: 0 });
     expect(world.packet.deathRecoveryRemainingMs).toBe(0);
     runtime.resume();
