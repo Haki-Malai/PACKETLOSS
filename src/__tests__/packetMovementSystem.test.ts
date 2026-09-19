@@ -7,9 +7,10 @@ import { Direction } from '../game/domain/valueObjects/Direction';
 import { CollisionTiles } from '../game/domain/world/CollisionGrid';
 import { WorldState } from '../game/domain/world/WorldState';
 import { PacketMovementSystem } from '../game/systems/PacketMovementSystem';
+import { handleDebugKeyDown } from '../game/systems/DebugInput';
 
 describe('PacketMovementSystem portal blink', () => {
-  it('starts and advances the post-portal blink timer without affecting movement flow', () => {
+  it('advances normal portal blinking and preserves a persistent V override through teleportation', () => {
     const applyBufferedDirectionMock = vi.fn();
     const canMoveMock = vi.fn(() => false);
     const advanceEntityMock = vi.fn();
@@ -77,7 +78,12 @@ describe('PacketMovementSystem portal blink', () => {
     system.update(PACKET_PORTAL_BLINK.durationMs);
     expect(world.packet.portalBlinkRemainingMs).toBe(0);
     expect(world.packet.portalBlinkElapsedMs).toBe(0);
-    expect(syncEntityPositionMock).toHaveBeenCalledTimes(3);
+    handleDebugKeyDown(world, { code: 'KeyV', preventDefault: () => undefined } as KeyboardEvent, true);
+    tryTeleportMock.mockReturnValue(true);
+    system.update(120);
+    expect(world.packet.portalBlinkRemainingMs).toBe(Infinity);
+    expect(world.packet.portalBlinkElapsedMs).toBe(120);
+    expect(syncEntityPositionMock).toHaveBeenCalledTimes(4);
   });
 
   it('advances death recovery blink state and clears it on expiry', () => {

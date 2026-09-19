@@ -65,7 +65,9 @@ These shortcuts are available only in the local development server or an explici
 
 - `C` toggles the collision overlay and FPS/frame-time panel.
 - `Shift+C` copies the collision debug panel text.
-- `F` freezes or unfreezes simulation and animation without opening the pause menu.
+- `F` compounds gameplay speed and scoring by 25% without resetting the current run.
+- `Shift+F` freezes or unfreezes simulation and animation without opening the pause menu.
+- `V` toggles persistent portal blinking and collision protection until pressed again.
 - `N` skips directly to the next guided-tutorial lesson.
 - `H` toggles a persistent scared-state override for active enemies during normal play; real power cores do not shorten it, and it is disabled in tutorial practice.
 

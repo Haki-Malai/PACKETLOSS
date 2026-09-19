@@ -84,7 +84,7 @@ Pausing freezes movement and gameplay timers and places a dark scrim over the fu
 
 Switching away from the window or tab pauses an active game; returning resumes it only if losing focus caused the pause and no explicit pause/menu interaction followed. A manually paused game stays paused. Completed runs cannot be resumed by controls or focus changes.
 
-Development builds additionally support collision inspection and FPS/frame-time panels with `C`, copying diagnostic text with `Shift+C`, freezing simulation and animation without opening the pause menu with `F`, skipping directly to the next tutorial lesson with `N`, and toggling enemy scared state with `H` during normal play. Production excludes these tools and shortcuts. The guided tutorial remains available in both environments.
+Development builds additionally support collision inspection and FPS/frame-time panels with `C`, copying diagnostic text with `Shift+C`, compounding gameplay speed and scoring by 25% in place with `F`, freezing simulation and animation without opening the pause menu with `Shift+F`, toggling persistent portal blinking and collision protection with `V` until it is pressed again, skipping directly to the next tutorial lesson with `N`, and toggling enemy scared state with `H` during normal play. Production excludes these tools and shortcuts. The guided tutorial remains available in both environments.
 
 ## Presentation
 

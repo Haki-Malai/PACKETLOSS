@@ -223,6 +223,8 @@ describe('GameCompositionRoot startup', () => {
     composed.world.levelMultiplier = 1.25;
     composed.world.packet.tile = { x: 0, y: 0 };
     composed.world.packet.moved = { x: 3, y: 0 };
+    composed.world.packet.portalBlinkRemainingMs = Infinity;
+    composed.world.packet.portalBlinkElapsedMs = 360;
     originals.forEach((enemy) => {
       enemy.tile = { x: 0, y: 0 };
       enemy.state = { free: true, soonFree: false, scared: true, dead: false, animation: 'scared' };
@@ -239,6 +241,8 @@ describe('GameCompositionRoot startup', () => {
 
     expect(composed.world.packet.tile).toEqual(composed.world.packetSpawnTile);
     expect(composed.world.packet.direction).toEqual({ current: 'right', next: 'right' });
+    expect(composed.world.packet.portalBlinkRemainingMs).toBe(Infinity);
+    expect(composed.world.packet.portalBlinkElapsedMs).toBe(360);
     expect(originals.map((enemy) => ({ tile: enemy.tile, direction: enemy.direction }))).toEqual(originalPlacements);
     expect(originals.every((enemy) => enemy.active && !enemy.state.free && enemy.state.soonFree
       && !enemy.state.scared && !enemy.state.dead)).toBe(true);

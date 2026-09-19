@@ -6,6 +6,10 @@ import { setActiveEnemiesScaredWindow } from '../game/domain/services/EnemyScare
 import { HologramPacket } from '../game/infrastructure/three/HologramPacket';
 import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
 import { AnimationSystem } from '../game/systems/AnimationSystem';
+import { handleDebugKeyDown } from '../game/systems/DebugInput';
+import { PacketMovementSystem } from '../game/systems/PacketMovementSystem';
+import { PortalService } from '../game/domain/services/PortalService';
+import { PACKET_PORTAL_BLINK } from '../config/constants';
 import { ENEMY_EAT_DURATION_MS } from '../game/shared/enemyEating';
 import { resetGameState } from '../state/gameState';
 import { createCollisionTile, createMapFixture, createRenderHarness, createWorld } from './fixtures/renderFixtures';
@@ -382,6 +386,30 @@ describe('RenderSystem entity presentation', () => {
     world.packet.portalBlinkElapsedMs = 360;
     renderSystem.render();
     expect(packetModel.visible).toBe(false);
+    renderSystem.destroy();
+  });
+
+  it('keeps the portal blink running until V turns protection off', () => {
+    const { world, packetModel, renderSystem } = createEntityHarness();
+    const packetMovement = new PacketMovementSystem(
+      world, new MovementRules(world.tileSize), new PortalService(world.collisionGrid, []),
+    );
+    handleDebugKeyDown(world, { code: 'KeyV', preventDefault: () => undefined } as KeyboardEvent, true);
+
+    renderSystem.render();
+    expect(packetModel.visible).toBe(true);
+    packetMovement.update(PACKET_PORTAL_BLINK.intervalMs);
+    renderSystem.render();
+    expect(packetModel.visible).toBe(false);
+    packetMovement.update(PACKET_PORTAL_BLINK.intervalMs);
+    renderSystem.render();
+    expect(packetModel.visible).toBe(true);
+    packetMovement.update(PACKET_PORTAL_BLINK.durationMs - PACKET_PORTAL_BLINK.intervalMs);
+    renderSystem.render();
+    expect(packetModel.visible).toBe(false);
+    handleDebugKeyDown(world, { code: 'KeyV', preventDefault: () => undefined } as KeyboardEvent, true);
+    renderSystem.render();
+    expect(packetModel.visible).toBe(true);
     renderSystem.destroy();
   });
 

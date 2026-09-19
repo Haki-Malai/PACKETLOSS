@@ -83,8 +83,10 @@ export class EnemyPacketCollisionSystem {
     this.movementRules.setEntityTile(this.world.packet, this.world.packetSpawnTile);
     this.world.packet.direction.current = PACKET_RESPAWN_DIRECTION;
     this.world.packet.direction.next = PACKET_RESPAWN_DIRECTION;
-    this.world.packet.portalBlinkRemainingMs = 0;
-    this.world.packet.portalBlinkElapsedMs = 0;
+    if (this.world.packet.portalBlinkRemainingMs !== Infinity) {
+      this.world.packet.portalBlinkRemainingMs = 0;
+      this.world.packet.portalBlinkElapsedMs = 0;
+    }
     this.world.packet.deathRecoveryRemainingMs = PACKET_DEATH_RECOVERY.durationMs;
     this.world.packet.deathRecoveryElapsedMs = 0;
     this.world.packet.deathRecoveryNextToggleAtMs = PACKET_DEATH_RECOVERY.blinkStartIntervalMs;

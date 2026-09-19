@@ -1,4 +1,4 @@
-import { ENEMY_SCARED_DURATION_MS } from '../../config/constants';
+import { ENEMY_SCARED_DURATION_MS, LEVEL_MULTIPLIER_STEP } from '../../config/constants';
 import {
   clearAllEnemyScaredWindow,
   setActiveEnemiesScaredWindow,
@@ -8,7 +8,7 @@ import type { WorldState } from '../domain/world/WorldState';
 /**
  * Handles development shortcuts after normal input guards have accepted the event.
  *
- * @param world - Active game state to inspect, freeze, or apply the power shortcut to.
+ * @param world - Active game state to inspect or apply development shortcuts to.
  * @param event - Keyboard event from the gameplay surface.
  * @param allowPowerShortcut - Disables the power cheat during tutorial practice.
  */
@@ -28,9 +28,18 @@ export function handleDebugKeyDown(
     return;
   }
 
-  if (event.code === 'KeyF' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+  if (event.code === 'KeyF' && !event.altKey && !event.ctrlKey && !event.metaKey) {
     event.preventDefault();
-    world.debugFrozen = !world.debugFrozen;
+    if (event.shiftKey) world.debugFrozen = !world.debugFrozen;
+    else world.levelMultiplier *= LEVEL_MULTIPLIER_STEP;
+    return;
+  }
+
+  if (event.code === 'KeyV' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    event.preventDefault();
+    // Infinity keeps the existing portal blink and collision shield active until V clears them.
+    world.packet.portalBlinkRemainingMs = world.packet.portalBlinkRemainingMs === Infinity ? 0 : Infinity;
+    world.packet.portalBlinkElapsedMs = 0;
     return;
   }
 
