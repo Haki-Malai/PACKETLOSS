@@ -17,7 +17,7 @@ import {
   Texture,
 } from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
-import type { EnemyKey } from '../../domain/entities/EnemyEntity';
+import { ENEMY_KEYS, type EnemyKey } from '../../domain/entities/EnemyEntity';
 import { HologramPacket } from './HologramPacket';
 import { ReturnEnemyPresentation } from './ReturnEnemyPresentation';
 import { StateTransition } from './StateTransition';
@@ -55,6 +55,8 @@ const ENEMY_COLORS: Record<EnemyAppearance, number> = {
   ping: 0x68ff72,
   spam: 0xb87cff,
   lag: 0xffe24d,
+  quarantine: 0xb846ff,
+  trojan: 0xff3849,
   scared: 0x999999,
 };
 const SCARED_COLOR = new Color(ENEMY_COLORS.scared);
@@ -95,10 +97,11 @@ export class ArcadeAssets {
     for (const model of Object.values(models)) collectResources(model.scene, this.resources);
   }
 
+  /** Loads every roster model and disposes completed loads if a sibling fails or loading is cancelled. */
   static async load(signal?: AbortSignal): Promise<ArcadeAssets> {
     signal?.throwIfAborted();
     const loader = new GLTFLoader();
-    const keys = ['firewall', 'virus', 'ping', 'spam', 'lag'] as const;
+    const keys = ENEMY_KEYS;
     const results = await Promise.allSettled(keys.map(async (key) => {
       try {
         // The local inspector is a nested URL; resolve dev assets from Vite's root.
@@ -129,6 +132,7 @@ export class ArcadeAssets {
     return new ArcadeAssets({
       firewall: models.get('firewall')!, virus: models.get('virus')!, ping: models.get('ping')!,
       spam: models.get('spam')!, lag: models.get('lag')!,
+      quarantine: models.get('quarantine')!, trojan: models.get('trojan')!,
     });
   }
 

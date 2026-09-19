@@ -43,7 +43,8 @@ export class EnemyPacketCollisionSystem {
     }
 
     const collisionActiveEnemies = this.world.enemies.filter((enemy) => {
-      return enemy.active && enemy.state.free && !enemy.state.dead && !this.world.enemiesExitingJail.has(enemy);
+      return enemy.active && enemy.state.free && !enemy.state.dead && !enemy.disguised && enemy.revealRemainingMs <= 0
+        && !this.world.enemiesExitingJail.has(enemy);
     });
 
     const collision = findFirstCollision({

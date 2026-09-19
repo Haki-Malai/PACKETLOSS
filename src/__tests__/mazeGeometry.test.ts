@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { Mesh, MeshBasicMaterial, Raycaster, Vector3 } from 'three';
+import { Box3, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { CollisionGrid } from '../game/domain/world/CollisionGrid';
 import { parseTiledMap, type TiledMap } from '../game/infrastructure/map/TiledParser';
@@ -169,6 +169,9 @@ describe('continuous wall geometry', () => {
     const scene = new MazeScene(world);
     scene.group.updateMatrixWorld(true);
     const bars = scene.group.getObjectByName('pen-bars')!;
+    const prisonBounds = new Box3().setFromObject(scene.group.getObjectByName('enemy-pen')!);
+    expect(prisonBounds.min.y).toBeGreaterThan(11.5);
+    expect(prisonBounds.max.y).toBeCloseTo(12, 1);
     const ray = new Raycaster(new Vector3(), new Vector3(0, -1, 0));
     const jailTiles = map.tiles.flat().filter((tile) => tile.localId === 16);
     expect(jailTiles.length).toBeGreaterThan(0);

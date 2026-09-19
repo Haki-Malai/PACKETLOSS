@@ -198,7 +198,7 @@ describe('GameCompositionRoot startup', () => {
     expect(mount.children).toHaveLength(1);
     expect(render.scene.getObjectByName('binary-000')).toBeDefined();
     expect(composed.world.enemies.filter((enemy) => enemy.active).map((enemy) => enemy.key))
-      .toEqual(['firewall', 'virus', 'ping', 'spam', 'lag']);
+      .toEqual(['firewall', 'virus', 'ping', 'spam', 'lag', 'quarantine', 'trojan']);
     const copies = composed.world.enemies.filter((enemy) => enemy.isCopy);
     expect(copies).toHaveLength(3);
     expect(copies.every((enemy) => !enemy.active && !enemy.state.soonFree && enemy.displayWidth === 8.8)).toBe(true);
@@ -246,7 +246,7 @@ describe('GameCompositionRoot startup', () => {
     expect(originals.map((enemy) => ({ tile: enemy.tile, direction: enemy.direction }))).toEqual(originalPlacements);
     expect(originals.every((enemy) => enemy.active && !enemy.state.free && enemy.state.soonFree
       && !enemy.state.scared && !enemy.state.dead)).toBe(true);
-    expect(originals.map((enemy) => enemy.speed)).toEqual([1, 1, 1, 1, 0.5]);
+    expect(originals.map((enemy) => enemy.speed)).toEqual([1, 1, 1, 1, 0.5, 1, 1]);
     expect(copies.every((enemy) => !enemy.active && !enemy.state.soonFree)).toBe(true);
     expect(composed.world.enemyEffects).toEqual([]);
     expect(composed.world.lagZones).toEqual([]);

@@ -28,7 +28,7 @@ describe('ArcadeAssets', () => {
   it('uses a dedicated template for each enemy while sharing its geometry across instances', () => {
     const models = createCharacterModels();
     const assets = new ArcadeAssets(models);
-    for (const key of ['firewall', 'virus', 'ping', 'spam', 'lag'] as const) {
+    for (const key of ['firewall', 'virus', 'ping', 'spam', 'lag', 'quarantine', 'trojan'] as const) {
       const enemy = assets.createEnemy(key);
       expect(body(enemy).geometry).toBe(body(models[key].scene).geometry);
       expect(body(enemy).material).not.toBe(body(models[key].scene).material);

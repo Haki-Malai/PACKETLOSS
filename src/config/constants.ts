@@ -30,6 +30,8 @@ export const ENEMY_CONFIG = {
     slowMultiplier: 0.5,
     maxZones: 4,
   },
+  quarantine: { speed: 1, intervalMs: 5000, wallDurationMs: 7000, maxWalls: 4, wallsPerCast: 2, rangeTiles: 8 },
+  trojan: { speed: 1, intervalMs: 6000, retryMs: 1000, disguiseDurationMs: 10000, revealRangeTiles: 2, revealGraceMs: 900 },
 } as const;
 
 export const FIREWALL_MIN_PATROL_STEPS = 16;

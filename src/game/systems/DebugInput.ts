@@ -35,6 +35,12 @@ export function handleDebugKeyDown(
     return;
   }
 
+  if (event.code === 'KeyG' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    event.preventDefault();
+    world.levelMultiplier /= LEVEL_MULTIPLIER_STEP;
+    return;
+  }
+
   if (event.code === 'KeyV' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
     event.preventDefault();
     // Infinity keeps the existing portal blink and collision shield active until V clears them.

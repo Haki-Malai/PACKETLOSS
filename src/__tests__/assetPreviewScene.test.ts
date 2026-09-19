@@ -25,6 +25,41 @@ function preview() {
 describe('AssetPreviewScene', () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it('rewinds temporary walls and Trojan disguises without retaining them in the next preview', () => {
+    const { assets, scene, camera } = preview();
+    scene.select(entry('enemy-quarantine-walls'));
+    scene.sample(1800, camera);
+    const wall = scene.scene.getObjectByName('quarantine-wall')!;
+    expect(wall.visible).toBe(true);
+    scene.sample(7800, camera);
+    expect(wall.visible).toBe(false);
+    scene.sample(1800, camera);
+    expect(wall.visible).toBe(true);
+    scene.select(entry('enemy-trojan-disguise'));
+    expect(wall.visible).toBe(false);
+    scene.sample(0, camera);
+    const trojan = scene.scene.getObjectByName('enemy-trojan')!;
+    expect(trojan.getObjectByName('trojan-disguise')?.visible).toBe(false);
+    expect(trojan.getObjectByName('character-model')?.visible).toBe(true);
+    scene.sample(175, camera);
+    expect(trojan.getObjectByName('trojan-disguise')?.visible).toBe(true);
+    expect(trojan.getObjectByName('character-model')?.visible).toBe(true);
+    scene.sample(350, camera);
+    expect(trojan.getObjectByName('trojan-disguise')?.visible).toBe(true);
+    expect(trojan.getObjectByName('character-model')?.visible).toBe(false);
+    scene.sample(2900, camera);
+    expect(trojan.getObjectByName('trojan-disguise')?.visible).toBe(false);
+    expect(trojan.getObjectByName('character-model')?.scale.x).toBe(1);
+    scene.sample(0, camera);
+    expect(trojan.getObjectByName('trojan-disguise')?.visible).toBe(false);
+    expect(trojan.getObjectByName('character-model')?.visible).toBe(true);
+    scene.select(entry('enemy-trojan-normal'));
+    expect(trojan.getObjectByName('trojan-disguise')?.visible).toBe(false);
+    expect(trojan.getObjectByName('character-model')?.visible).toBe(true);
+    scene.dispose();
+    assets.dispose();
+  });
+
   it('restores player and enemy presentation when changing states without losing the tile guide', () => {
     const { assets, scene, camera } = preview();
     const packet = scene.scene.getObjectByName('packet')!;

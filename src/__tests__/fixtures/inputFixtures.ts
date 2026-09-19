@@ -103,6 +103,7 @@ export function pointer(overrides: Partial<PointerState> = {}): PointerState {
   };
 }
 
+/** Supplies the world state and hazard cleanup used by input shortcut tests. */
 function createWorld(): WorldState {
   return {
     packet: {
@@ -113,6 +114,7 @@ function createWorld(): WorldState {
     },
     enemies: [],
     lagZones: [],
+    clearQuarantineWalls: vi.fn(),
     enemyEffects: [],
     debugFrozen: false,
     debugPowerOverrideEnabled: false,

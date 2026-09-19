@@ -13,7 +13,7 @@ from mathutils import Vector
 ROOT = Path(__file__).resolve().parents[1]
 COLORS = {
     "firewall": "ff4d45", "virus": "ff9c2f", "ping": "68ff72",
-    "spam": "b87cff", "lag": "ffe24d",
+    "spam": "b87cff", "lag": "ffe24d", "quarantine": "b846ff", "trojan": "ff3849",
 }
 
 

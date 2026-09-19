@@ -455,13 +455,13 @@
     color: var(--packet-cyan);
     font-family: var(--packet-heading-font);
     font-size: 0.75rem;
-    margin-top: 16px;
+    margin-top: 8px;
 }
 .packet-help dd {
     margin: 5px 0 0;
     color: var(--packet-muted);
-    line-height: 1.65;
-    font-size: 0.9rem;
+    line-height: 1.45;
+    font-size: 0.85rem;
 }
 .packet-enemy-portrait img,
 .packet-enemy-portrait canvas {
@@ -471,14 +471,15 @@
     opacity: 0;
 }
 .packet-enemy-name {
-    margin: 0 0 6px;
+    margin: 0 0 3px;
     color: var(--packet-cyan);
     font-family: var(--packet-heading-font);
     font-size: 0.8rem;
 }
 .packet-enemy .packet-copy {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
 }
 .packet-result-score {
     margin: 16px 0 0;

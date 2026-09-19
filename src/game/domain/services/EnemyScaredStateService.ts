@@ -26,8 +26,10 @@ export function clearEnemyScaredWindow(world: WorldState, enemy: EnemyEntity): v
   world.enemyScaredWarnings.delete(enemy);
 }
 
+/** Suppresses abilities and clears lingering terrain effects when a power core activates. */
 export function setActiveEnemiesScaredWindow(world: WorldState, durationMs: number): void {
   world.lagZones = [];
+  world.clearQuarantineWalls();
   world.enemies.forEach((enemy) => {
     if (!enemy.active) {
       return;

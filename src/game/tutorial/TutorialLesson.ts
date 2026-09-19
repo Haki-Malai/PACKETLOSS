@@ -1,6 +1,6 @@
 import type { TilePosition } from '../domain/valueObjects/TilePosition';
 
-export type TutorialLessonId = 'movement' | 'firewall' | 'power' | 'virus' | 'ping' | 'spam' | 'lag';
+export type TutorialLessonId = 'movement' | 'firewall' | 'power' | 'virus' | 'ping' | 'spam' | 'lag' | 'quarantine' | 'trojan';
 export type TutorialPhase = 'introduction' | 'playing' | 'explanation' | 'success' | 'retry';
 
 export interface TutorialSnapshot {
@@ -43,8 +43,18 @@ export const TUTORIAL_LESSONS = [
     objective: 'Keep moving and watch Lag leave a yellow zone.',
   },
   {
+    id: 'quarantine', title: 'Meet Quarantine',
+    introduction: 'Quarantine builds temporary purple walls that can close a route or trap you. Keep moving until it changes the maze.',
+    objective: 'Watch Quarantine create its first purple walls.',
+  },
+  {
+    id: 'trojan', title: 'Meet Trojan',
+    introduction: 'Trojan walks to an empty spot on a route you already cleared, then changes into a data bit there. Move right to leave a trail and keep your distance while it approaches.',
+    objective: 'Watch Trojan hide on an empty part of your route.',
+  },
+  {
     id: 'power', title: 'Turn the chase around',
-    introduction: 'Firewall follows its usual long patrol. Steer to the nearby large power core, then follow the marker and catch the scared enemy while power lasts. Power cores also clear existing Lag zones and stop Ping scans, Spam copies, and new Lag zones while those enemies are scared.',
+    introduction: 'Firewall follows its usual long patrol. Steer to the nearby large power core, then follow the marker and catch the scared enemy while power lasts. Power cores clear Lag zones and Quarantine walls, reveal hidden Trojans, and suppress enemy abilities while fear lasts.',
     objective: 'Move around the wall to collect the power core, then catch Firewall.',
   },
 ] as const satisfies readonly {

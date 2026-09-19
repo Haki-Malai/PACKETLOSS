@@ -8,10 +8,13 @@ import {
   buildMazeWallEdgeGeometry,
   buildMazeWallFootprint,
   buildMazeWallGeometryFromFootprint,
+  WALL_HEIGHT,
 } from './MazeGeometry';
 import type { MazeFootprint } from './MazeGeometry';
 import { buildPacketSignGeometry } from './PacketSignGeometry';
 import { createMazeFloorMaterial } from './ScenePresentation';
+
+const PEN_SHEET_HEIGHT = 0.2;
 
 export class MazeScene {
   readonly group = new Group();
@@ -126,9 +129,12 @@ export class MazeScene {
     }
   }
 
+  /** Keeps the prison's original top face at wall elevation while flattening its vertical body. */
   private addPen(footprint: MazeFootprint): void {
     const pen = new Group();
     pen.name = 'enemy-pen';
+    pen.scale.y = PEN_SHEET_HEIGHT / WALL_HEIGHT;
+    pen.position.y = WALL_HEIGHT - PEN_SHEET_HEIGHT;
     const bars = new Mesh(this.own(buildMazeWallGeometryFromFootprint(footprint)), this.createWallMaterial('#061428'));
     bars.name = 'pen-bars';
     const edges = this.createOutlineStrips(

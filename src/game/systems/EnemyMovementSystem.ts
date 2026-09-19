@@ -5,14 +5,17 @@ import { MovementRules } from '../domain/services/MovementRules';
 import { PortalService } from '../domain/services/PortalService';
 import { RandomSource } from '../shared/random/RandomSource';
 import { WorldState } from '../domain/world/WorldState';
+import { CollisionGrid } from '../domain/world/CollisionGrid';
 import { Direction, OPPOSITE_DIRECTION } from '../domain/valueObjects/Direction';
 import { ENEMY_EAT_DURATION_MS } from '../shared/enemyEating';
 
 export class EnemyMovementSystem {
   private readonly navigation: EnemyNavigationService;
+  private readonly patrolNavigation: EnemyNavigationService;
   private readonly returnNavigation: EnemyNavigationService;
   private readonly returningEnemies = new WeakSet<EnemyEntity>();
 
+  /** Keeps authored patrol selection separate from the live navigation grid's temporary walls. */
   constructor(
     private readonly world: WorldState,
     private readonly movementRules: MovementRules,
@@ -21,6 +24,7 @@ export class EnemyMovementSystem {
     private readonly rng: RandomSource,
   ) {
     this.navigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService);
+    this.patrolNavigation = new EnemyNavigationService(new CollisionGrid(world.collisionGrid.toArray()), world.tileSize, portalService);
     this.returnNavigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService, 'returning', world.enemyJailBounds);
     this.prepareFirewallPatrols();
   }
@@ -29,7 +33,7 @@ export class EnemyMovementSystem {
   getSimulationBoundaryMs(maximumMs: number): number {
     let boundaryMs = maximumMs;
     for (const enemy of this.world.enemies) {
-      if (!enemy.active) continue;
+      if (!enemy.active || enemy.disguised || enemy.revealRemainingMs > 0) continue;
       if (enemy.state.dead) {
         const collapseRemainingMs = ENEMY_EAT_DURATION_MS - (enemy.eatenElapsedMs ?? 0);
         if (collapseRemainingMs > Number.EPSILON) {
@@ -59,7 +63,8 @@ export class EnemyMovementSystem {
         this.returnToJail(enemy, deltaMs);
         return;
       }
-      if (!enemy.active || !enemy.state.free || this.world.enemiesExitingJail.has(enemy)) {
+      if (!enemy.active || !enemy.state.free || enemy.disguised || enemy.revealRemainingMs > 0
+        || this.world.enemiesExitingJail.has(enemy)) {
         return;
       }
 
@@ -166,6 +171,7 @@ export class EnemyMovementSystem {
       x: this.world.enemyJailReturnTile.x,
       y: Math.max(0, this.world.enemyJailBounds.y - 1),
     };
-    this.decisions.prepareFirewallPatrol(enemy, origin, this.navigation, this.rng);
+    // Select the authored long loop even when temporary walls currently interrupt it.
+    this.decisions.prepareFirewallPatrol(enemy, origin, this.patrolNavigation, this.rng);
   }
 }

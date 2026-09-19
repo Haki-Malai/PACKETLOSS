@@ -109,7 +109,7 @@
             {
               "name": "enemyCount",
               "type": "int",
-              "value": 5
+              "value": 7
             },
             {
               "name": "startX",

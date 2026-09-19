@@ -4,6 +4,7 @@ import {
 } from '../../config/constants';
 import { EAT_EFFECT_DURATION_MS } from '../../game/shared/pickupEffects';
 import { ENEMY_EAT_DURATION_MS } from '../../game/shared/enemyEating';
+import { ENEMY_KEYS } from '../../game/domain/entities/EnemyEntity';
 
 export interface AssetPreviewEntry {
   id: string;
@@ -17,7 +18,7 @@ export interface AssetPreviewEntry {
   transformable?: boolean;
 }
 
-export const ENEMY_IDENTITIES = ['firewall', 'virus', 'ping', 'spam', 'lag'] as const;
+export const ENEMY_IDENTITIES = ENEMY_KEYS;
 export const WALL_TILE_IDS = [0, 1, 2, 5, 6, 7, 10, 14, 15, 23] as const;
 const PLAYER_SOURCE = 'src/game/infrastructure/three/HologramPacket.ts';
 const MAZE_SOURCE = 'src/game/infrastructure/three/MazeGeometry.ts';
@@ -60,6 +61,8 @@ export const ASSET_CATALOG: readonly AssetPreviewEntry[] = [
     ['spam', 'split', 'Splitting into three copies', ENEMY_CONFIG.spam.splitIntervalMs * (ENEMY_CONFIG.spam.maxCount - 1) + ENEMY_CONFIG.spam.splitEffectDurationMs, false,
       ENEMY_CONFIG.spam.splitIntervalMs * (ENEMY_CONFIG.spam.maxCount - 1) + ENEMY_CONFIG.spam.splitEffectDurationMs / 2],
     ['lag', 'lag', 'Lingering slow zones', 6000, true, 3500],
+    ['quarantine', 'walls', 'Temporary maze walls', 8000, true, 1800],
+    ['trojan', 'disguise', 'Data-bit disguise and reveal', 5000, true, 2200],
   ] as const).map(([key, state, name, durationMs, loop, thumbnailMs]): AssetPreviewEntry => ({
     id: `enemy-${key}-${state}`, category: 'Enemies', name: key[0].toUpperCase() + key.slice(1),
     state: name, source: `public/assets/models/enemies/${key}.glb`, durationMs, loop, thumbnailMs,

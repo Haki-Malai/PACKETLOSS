@@ -35,14 +35,16 @@ const BOUNDARY_COLLISION_TILE: CollisionTile = Object.freeze({
 export class CollisionGrid {
   readonly width: number;
   readonly height: number;
+  private temporaryWalls = new Set<string>();
 
   constructor(private readonly grid: CollisionTile[][]) {
     this.height = grid.length;
     this.width = grid[0]?.length ?? 0;
   }
 
+  /** Reads authored collision with the current temporary wall layer applied. */
   getTileAt(x: number, y: number): CollisionTile {
-    if (!this.isInBounds(x, y)) {
+    if (!this.isInBounds(x, y) || this.temporaryWalls.has(`${x},${y}`)) {
       return BOUNDARY_COLLISION_TILE;
     }
 
@@ -66,6 +68,11 @@ export class CollisionGrid {
 
   toArray(): CollisionTile[][] {
     return this.grid.map((row) => row.map((tile) => ({ ...tile })));
+  }
+
+  /** Replaces temporary blockers without modifying the authored map or its collision flags. */
+  setTemporaryWalls(tiles: readonly Readonly<TilePosition>[]): void {
+    this.temporaryWalls = new Set(tiles.map((tile) => `${tile.x},${tile.y}`));
   }
 
   private isInBounds(x: number, y: number): boolean {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MenuMotion } from '../infrastructure/adapters/LocalProfileStore';
+import { MenuColumns } from './MenuPanel';
 
 // Concurrent effect setups share imports, while each setup owns its preview resources.
 let titleModule: Promise<typeof import('./TitleWordmark')> | undefined;
@@ -61,6 +62,8 @@ const enemies = [
     ],
     ['Spam', 'Splits into smaller copies every four seconds, up to four Spam at once.'],
     ['Lag', 'Moves slowly and leaves temporary zones that cut your movement speed in half.'],
+    ['Quarantine', 'Builds purple walls that can trap you. They disappear after seven seconds or when you collect a power core.'],
+    ['Trojan', 'Hides as a data bit on cleared routes, away from real points. When it reveals its horse form, escape before it becomes dangerous.'],
 ] as const;
 
 export function EnemyGuide({ motion }: { motion: MenuMotion }) {
@@ -91,32 +94,38 @@ export function EnemyGuide({ motion }: { motion: MenuMotion }) {
             <h2 className="packet-record-heading mt-0" id="packet-enemies-heading">
                 Enemies
             </h2>
-            <ul className="m-0 list-none p-0">
-                {enemies.map(([name, description]) => (
-                    <li
-                        key={name}
-                        className="packet-enemy grid grid-cols-[80px_minmax(0,1fr)] items-center gap-3 border-b border-packet-line py-4"
-                    >
-                        <span
-                            className="packet-enemy-portrait pointer-events-none relative block size-20"
-                            data-enemy={name.toLowerCase()}
-                        >
-                            <img
-                                src={`${import.meta.env.BASE_URL}assets/images/enemies/${name.toLowerCase()}.png`}
-                                alt={`${name} enemy`}
-                                width={256}
-                                height={256}
-                                loading="lazy"
-                                decoding="async"
-                            />
-                        </span>
-                        <div>
-                            <h3 className="packet-enemy-name">{name}</h3>
-                            <p className="packet-copy">{description}</p>
-                        </div>
-                    </li>
+            <MenuColumns>
+                {[enemies.slice(0, 4), enemies.slice(4)].map((group, index) => (
+                    <section key={index} aria-label={index === 0 ? 'Firewall through Spam' : 'Lag through Trojan'}>
+                        <ul className="m-0 list-none p-0">
+                            {group.map(([name, description]) => (
+                                <li
+                                    key={name}
+                                    className="packet-enemy grid grid-cols-[80px_minmax(0,1fr)] items-center gap-3 border-b border-packet-line py-1"
+                                >
+                                    <span
+                                        className="packet-enemy-portrait pointer-events-none relative block size-20"
+                                        data-enemy={name.toLowerCase()}
+                                    >
+                                        <img
+                                            src={`${import.meta.env.BASE_URL}assets/images/enemies/${name.toLowerCase()}.png`}
+                                            alt={`${name} enemy`}
+                                            width={256}
+                                            height={256}
+                                            loading="lazy"
+                                            decoding="async"
+                                        />
+                                    </span>
+                                    <div>
+                                        <h3 className="packet-enemy-name">{name}</h3>
+                                        <p className="packet-copy">{description}</p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
                 ))}
-            </ul>
+            </MenuColumns>
         </section>
     );
 }

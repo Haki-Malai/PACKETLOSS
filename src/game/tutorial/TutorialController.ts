@@ -11,6 +11,7 @@ import { getTutorialLesson, type TutorialLessonId, type TutorialPhase, type Tuto
 const TARGETS: Record<TutorialLessonId, TilePosition | null> = {
   movement: { x: 11, y: 3 }, firewall: { x: 1, y: 2 }, power: { x: 2, y: 6 },
   virus: { x: 11, y: 11 }, ping: { x: 10, y: 11 }, spam: { x: 11, y: 1 }, lag: { x: 2, y: 5 },
+  quarantine: { x: 1, y: 2 }, trojan: null,
 };
 
 const MOVEMENT_DATA_TILES: readonly TilePosition[] = [
@@ -19,7 +20,7 @@ const MOVEMENT_DATA_TILES: readonly TilePosition[] = [
 
 const AUTO_START_DIRECTIONS: Record<TutorialLessonId, Direction> = {
   movement: 'right', firewall: 'left', virus: 'right', ping: 'right', spam: 'right', lag: 'right',
-  power: 'left',
+  quarantine: 'right', trojan: 'right', power: 'left',
 };
 
 function sameTile(a: Readonly<TilePosition>, b: Readonly<TilePosition>): boolean {
@@ -41,7 +42,7 @@ export function prepareTutorialWorld(
   world: WorldState,
   movement: MovementRules,
 ): readonly CollectiblePoint[] {
-  const spawn = { x: 6, y: 7 };
+  const spawn = lesson === 'trojan' ? { x: 1, y: 1 } : { x: 6, y: 7 };
   placePacket(world, movement, spawn);
   const autoStartDirection = AUTO_START_DIRECTIONS[lesson];
   world.packet.direction = { current: autoStartDirection, next: autoStartDirection };
@@ -54,6 +55,8 @@ export function prepareTutorialWorld(
     enemy.resetAbilities();
   });
   world.lagZones = [];
+  world.clearQuarantineWalls();
+  world.visitedPacketTiles.clear();
   world.enemyEffects = [];
   world.enemyScaredTimers.clear();
   world.enemyScaredWarnings.clear();
@@ -82,13 +85,17 @@ export function prepareTutorialWorld(
     activate('firewall', { x: 11, y: 1 }, 'down');
   } else if (lesson === 'lag') {
     activate('lag', { x: 2, y: 5 });
+  } else if (lesson === 'quarantine') {
+    activate('quarantine', { x: 10, y: 5 });
+  } else if (lesson === 'trojan') {
+    activate('trojan', { x: 11, y: 11 }, 'left');
   }
 
   if (lesson === 'movement') {
     return MOVEMENT_DATA_TILES.map((tile) => point(world, tile, 'base'));
   }
   const target = TARGETS[lesson];
-  return target && ['firewall', 'power', 'virus', 'ping', 'spam'].includes(lesson)
+  return target && ['firewall', 'power', 'virus', 'ping', 'spam', 'quarantine'].includes(lesson)
     ? [point(world, target, lesson === 'power' ? 'power' : 'base')]
     : [];
 }
@@ -100,6 +107,7 @@ export class TutorialController {
   private turnedUp = false;
   private collected = false;
   private witnessed = false;
+  private trojanRevealed = false;
   private crossedSlowly = false;
   private lagZone: TilePosition | null = null;
   private readonly targetPoint: CollectiblePoint | undefined;
@@ -158,7 +166,8 @@ export class TutorialController {
       this.setPhase('retry', 'That contact would cost a life. Retry this checkpoint as often as you need.');
       return;
     }
-    if (!this.witnessed && (this.lesson === 'ping' || this.lesson === 'spam' || this.lesson === 'lag')) {
+    if (!this.witnessed && (this.lesson === 'ping' || this.lesson === 'spam' || this.lesson === 'lag'
+      || this.lesson === 'quarantine' || this.lesson === 'trojan')) {
       const enemy = this.enemy(this.lesson);
       if (enemy && (!enemy.active || !enemy.state.free || enemy.state.dead)) {
         this.setPhase('retry', 'The enemy was eaten before demonstrating its ability. Retry to see it in action.');
@@ -195,6 +204,10 @@ export class TutorialController {
       this.updateEnemyAbility();
     } else if (this.lesson === 'lag') {
       this.updateLag(dx, dy);
+    } else if (this.lesson === 'quarantine') {
+      this.updateQuarantine(firstCollection);
+    } else if (this.lesson === 'trojan') {
+      this.updateTrojan();
     }
   }
 
@@ -265,6 +278,53 @@ export class TutorialController {
       this.setPhase('success', 'You crossed the zone at half speed without losing a life. Overlapping zones do not slow you further.');
     } else if (!zone) {
       this.setPhase('retry', 'The zone expired before you crossed it. Retry to make a fresh zone.');
+    }
+  }
+
+  /** Pauses on a real wall cast, then requires the marked point after the demonstration. */
+  private updateQuarantine(firstCollection: boolean): void {
+    if (!this.witnessed) {
+      if (firstCollection) {
+        this.setPhase('retry', 'You collected the data bit before seeing Quarantine change the maze. Retry this checkpoint.');
+      } else if (this.world.quarantineWalls.length > 0) {
+        this.witnessed = true;
+        this.setPhase('explanation', 'Those purple walls block movement for seven seconds, then vanish. A power core clears them immediately. Find a route to the marked data bit.',
+          'Recover the marked data bit while the maze changes.', this.targetPoint?.tile ?? null);
+      } else {
+        this.followEnemy('quarantine');
+      }
+      return;
+    }
+    if (this.collected) this.setPhase('success', 'You navigated Quarantine’s changing maze. Its walls cannot hold you forever.');
+  }
+
+  /** Pauses on the fake bit and horse reveal, then checks that the Packet escaped the grace window. */
+  private updateTrojan(): void {
+    const enemy = this.enemy('trojan');
+    if (!enemy) return;
+    if (!this.witnessed) {
+      if (!enemy.disguised) return;
+      this.witnessed = true;
+      this.setPhase('explanation', 'That silver data bit is Trojan in disguise. It gives no points. Approach it until the horse reveals itself.',
+        'Approach the fake data bit and watch it reveal.', enemy.tile);
+      return;
+    }
+    if (!this.trojanRevealed) {
+      if (enemy.disguised) return;
+      const approached = Math.hypot(this.before.x - enemy.x, this.before.y - enemy.y)
+        <= ENEMY_CONFIG.trojan.revealRangeTiles * this.world.tileSize;
+      if (enemy.revealRemainingMs <= 0 || !approached) {
+        this.setPhase('retry', 'Trojan revealed before you approached. Retry and move toward the fake bit.');
+        return;
+      }
+      this.trojanRevealed = true;
+      this.setPhase('explanation', 'The horse has appeared. It stays harmless and still for a brief moment. Move away before it becomes dangerous.',
+        'Escape beyond Trojan’s reach before it becomes dangerous.', null);
+      return;
+    }
+    const distance = Math.hypot(this.world.packet.x - enemy.x, this.world.packet.y - enemy.y);
+    if (enemy.revealRemainingMs === 0 && distance > ENEMY_CONFIG.trojan.revealRangeTiles * this.world.tileSize) {
+      this.setPhase('success', 'You spotted the fake data bit and escaped while the horse was harmless.');
     }
   }
 

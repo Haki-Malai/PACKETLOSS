@@ -67,13 +67,20 @@ export interface LagZone {
 }
 
 export interface EnemyEffect {
-  readonly kind: 'ping' | 'split';
+  readonly kind: 'ping' | 'split' | 'quarantine' | 'trojan';
   readonly x: number;
   readonly y: number;
   readonly radius: number;
   readonly ageMs: number;
   readonly durationMs: number;
   readonly target?: { readonly x: number; readonly y: number };
+}
+
+export interface QuarantineWall {
+  readonly tile: Readonly<TilePosition>;
+  readonly source: { readonly x: number; readonly y: number };
+  readonly ageMs: number;
+  readonly durationMs: number;
 }
 
 export interface AnimationPlayback {
@@ -123,6 +130,8 @@ export class WorldState {
   enemies: EnemyEntity[];
   lagZones: LagZone[] = [];
   enemyEffects: EnemyEffect[] = [];
+  quarantineWalls: QuarantineWall[] = [];
+  readonly visitedPacketTiles = new Map<string, Readonly<TilePosition>>();
   enemyScaredTimers = new Map<EnemyEntity, number>();
   enemyScaredWarnings = new Map<EnemyEntity, EnemyScaredWarningVisualState>();
   enemyJailBounds: EnemyJailBounds;
@@ -172,5 +181,17 @@ export class WorldState {
   nextTick(): number {
     this.tick += 1;
     return this.tick;
+  }
+
+  /** Records only the tile physically occupied after Packet movement, including portal arrivals. */
+  recordPacketVisit(): void {
+    const tile = { x: Math.floor(this.packet.x / this.tileSize), y: Math.floor(this.packet.y / this.tileSize) };
+    this.visitedPacketTiles.set(`${tile.x},${tile.y}`, tile);
+  }
+
+  /** Removes Quarantine geometry records and their collision overlay together. */
+  clearQuarantineWalls(): void {
+    this.quarantineWalls = [];
+    this.collisionGrid.setTemporaryWalls([]);
   }
 }

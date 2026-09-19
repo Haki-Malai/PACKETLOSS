@@ -79,6 +79,7 @@ export class CollectibleSystem {
 
   /** Restores the original collectible layout and clears effects from the completed level. */
   refill(): number {
+    this.world.visitedPacketTiles.clear();
     this.pointsByTile.clear();
     this.eatEffects.length = 0;
     this.initialPoints.forEach((point) => {

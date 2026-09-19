@@ -118,6 +118,7 @@ export class EnemyReleaseSystem {
     this.releaseProgressByEnemy.clear();
     this.world.enemiesExitingJail.clear();
     this.world.lagZones = [];
+    this.world.clearQuarantineWalls();
     this.world.enemyEffects = [];
     this.world.enemyScaredTimers.clear();
     this.world.enemyScaredWarnings.clear();

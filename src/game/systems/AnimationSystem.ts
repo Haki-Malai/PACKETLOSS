@@ -23,6 +23,8 @@ const ANIMATIONS: Record<AnimationKey, AnimationDefinition> = {
   pingIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
   spamIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
   lagIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
+  quarantineIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
+  trojanIdle: { start: 0, end: 7, yoyo: true, frameRate: 4 },
 };
 
 export const PACKET_CHOMP_SEQUENCE = [0, 1, 2, 3, 2, 1] as const;

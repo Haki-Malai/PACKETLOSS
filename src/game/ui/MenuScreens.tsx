@@ -1,10 +1,17 @@
-import { Fragment, useEffect, useState, type ReactNode, type Ref, type RefObject } from 'react';
+import { useEffect, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { getTutorialLesson, TUTORIAL_LESSONS } from '../tutorial/TutorialLesson';
 import type { MenuMotion } from '../infrastructure/adapters/LocalProfileStore';
 import { CustomSelect, MenuPanel, MenuButton, MenuColumns, fieldLayout } from './MenuPanel';
 import { EnemyGuide, TitleHeading } from './MenuPreviews';
 import { ProfileBody, score, duration } from './ProfileScreen';
 import type { GameSession, Screen } from './useGameSession';
+
+const basics = [
+    ['Move', 'Arrow keys or WASD. On touchscreens, swipe in the direction you want to go. Turns queue until the corridor allows them.'],
+    ['Collect', 'Data bits score 10 points. Larger power cores score 50 and let you eat scared enemies for increasing bonuses.'],
+    ['Survive', 'You have three lives. Recovering every point opens a clear checkpoint; continuing refills the maze at higher speed and scoring.'],
+    ['Pause', 'Press Space or Escape, use the Pause button, or click/tap the game. Choose Resume when ready.'],
+] as const;
 
 const titles: Record<
     Exclude<Screen, 'playing' | 'tutorial' | 'result'>,
@@ -315,39 +322,28 @@ export function MenuScreens({
             break;
         case 'help':
             body = (
-                <MenuColumns>
+                <div className="my-4 mb-2 flex min-w-0 flex-col gap-4">
                     <section aria-labelledby="packet-basics-heading">
                         <h2 id="packet-basics-heading" className="packet-record-heading mt-0">
                             The basics
                         </h2>
-                        <dl className="packet-help">
-                            {[
-                                [
-                                    'Move',
-                                    'Arrow keys or WASD. On touchscreens, swipe in the direction you want to go. Turns queue until the corridor allows them.',
-                                ],
-                                [
-                                    'Collect',
-                                    'Data bits score 10 points. Larger power cores score 50 and let you eat scared enemies for increasing bonuses.',
-                                ],
-                                [
-                                    'Survive',
-                                    'You have three lives. Recovering every point opens a clear checkpoint; continuing refills the maze at higher speed and scoring.',
-                                ],
-                                [
-                                    'Pause',
-                                    'Press Space or Escape, use the Pause button, or click/tap the game. Choose Resume when ready.',
-                                ],
-                            ].map(([label, text]) => (
-                                <Fragment key={label}>
-                                    <dt>{label}</dt>
-                                    <dd>{text}</dd>
-                                </Fragment>
+                        <MenuColumns>
+                            {[basics.slice(0, 2), basics.slice(2)].map((items, index) => (
+                                <section key={index} aria-label={index === 0 ? 'Movement and collecting' : 'Survival and pausing'}>
+                                    <dl className="packet-help">
+                                        {items.map(([label, text]) => (
+                                            <div key={label}>
+                                                <dt>{label}</dt>
+                                                <dd>{text}</dd>
+                                            </div>
+                                        ))}
+                                    </dl>
+                                </section>
                             ))}
-                        </dl>
+                        </MenuColumns>
                     </section>
                     <EnemyGuide motion={store.getMotion()} />
-                </MenuColumns>
+                </div>
             );
             break;
         case 'profile':
