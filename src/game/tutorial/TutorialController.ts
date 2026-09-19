@@ -2,7 +2,7 @@ import { ENEMY_CONFIG, SPEED } from '../../config/constants';
 import type { EnemyEntity, EnemyKey } from '../domain/entities/EnemyEntity';
 import { MovementRules } from '../domain/services/MovementRules';
 import type { Direction } from '../domain/valueObjects/Direction';
-import type { TileBounds, TilePosition } from '../domain/valueObjects/TilePosition';
+import type { TilePosition } from '../domain/valueObjects/TilePosition';
 import type { WorldState } from '../domain/world/WorldState';
 import { ENEMY_EAT_DURATION_MS } from '../shared/enemyEating';
 import type { CollectiblePoint, CollectibleSystem } from '../systems/CollectibleSystem';
@@ -21,8 +21,6 @@ const AUTO_START_DIRECTIONS: Record<TutorialLessonId, Direction> = {
   movement: 'right', firewall: 'left', virus: 'right', ping: 'right', spam: 'right', lag: 'right',
   power: 'left',
 };
-
-const FIREWALL_TUTORIAL_BOUNDS: TileBounds = { minX: 1, maxX: 2, minY: 1, maxY: 5 };
 
 function sameTile(a: Readonly<TilePosition>, b: Readonly<TilePosition>): boolean {
   return a.x === b.x && a.y === b.y;
@@ -53,7 +51,6 @@ export function prepareTutorialWorld(
     enemy.state = { free: false, soonFree: false, scared: false, dead: false, animation: 'default' };
     enemy.speed = enemy.baseSpeed;
     enemy.eatenElapsedMs = null;
-    enemy.movementBounds = null;
     enemy.resetAbilities();
   });
   world.lagZones = [];
@@ -67,7 +64,6 @@ export function prepareTutorialWorld(
     key: EnemyKey,
     tile: TilePosition,
     direction: Direction = 'right',
-    movementBounds: TileBounds | null = null,
   ): void => {
     const enemy = world.enemies.find((candidate) => !candidate.isCopy && candidate.key === key);
     if (!enemy) return;
@@ -75,16 +71,15 @@ export function prepareTutorialWorld(
     enemy.active = true;
     enemy.state.free = true;
     enemy.direction = direction;
-    enemy.movementBounds = movementBounds;
   };
   if (lesson === 'firewall') {
-    activate('firewall', { x: 1, y: 1 }, 'down', FIREWALL_TUTORIAL_BOUNDS);
+    activate('firewall', { x: 11, y: 1 }, 'down');
   } else if (lesson === 'virus') {
     activate('virus', { x: 1, y: 1 });
   } else if (lesson === 'ping' || lesson === 'spam') {
     activate(lesson, { x: 10, y: 5 });
   } else if (lesson === 'power') {
-    activate('firewall', { x: 1, y: 1 }, 'down', FIREWALL_TUTORIAL_BOUNDS);
+    activate('firewall', { x: 11, y: 1 }, 'down');
   } else if (lesson === 'lag') {
     activate('lag', { x: 2, y: 5 });
   }

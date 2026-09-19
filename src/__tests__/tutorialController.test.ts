@@ -139,21 +139,16 @@ describe('guided tutorial checkpoints', () => {
     expect(getGameState().score).toBe(40);
   });
 
-  it('keeps Firewall on its top-left patrol while requiring the distant data bit', () => {
+  it('runs Firewall’s standard patrol while requiring the marked data bit', () => {
     const lesson = createLesson('firewall');
     const firewall = lesson.world.enemies.find((enemy) => enemy.key === 'firewall')!;
-    expect(firewall.tile).toEqual({ x: 1, y: 1 });
-    expect(firewall.movementBounds).toEqual({ minX: 1, maxX: 2, minY: 1, maxY: 5 });
+    expect(firewall.tile).toEqual({ x: 11, y: 1 });
     expect(Array.from(lesson.collectibles.getPoints()).map((entry) => entry.tile)).toEqual([
       { x: 1, y: 2 },
     ]);
     lesson.controller.resume();
     for (let step = 0; step < 192; step += 1) {
       lesson.tick();
-      expect(firewall.tile.x).toBeGreaterThanOrEqual(1);
-      expect(firewall.tile.x).toBeLessThanOrEqual(2);
-      expect(firewall.tile.y).toBeGreaterThanOrEqual(1);
-      expect(firewall.tile.y).toBeLessThanOrEqual(5);
     }
     lesson.movement.setEntityTile(lesson.world.packet, { x: 1, y: 2 });
     lesson.world.packet.direction = { current: 'left', next: 'left' };
@@ -181,19 +176,14 @@ describe('guided tutorial checkpoints', () => {
     expect(getGameState().lives).toBe(3);
   });
 
-  it('puts power below the same bounded Firewall patrol and supports the full scared chase', () => {
+  it('supports the full scared chase against Firewall’s standard patrol', () => {
     const lesson = createLesson('power');
     const enemy = lesson.world.enemies.find((entry) => entry.key === 'firewall')!;
-    expect(enemy.tile).toEqual({ x: 1, y: 1 });
-    expect(enemy.movementBounds).toEqual({ minX: 1, maxX: 2, minY: 1, maxY: 5 });
+    expect(enemy.tile).toEqual({ x: 11, y: 1 });
     expect(Array.from(lesson.collectibles.getPoints()).map((entry) => entry.tile)).toEqual([{ x: 2, y: 6 }]);
     lesson.controller.resume();
     for (let step = 0; step < 64; step += 1) {
       lesson.tick();
-      expect(enemy.tile.x).toBeGreaterThanOrEqual(1);
-      expect(enemy.tile.x).toBeLessThanOrEqual(2);
-      expect(enemy.tile.y).toBeGreaterThanOrEqual(1);
-      expect(enemy.tile.y).toBeLessThanOrEqual(5);
     }
     expect(lesson.world.packet.tile).toEqual({ x: 2, y: 7 });
     lesson.advance(32, 'up');
@@ -203,10 +193,8 @@ describe('guided tutorial checkpoints', () => {
     expect(lesson.controller.getMarkerTiles()).toEqual([enemy.tile]);
     expect(getGameState().score).toBe(50);
     expect(enemy.state.scared).toBe(true);
-    lesson.advance(16, 'left');
-    expect(lesson.controller.getMarkerTiles()).toEqual([enemy.tile]);
-    lesson.advance(16, 'up');
-    expect(lesson.controller.getMarkerTiles()).toEqual([enemy.tile]);
+    lesson.movement.setEntityTile(lesson.world.packet, enemy.tile);
+    lesson.tick();
     lesson.advance(90);
     expect(lesson.controller.getSnapshot().phase).toBe('success');
     expect(enemy.state.dead).toBe(true);

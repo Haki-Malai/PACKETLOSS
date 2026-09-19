@@ -139,7 +139,6 @@ export class EnemyReleaseSystem {
         animation: 'default',
       };
       enemy.eatenElapsedMs = null;
-      enemy.movementBounds = null;
       enemy.resetAbilities();
       restoreEnemyDebugPowerOverride(this.world, enemy);
     });

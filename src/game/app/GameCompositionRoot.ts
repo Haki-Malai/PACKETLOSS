@@ -197,11 +197,10 @@ export class GameCompositionRoot {
         ? null
         : new EnemyReleaseSystem(world, movementRules, jailService, scheduler, rng);
       const enemyMovementSystem = new EnemyMovementSystem(world, movementRules, enemyDecisions, portalService, gameplayRng);
-      /** Clears cached routes before restoring and rereleasing the original jail roster. */
+      /** Restores the jail roster, then chooses fresh routes before rerelease. */
       const resetEnemiesToJail = (): void => {
-        enemyDecisions.reset();
-        enemyMovementSystem.reset();
         enemyReleaseSystem?.resetToJail();
+        enemyMovementSystem.reset();
       };
       const enemyPacketCollisionSystem = new EnemyPacketCollisionSystem(
         world,

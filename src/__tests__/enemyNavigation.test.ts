@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { EnemyDecisionService } from '../game/domain/services/EnemyDecisionService';
 import { EnemyNavigationService } from '../game/domain/services/EnemyNavigationService';
 import { MovementRules } from '../game/domain/services/MovementRules';
 import { PortalService } from '../game/domain/services/PortalService';
+import { SeededRandom } from '../game/shared/random/SeededRandom';
+import { EnemyMovementSystem } from '../game/systems/EnemyMovementSystem';
 import { createPenGateGrid } from './fixtures/collisionFixtures';
 import { createEnemyWorld } from './fixtures/enemyFixtures';
 
@@ -69,40 +72,52 @@ describe('enemy navigation', () => {
     expect(world.enemies[0].x).toBe(71);
   });
 
-  it('repeats Firewall’s cached patrol independently of the player and rejoins after a position reset', () => {
-    const { world, movement, enemyMovement } = createEnemyWorld(['#####', '#...#', '#.#.#', '#...#', '#####'], [
+  it('sends Firewall to a random target before repeating a long patrol independently of the player', () => {
+    const { world, movement, portals } = createEnemyWorld([
+      '#######', '#.....#', '#.###.#', '#.#.#.#', '#.###.#', '#.....#', '#######',
+    ], [
       { key: 'firewall', tile: { x: 1, y: 1 }, direction: 'up' },
     ], { x: 3, y: 3 });
     const enemy = world.enemies[0];
-    const expected = [[2, 1], [3, 1], [3, 2], [3, 3], [2, 3], [1, 3], [1, 2], [1, 1]];
-    for (const [x, y] of expected) {
-      movement.setEntityTile(world.packet, { x: y, y: x });
-      for (let step = 0; step < 16; step += 1) enemyMovement.update();
-      expect(enemy.tile).toEqual({ x, y });
-      expect(enemy.moved).toEqual({ x: 0, y: 0 });
+    const decisions = new EnemyDecisionService();
+    const rng = new SeededRandom(1);
+    const navigation = new EnemyNavigationService(world.collisionGrid, 16, portals);
+    const enemyMovement = new EnemyMovementSystem(world, movement, decisions, portals, rng);
+    const patrol = decisions.prepareFirewallPatrol(enemy, enemy.tile, navigation, rng)!;
+    expect(patrol.routeLength).toBeGreaterThanOrEqual(16);
+    expect(navigation.findPath(enemy.tile, patrol.target)).not.toBeNull();
+
+    for (let step = 0; step < 400 && (
+      enemy.tile.x !== patrol.target.x || enemy.tile.y !== patrol.target.y || enemy.moved.x !== 0 || enemy.moved.y !== 0
+    ); step += 1) {
+      movement.setEntityTile(world.packet, { x: step % 2 === 0 ? 3 : 1, y: 3 });
+      enemyMovement.update();
     }
-    movement.setEntityTile(enemy, { x: 2, y: 3 });
-    enemy.direction = 'up';
-    for (let step = 0; step < 16; step += 1) enemyMovement.update();
-    expect(enemy.tile).toEqual({ x: 1, y: 3 });
+    expect(enemy.tile).toEqual(patrol.target);
+    expect(enemy.moved).toEqual({ x: 0, y: 0 });
+
+    for (let step = 0; step < patrol.routeLength * 16; step += 1) {
+      movement.setEntityTile(world.packet, { x: step % 2 === 0 ? 1 : 5, y: 5 });
+      enemyMovement.update();
+    }
+    expect(enemy.tile).toEqual(patrol.target);
+    expect(enemy.moved).toEqual({ x: 0, y: 0 });
   });
 
-  it('keeps an authored Firewall inside its movement bounds while patrolling and scared', () => {
-    const { world, enemyMovement } = createEnemyWorld(['#####', '#...#', '#...#', '#...#', '#####'], [
+  it('rejects a Firewall map without a reachable sixteen-step patrol', () => {
+    expect(() => createEnemyWorld(['#####', '#...#', '#.#.#', '#...#', '#####'], [
       { key: 'firewall', tile: { x: 1, y: 1 }, direction: 'down' },
-    ], { x: 3, y: 3 });
-    const enemy = world.enemies[0];
-    enemy.movementBounds = { minX: 1, maxX: 2, minY: 1, maxY: 3 };
+    ], { x: 3, y: 3 })).toThrow('at least 16 steps');
+  });
 
-    for (const scared of [false, true]) {
-      enemy.state.scared = scared;
-      for (let step = 0; step < 160; step += 1) {
-        enemyMovement.update();
-        expect(enemy.tile.x).toBeGreaterThanOrEqual(1);
-        expect(enemy.tile.x).toBeLessThanOrEqual(2);
-        expect(enemy.tile.y).toBeGreaterThanOrEqual(1);
-        expect(enemy.tile.y).toBeLessThanOrEqual(3);
-      }
-    }
+  it('chooses a new Firewall patrol when the enemy roster resets', () => {
+    const { decisions, enemyMovement } = createEnemyWorld([
+      '#######', '#.....#', '#.....#', '#.....#', '#.....#', '#.....#', '#######',
+    ], [{ key: 'firewall', tile: { x: 1, y: 1 } }]);
+    const prepare = vi.spyOn(decisions, 'prepareFirewallPatrol');
+
+    enemyMovement.reset();
+
+    expect(prepare).toHaveBeenCalledOnce();
   });
 });

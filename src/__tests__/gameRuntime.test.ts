@@ -376,7 +376,6 @@ describe('GameRuntime', () => {
     const enemy = world.enemies[0];
     enemy.key = 'firewall';
     movement.setEntityTile(enemy, { x: 1, y: 1 });
-    enemy.movementBounds = { minX: 1, maxX: 2, minY: 1, maxY: 5 };
     composed.updateSystems.unshift(new EnemyMovementSystem(world, movement, new EnemyDecisionService(),
       new PortalService(world.collisionGrid), new SeededRandom(1)));
     composed.tutorial = new TutorialController('power', world, movement, collectibles);

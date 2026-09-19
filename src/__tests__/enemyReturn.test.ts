@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EnemyJailService } from '../game/domain/services/EnemyJailService';
 import { setActiveEnemiesScaredWindow } from '../game/domain/services/EnemyScaredStateService';
 import { EnemyNavigationService } from '../game/domain/services/EnemyNavigationService';
@@ -135,6 +135,24 @@ describe('eaten enemy return', () => {
     world.isMoving = true;
     enemyMovement.update();
     expect([enemy.x, enemy.y]).toEqual([28, 24]);
+  });
+
+  it('chooses Firewall a new patrol after it reaches jail', () => {
+    const { world, movement, enemyMovement, decisions } = createEnemyWorld([
+      '#######', '#.....#', '#.....#', '#.....#', '#.....#', '#.....#', '#######',
+    ], [{ key: 'firewall', tile: { x: 1, y: 1 } }]);
+    const enemy = world.enemies[0];
+    const prepare = vi.spyOn(decisions, 'prepareFirewallPatrol');
+    enemy.state.scared = true;
+    new EnemyPacketCollisionSystem(world, movement).update();
+
+    for (let tick = 0; tick < 200 && enemy.state.dead; tick += 1) {
+      enemyMovement.update(enemyMovement.getSimulationBoundaryMs(1000 / 60));
+    }
+
+    expect(enemy.state.dead).toBe(false);
+    expect(enemy.state.soonFree).toBe(true);
+    expect(prepare).toHaveBeenCalledOnce();
   });
 
   it('waits harmlessly when an authored corridor has no route to jail', () => {

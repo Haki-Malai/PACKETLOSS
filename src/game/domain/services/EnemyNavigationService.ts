@@ -1,5 +1,5 @@
 import { Direction, DIRECTION_VECTORS } from '../valueObjects/Direction';
-import { TileBounds, TilePosition } from '../valueObjects/TilePosition';
+import { TilePosition } from '../valueObjects/TilePosition';
 import { CollisionGrid } from '../world/CollisionGrid';
 import { canMove } from './MovementRules';
 import { PortalService } from './PortalService';
@@ -19,16 +19,29 @@ interface NavigationPath {
   targetIndex: number;
 }
 
+export interface PatrolOption {
+  readonly target: TilePosition;
+  readonly headings: readonly Direction[];
+}
+
+interface PatrolState {
+  readonly tile: TilePosition;
+  readonly heading: Direction;
+}
+
+interface PatrolOutcome {
+  readonly entry: TilePosition | null;
+  readonly length: number;
+}
+
 function tileKey(tile: TilePosition): string {
   return `${tile.x},${tile.y}`;
 }
 
-/** Returns whether a tile lies inside an inclusive authored movement area. */
-function isWithinBounds(tile: Readonly<TilePosition>, bounds: Readonly<TileBounds>): boolean {
-  return tile.x >= bounds.minX && tile.x <= bounds.maxX && tile.y >= bounds.minY && tile.y <= bounds.maxY;
-}
-
 export class EnemyNavigationService {
+  private readonly patrolOptions = new Map<string, readonly PatrolOption[]>();
+  private readonly patrolOutcomes = new Map<string, PatrolOutcome>();
+
   constructor(
     private readonly grid: CollisionGrid,
     private readonly tileSize: number,
@@ -113,8 +126,41 @@ export class EnemyNavigationService {
     return null;
   }
 
-  /** Creates a repeatable right-hand patrol, optionally constrained to an inclusive tile area. */
-  createPatrol(start: TilePosition, heading: Direction, bounds?: Readonly<TileBounds>): NavigationStep[] {
+  /** Finds reachable patrol targets whose right-hand loops meet the minimum travel length. */
+  findPatrolOptions(origin: TilePosition, minimumSteps: number): readonly PatrolOption[] {
+    const requiredSteps = Math.max(1, Math.ceil(minimumSteps));
+    const cacheKey = `${tileKey(origin)}:${requiredSteps}`;
+    const cached = this.patrolOptions.get(cacheKey);
+    if (cached) return cached;
+
+    const reachableTiles = new Map<string, TilePosition>();
+    const queue = [{ ...origin }];
+    while (queue.length > 0) {
+      const tile = queue.shift()!;
+      const key = tileKey(tile);
+      if (reachableTiles.has(key)) continue;
+      reachableTiles.set(key, tile);
+      this.getSteps(tile).forEach((step) => {
+        if (!reachableTiles.has(tileKey(step.destination))) queue.push(step.destination);
+      });
+    }
+
+    const options: PatrolOption[] = [];
+    reachableTiles.forEach((target) => {
+      const headings = NAVIGATION_DIRECTIONS.filter((heading) => {
+        const outcome = this.resolvePatrolOutcome({ tile: target, heading });
+        return outcome.length >= requiredSteps && outcome.entry?.x === target.x && outcome.entry.y === target.y;
+      });
+      if (headings.length > 0) {
+        options.push({ target: { ...target }, headings });
+      }
+    });
+    this.patrolOptions.set(cacheKey, options);
+    return options;
+  }
+
+  /** Creates a repeatable right-hand patrol from one tile and heading. */
+  createPatrol(start: TilePosition, heading: Direction): NavigationStep[] {
     const seen = new Map<string, number>();
     const route: NavigationStep[] = [];
     let tile = { ...start };
@@ -124,16 +170,65 @@ export class EnemyNavigationService {
       const repeatedAt = seen.get(stateKey);
       if (repeatedAt !== undefined) return route.slice(repeatedAt);
       seen.set(stateKey, route.length);
-      const steps = this.getSteps(tile).filter((step) => !bounds || isWithinBounds(step.destination, bounds));
-      const headingIndex = NAVIGATION_DIRECTIONS.indexOf(direction);
-      const turnOrder = [1, 0, 3, 2];
-      const next = turnOrder.map((offset) => NAVIGATION_DIRECTIONS[(headingIndex + offset) % 4])
-        .map((candidate) => steps.find((step) => step.direction === candidate))
-        .find((step) => step !== undefined);
+      const next = this.getPatrolStep(tile, direction);
       if (!next) return route;
       route.push(next);
       tile = next.destination;
       direction = next.direction;
     }
+  }
+
+  /** Resolves one deterministic right-hand transition from a patrol state. */
+  private getPatrolStep(tile: TilePosition, heading: Direction): NavigationStep | undefined {
+    const steps = this.getSteps(tile);
+    const headingIndex = NAVIGATION_DIRECTIONS.indexOf(heading);
+    const turnOrder = [1, 0, 3, 2];
+    return turnOrder.map((offset) => NAVIGATION_DIRECTIONS[(headingIndex + offset) % 4])
+      .map((candidate) => steps.find((step) => step.direction === candidate))
+      .find((step) => step !== undefined);
+  }
+
+  /** Finds and memoizes the eventual patrol cycle reached from one tile and heading. */
+  private resolvePatrolOutcome(start: PatrolState): PatrolOutcome {
+    const startKey = `${tileKey(start.tile)},${start.heading}`;
+    const cached = this.patrolOutcomes.get(startKey);
+    if (cached) return cached;
+
+    const path: PatrolState[] = [];
+    const indices = new Map<string, number>();
+    let state: PatrolState | null = start;
+    while (state) {
+      const stateKey = `${tileKey(state.tile)},${state.heading}`;
+      const known = this.patrolOutcomes.get(stateKey);
+      if (known) {
+        path.forEach((entry) => this.patrolOutcomes.set(`${tileKey(entry.tile)},${entry.heading}`, known));
+        return this.patrolOutcomes.get(startKey) ?? known;
+      }
+
+      const repeatedAt = indices.get(stateKey);
+      if (repeatedAt !== undefined) {
+        const cycle = path.slice(repeatedAt);
+        cycle.forEach((entry) => {
+          this.patrolOutcomes.set(`${tileKey(entry.tile)},${entry.heading}`, {
+            entry: { ...entry.tile },
+            length: cycle.length,
+          });
+        });
+        const transientOutcome = { entry: { ...cycle[0].tile }, length: cycle.length };
+        path.slice(0, repeatedAt).forEach((entry) => {
+          this.patrolOutcomes.set(`${tileKey(entry.tile)},${entry.heading}`, transientOutcome);
+        });
+        return this.patrolOutcomes.get(startKey) ?? transientOutcome;
+      }
+
+      indices.set(stateKey, path.length);
+      path.push(state);
+      const step = this.getPatrolStep(state.tile, state.heading);
+      state = step ? { tile: step.destination, heading: step.direction } : null;
+    }
+
+    const noPatrol = { entry: null, length: 0 };
+    path.forEach((entry) => this.patrolOutcomes.set(`${tileKey(entry.tile)},${entry.heading}`, noPatrol));
+    return noPatrol;
   }
 }

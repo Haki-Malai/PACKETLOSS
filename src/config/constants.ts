@@ -32,6 +32,8 @@ export const ENEMY_CONFIG = {
   },
 } as const;
 
+export const FIREWALL_MIN_PATROL_STEPS = 16;
+
 export const PACKET_PORTAL_BLINK = {
   durationMs: 1500,
   intervalMs: 120,

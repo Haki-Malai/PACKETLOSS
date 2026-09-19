@@ -25,7 +25,7 @@ The default roster starts with one Firewall, Virus, Ping, Spam, and Lag, release
 
 | Enemy | Behavior |
 | --- | --- |
-| Firewall | Repeats a fixed patrol route independent of the player, and rejoins it after release or scared mode. It does not physically block other enemies. |
+| Firewall | While in the pen, chooses a random reachable patrol destination. After release it travels there and repeats a right-hand loop of at least 16 tile steps, independent of the player. It chooses again for every release and rejoins its current loop after scared mode. It does not physically block other enemies. |
 | Virus | Pursues the player using the shortest legal route, including portal shortcuts and reversals. |
 | Ping | Every three seconds, detects the player through walls within eight tiles and pursues that last detected position. A pulse and brief target marker show successful detection. Other enemies receive no alert. |
 | Spam | Attempts to split every four seconds into an unoccupied adjacent tile. Copies can reproduce, up to four Spam total. Blocked attempts retry after one second. Copies are 80% size and award the normal scared-enemy chain score when eaten. |
@@ -62,12 +62,12 @@ Each lesson opens paused with a short explanation and **Try it**. During play, t
 | Lesson | Milestone |
 | --- | --- |
 | Movement and data | Start moving automatically and recover the marked data bits at `(1,1)`, `(1,11)`, `(6,5)`, and `(11,3)`. |
-| Meet Firewall | Collect the data bit at `(1,2)` while Firewall stays within its `(1,1)`–`(2,5)` top-left patrol. |
+| Meet Firewall | Collect the data bit at `(1,2)` while Firewall travels to and follows its seeded long patrol. |
 | Meet Virus | Reach the data bit at `(11,11)` while Virus follows its chase route. |
 | Meet Ping | Start moving automatically, observe a successful scan, then recover the data bit at `(10,11)`. |
 | Meet Spam | Observe a real split, pause to explain the copy, then recover the data bit at `(11,1)`. |
 | Meet Lag | Pause on zone creation, preserve both characters' positions, then navigate back and cross it to experience slowdown. |
-| Turn the chase around | Learn that power clears Lag zones and suppresses Ping, Spam, and Lag abilities; collect the core at `(2,6)`, follow the Firewall highlight, eat it, and finish the intake animation. |
+| Turn the chase around | Learn that power clears Lag zones and suppresses Ping, Spam, and Lag abilities; collect the core at `(2,6)`, follow the Firewall highlight along its standard patrol behavior, eat it, and finish the intake animation. |
 
 Each lesson and retry creates fresh practice with the lesson's enemies and collectibles, normal movement speeds, and real ability timings. Every lesson starts the Packet moving in an intended open direction as soon as practice resumes; it stops only when maze collision blocks that direction until the player steers. The practice camera fits the small demo maze to the viewport so the player can observe the staged enemies. Cyan target boxes render over maze walls so their locations remain visible. Explanations within a lesson freeze its current scene. Success advances immediately to the next lesson without an outro; dangerous contact or an expired required effect freezes play and offers unlimited retries. Manual pause and focus handling remain available, but shortcuts or focus return cannot dismiss a checkpoint. Exiting or cancelling loading returns to the main menu with Tutorial focused. Completion of the final lesson offers **Start game**, **Replay tutorial**, and **Back to main menu**.
 
