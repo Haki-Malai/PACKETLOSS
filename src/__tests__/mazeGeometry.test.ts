@@ -129,6 +129,16 @@ describe('continuous wall geometry', () => {
     split.temporary.dispose();
   });
 
+  it('requires cap overlap with an authored wall rather than a diagonal-only contact', () => {
+    const map = fixture(2, 3);
+    const base: MazeFootprint = { width: 32, height: 48, solid: new Uint8Array(32 * 48) };
+    const edge = { tile: { x: 0, y: 1 }, side: 'right' as const };
+    base.solid[16 * 32 + 13] = 1;
+    expect(connectionTouchesAuthoredWall(map, base, edge)).toBe(false);
+    base.solid[16 * 32 + 14] = 1;
+    expect(connectionTouchesAuthoredWall(map, base, edge)).toBe(true);
+  });
+
   it('reuses joined wall geometry between samples and disposes each replaced shape', () => {
     const map = fixture(2);
     map.tiles[0].forEach((tile) => { tile.localId = 1; tile.rotation = Math.PI / 2; });

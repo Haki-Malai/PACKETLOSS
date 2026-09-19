@@ -10,11 +10,12 @@ const pointScale = new Vector3();
 const pointRotation = new Euler();
 const pointQuaternion = new Quaternion();
 
+/** Samples pickup placement, with power stars spinning about their fixed tilted local Y axis. */
 export function setPointTransform(matrix: Matrix4, kind: CollectibleKind, x: number, y: number, timeSeconds = 0): void {
   const radius = COLLECTIBLE_CONFIG[kind === 'power' ? 1 : 0].size / 2;
   if (kind === 'power') {
     const phase = (x * 0.071 + y * 0.053) % (Math.PI * 2);
-    pointRotation.set(0.28, timeSeconds * Math.PI / 3 + phase, 0.18);
+    pointRotation.set(0.28, timeSeconds * Math.PI / 3 + phase, 0.18, 'XZY');
     pointQuaternion.setFromEuler(pointRotation);
     pointPosition.set(x, radius + 0.7 + Math.sin(timeSeconds * Math.PI * 2 / 3 + phase) * 0.35, y);
     pointScale.setScalar(radius);
@@ -36,6 +37,7 @@ export function createEatEffectMesh(geometry: BufferGeometry, x: number, y: numb
   return mesh;
 }
 
+/** Samples absorption from the pickup's original pose, adding a local intake turn and shrink. */
 export function sampleEatEffect(
   mesh: Mesh<BufferGeometry, MeshBasicMaterial>, effect: EatEffect, target: Object3D, startedAtSeconds = 0,
 ): void {
@@ -52,7 +54,7 @@ export function sampleEatEffect(
   );
   const diameter = MathUtils.lerp(effect.sizeStart, effect.sizeEnd, 1 - (1 - progress) ** 1.7);
   mesh.scale.setScalar(diameter / 2);
-  pointRotation.set(0, progress * Math.PI * 0.75, Math.sin(progress * Math.PI) * 0.2);
+  pointRotation.set(0, progress * Math.PI * 0.75, Math.sin(progress * Math.PI) * 0.2, 'XYZ');
   mesh.quaternion.multiply(pointQuaternion.setFromEuler(pointRotation));
   mesh.material.color.setHex(0xffffff).lerp(ABSORPTION_COLOR, progress);
   mesh.material.opacity = 1 - MathUtils.smoothstep(progress, 0.7, 1);

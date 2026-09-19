@@ -1,9 +1,15 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ENEMY_CONFIG, TILE_SIZE } from '../config/constants';
+import { ENEMY_CONFIG, SPRITE_SIZE, TILE_SIZE } from '../config/constants';
+import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import { EnemyNavigationService } from '../game/domain/services/EnemyNavigationService';
 import { EnemyJailService } from '../game/domain/services/EnemyJailService';
 import { setActiveEnemiesScaredWindow } from '../game/domain/services/EnemyScaredStateService';
 import { toWorldPosition } from '../game/domain/services/MovementRules';
+import { MovementRules } from '../game/domain/services/MovementRules';
+import { CollisionGrid } from '../game/domain/world/CollisionGrid';
+import { parseTiledMap, type TiledMap } from '../game/infrastructure/map/TiledParser';
 import { SeededRandom } from '../game/shared/random/SeededRandom';
 import { TimerSchedulerAdapter } from '../game/infrastructure/adapters/TimerSchedulerAdapter';
 import { CollectibleSystem, type CollectiblePoint } from '../game/systems/CollectibleSystem';
@@ -12,6 +18,7 @@ import { EnemyReleaseSystem } from '../game/systems/EnemyReleaseSystem';
 import { MazeHazardSystem } from '../game/systems/MazeHazardSystem';
 import { getGameState, resetGameState } from '../state/gameState';
 import { createEnemyWorld } from './fixtures/enemyFixtures';
+import { createWorld } from './fixtures/renderFixtures';
 
 const openRows = [
   '##############', '#............#', '#............#', '#............#', '#............#',
@@ -65,6 +72,30 @@ function walkTrojanToDisguise(scenario: ReturnType<typeof trojanScenario>): void
 
 describe('Quarantine terrain and Trojan ambushes', () => {
   beforeEach(() => resetGameState());
+
+  it.each([
+    ['maze', { x: 24, y: 25 }, { x: 10, y: 10 }],
+    ['demo', { x: 6, y: 7 }, { x: 10, y: 5 }],
+  ])('finds connected extensions in the authored %s map', (name, spawn, enemyTile) => {
+    const tiled = JSON.parse(fs.readFileSync(path.resolve(`public/assets/mazes/default/${name}.json`), 'utf8')) as TiledMap;
+    const map = parseTiledMap(tiled);
+    const grid = new CollisionGrid(map.tiles.map((row) => row.map((tile) => tile.collision)));
+    const world = createWorld(map, grid, spawn);
+    const movement = new MovementRules(TILE_SIZE);
+    const enemy = new EnemyEntity({ key: 'quarantine', tile: enemyTile, direction: 'right',
+      speed: ENEMY_CONFIG.quarantine.speed, displayWidth: SPRITE_SIZE.enemy, displayHeight: SPRITE_SIZE.enemy });
+    movement.setEntityTile(enemy, enemyTile);
+    enemy.state.free = true;
+    world.enemies.push(enemy);
+    new MazeHazardSystem(world, movement, new SeededRandom(7), new CollectibleSystem(world, [])).update(5000);
+    expect(world.quarantineWalls.length).toBeGreaterThan(0);
+    for (const wall of world.quarantineWalls) {
+      const neighbor = { x: wall.tile.x + (wall.side === 'right' ? 1 : 0),
+        y: wall.tile.y + (wall.side === 'down' ? 1 : 0) };
+      expect(grid.getTileAt(wall.tile.x, wall.tile.y)[wall.side]).toBe(true);
+      expect(grid.getTileAt(neighbor.x, neighbor.y)[wall.side === 'right' ? 'left' : 'up']).toBe(true);
+    }
+  });
 
   it('closes one passage from both sides without blocking a tile’s other exits', () => {
     const { world, movement } = createEnemyWorld(openRows, [], { x: 1, y: 1 });

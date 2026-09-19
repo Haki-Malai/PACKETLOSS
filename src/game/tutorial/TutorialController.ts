@@ -288,7 +288,7 @@ export class TutorialController {
         this.setPhase('retry', 'You collected the data bit before seeing Quarantine change the maze. Retry this checkpoint.');
       } else if (this.world.quarantineWalls.length > 0) {
         this.witnessed = true;
-        this.setPhase('explanation', 'Those purple walls block movement for seven seconds, then vanish. A power core clears them immediately. Find a route to the marked data bit.',
+        this.setPhase('explanation', 'Those purple wall extensions close passages for seven seconds, then vanish. A power core clears them immediately. Find a route to the marked data bit.',
           'Recover the marked data bit while the maze changes.', this.targetPoint?.tile ?? null);
       } else {
         this.followEnemy('quarantine');
