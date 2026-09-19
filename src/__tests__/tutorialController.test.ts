@@ -169,7 +169,11 @@ describe('guided tutorial checkpoints', () => {
     lesson.advance(80, 'right');
     lesson.advance(64, 'down');
     expect(lesson.controller.getSnapshot().phase).toBe('success');
-    expect(lesson.world.packet.tile).toEqual({ x: 11, y: 11 });
+    expect(lesson.world.packet.tile).toEqual({ x: 11, y: 10 });
+    expect(lesson.world.packet.x).toBe(184);
+    expect(lesson.world.packet.y).toBeGreaterThan(177.75);
+    expect(lesson.world.packet.y).toBeLessThan(184);
+    expect(lesson.collectibles.getPointCount()).toBe(0);
     expect(lesson.world.enemies.filter((enemy) => enemy.active).map((enemy) => enemy.key)).toEqual([
       'virus',
     ]);

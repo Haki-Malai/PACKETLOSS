@@ -27,28 +27,49 @@ function createCollectibles(kind: 'pellet' | 'power-pellet' = 'pellet') {
 describe('CollectibleSystem', () => {
   beforeEach(() => resetGameState(0, 3));
 
-  it.each([
-    { reason: 'horizontal movement in progress', movedX: 0.02, movedY: 0, x: 8.02, y: 8, tileX: 0 },
-    { reason: 'vertical movement in progress', movedX: 0, movedY: 0.02, x: 8, y: 8.02, tileX: 0 },
-    { reason: 'world position off center', movedX: 0, movedY: 0, x: 8.2, y: 8, tileX: 0 },
-    { reason: 'world position on a different point tile', movedX: 0, movedY: 0, x: 8, y: 8, tileX: 1 },
-  ])('waits for matching tile and center when there is $reason', ({ movedX, movedY, x, y, tileX }) => {
+  it('collects a point on contact while moving within its tile', () => {
     const { world, movement, collectibles } = createCollectibles();
-    Object.assign(world.packet, { x, y, tile: { x: tileX, y: 0 }, moved: { x: movedX, y: movedY } });
+    world.packet.moved.x = 5;
+    movement.syncEntityPosition(world.packet);
 
-    collectibles.update(16);
-
-    expect(getGameState().score).toBe(0);
-    expect(collectibles.getPointCount()).toBe(2);
-    expect(collectibles.getEatEffects()).toHaveLength(0);
-    expect(world.packetAnimation.active).toBe(false);
-
-    movement.setEntityTile(world.packet, { x: 0, y: 0 });
     collectibles.update(16);
 
     expect(getGameState().score).toBe(10);
     expect(Array.from(collectibles.getPoints()).map((point) => point.tile)).toEqual([{ x: 1, y: 0 }]);
     expect(world.packetAnimation.active).toBe(true);
+  });
+
+  it('leaves points alone when the Packet touches neither point', () => {
+    const { world, movement, collectibles } = createCollectibles();
+    world.packet.moved.x = 6.5;
+    movement.syncEntityPosition(world.packet);
+
+    collectibles.update(16);
+
+    expect(getGameState().score).toBe(0);
+    expect(collectibles.getPointCount()).toBe(2);
+    expect(world.packetAnimation.active).toBe(false);
+  });
+
+  it.each([
+    { kind: 'pellet' as const, outsideOffset: 9.6, touchingOffset: 9.8, score: 20 },
+    { kind: 'power-pellet' as const, outsideOffset: 8.9, touchingOffset: 9.2, score: 100 },
+  ])('collects a neighboring $kind on contact before reaching its tile center', ({ kind, outsideOffset, touchingOffset, score }) => {
+    const { world, movement, collectibles } = createCollectibles(kind);
+    collectibles.update(0);
+    world.packet.moved.x = outsideOffset;
+    movement.syncEntityPosition(world.packet);
+
+    collectibles.update(0);
+    expect(collectibles.getPointCount()).toBe(1);
+
+    world.packet.moved.x = touchingOffset;
+    movement.syncEntityPosition(world.packet);
+    collectibles.update(0);
+
+    expect(world.packet.tile).toEqual({ x: 0, y: 0 });
+    expect(collectibles.getPointCount()).toBe(0);
+    expect(getGameState().score).toBe(score);
   });
 
   it('scores each pellet once and lets its collection effect expire without consuming another point', () => {
