@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { CAMERA } from '../config/constants';
 import { createCollisionTile, createMapFixture, createRenderHarness, createWorld } from './fixtures/renderFixtures';
 
 describe('camera presentation', () => {
@@ -25,7 +26,7 @@ describe('camera presentation', () => {
     expect(present).toHaveBeenCalledExactlyOnceWith(0.35, renderer.pixelRatio);
     expect(renderer.render).toHaveBeenCalledExactlyOnceWith(scene, camera.camera);
     expect(renderedPacketX).toBeCloseTo(168 + 16 * 0.35);
-    expect(Math.abs(renderedCameraX - (168 + 16 * 0.09 * 0.35))).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(renderedCameraX - (168 + 16 * CAMERA.followLerp.x * 0.35))).toBeLessThanOrEqual(0.1);
     expect(camera.getRenderPosition()).toEqual(simulationCameraPosition);
     expect(world.packet.x).toBe(184);
     renderSystem.destroy();

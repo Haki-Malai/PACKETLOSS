@@ -8,6 +8,7 @@ import { clamp, lerp } from '../../engine/math';
 import { ENEMY_CONFIG, ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_ANIMATION, PACKET_PORTAL_BLINK } from '../../config/constants';
 import { EnemyEntity } from '../domain/entities/EnemyEntity';
 import type { TilePosition } from '../domain/valueObjects/TilePosition';
+import type { ScoreBonusKind } from '../domain/valueObjects/ScoreBonus';
 import { WorldState } from '../domain/world/WorldState';
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { ArcadeAssets } from '../infrastructure/three/ArcadeAssets';
@@ -25,6 +26,7 @@ import { ENEMY_EAT_DURATION_MS } from '../shared/enemyEating';
 import { CollectibleKind, CollectibleSystem, EatEffect } from './CollectibleSystem';
 import { EntityPresentation } from './EntityPresentation';
 import { resolveEnemyAppearance } from './resolveEnemyAppearance';
+import type { ScoreBonusSystem } from './ScoreBonusSystem';
 
 export class RenderSystem {
   readonly scene = new Scene();
@@ -46,6 +48,8 @@ export class RenderSystem {
   private readonly tutorialMarker: TutorialMarker | undefined;
   private readonly pointMatrix = new Matrix4();
   private readonly powerPoints: Array<{ x: number; y: number }> = [];
+  private readonly bonusModels = new Map<ScoreBonusKind, Group>();
+  private visibleBonus: Group | null = null;
   private lastPointCount = -1;
   private animationTime = 0;
   private previousAnimationTime = 0;
@@ -65,6 +69,7 @@ export class RenderSystem {
     private readonly collectibles: CollectibleSystem,
     private readonly assets: ArcadeAssets,
     private readonly getTutorialMarkers?: () => readonly Readonly<TilePosition>[],
+    private readonly scoreBonuses?: ScoreBonusSystem,
   ) {
     this.presentation = new EntityPresentation(world);
     addGameplayLighting(this.scene);
@@ -201,6 +206,7 @@ export class RenderSystem {
     this.assets.sampleAnimation(presentationTime);
     this.assets.facePacket(this.packet, this.camera.camera);
     this.syncPoints(presentationTime);
+    this.syncScoreBonus(presentationTime);
     this.syncEffects();
     this.syncEnemyEating();
     this.enemyEffects.sync(this.world.enemyEffects, this.world.lagZones);
@@ -218,6 +224,7 @@ export class RenderSystem {
     this.maze.dispose();
     this.debug?.dispose();
     this.points.forEach((mesh) => mesh.dispose());
+    this.bonusModels.clear();
     this.effects.forEach((mesh) => mesh.material.dispose());
     this.effects.clear();
     this.enemyEating.forEach((effect) => effect.dispose());
@@ -258,6 +265,30 @@ export class RenderSystem {
     });
     power.instanceMatrix.needsUpdate = true;
     power.computeBoundingSphere();
+  }
+
+  /** Shows the one available authored pickup, reusing its model across spawns. */
+  private syncScoreBonus(timeSeconds: number): void {
+    const pickup = this.scoreBonuses?.getPickup();
+    if (!pickup) {
+      if (this.visibleBonus) this.visibleBonus.visible = false;
+      this.visibleBonus = null;
+      return;
+    }
+    let model = this.bonusModels.get(pickup.kind);
+    if (!model) {
+      model = this.assets.createScoreBonus(pickup.kind) ?? undefined;
+      if (!model) return;
+      model.name = `score-bonus-${pickup.kind}`;
+      model.scale.setScalar(2.2);
+      this.bonusModels.set(pickup.kind, model);
+      this.scene.add(model);
+    }
+    if (this.visibleBonus && this.visibleBonus !== model) this.visibleBonus.visible = false;
+    this.visibleBonus = model;
+    model.visible = true;
+    model.position.set(pickup.x, 1.6 + Math.sin(timeSeconds * 3) * 0.25, pickup.y);
+    model.rotation.y = timeSeconds * 1.1;
   }
 
   private syncEffects(): void {

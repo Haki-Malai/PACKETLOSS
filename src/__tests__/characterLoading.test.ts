@@ -22,7 +22,7 @@ describe('Character model loading', () => {
     vi.unstubAllGlobals();
   });
 
-  it('loads seven enemy templates and keeps the full copy pool within the character triangle budget', async () => {
+  it('loads enemy and multiplier models while keeping the character pool within its triangle budget', async () => {
     const fetchModel = vi.fn(async (url: string) => {
       const path = new URL(url, 'https://game.invalid').pathname;
       const file = await readFile(new URL(`../../public${path}`, import.meta.url));
@@ -32,18 +32,29 @@ describe('Character model loading', () => {
     const parse = vi.spyOn(GLTFLoader.prototype, 'parseAsync');
     const assets = await ArcadeAssets.load();
     const loaded = await Promise.all(parse.mock.results.map((result) => result.value as Promise<GLTF>));
+    const enemyLoaded = loaded.filter((model) => model.animations.length > 0);
+    const bonusLoaded = loaded.filter((model) => model.animations.length === 0);
     expect(fetchModel.mock.calls.map(([url]) => url)).toEqual([
       '/assets/models/enemies/firewall.glb', '/assets/models/enemies/virus.glb',
       '/assets/models/enemies/ping.glb', '/assets/models/enemies/spam.glb', '/assets/models/enemies/lag.glb',
       '/assets/models/enemies/quarantine.glb', '/assets/models/enemies/trojan.glb',
+      '/assets/models/multipliers/bug.glb', '/assets/models/multipliers/key.glb',
+      '/assets/models/multipliers/cloud.glb', '/assets/models/multipliers/wifi.glb',
+      '/assets/models/multipliers/chip.glb',
     ]);
-    for (const model of loaded) {
+    expect(enemyLoaded).toHaveLength(7);
+    expect(bonusLoaded).toHaveLength(5);
+    for (const model of enemyLoaded) {
       expect(model.animations).toHaveLength(1);
       for (const clip of model.animations) {
         expect(clip.name).toBe('idle');
         expect(clip.duration).toBeCloseTo(6);
         expect(clip.tracks.length).toBeGreaterThan(0);
       }
+    }
+    const bonusDisposals = bonusLoaded.flatMap((model) => resourceSpies(model.scene));
+    for (const kind of ['bug', 'key', 'cloud', 'wifi', 'chip'] as const) {
+      expect(assets.createScoreBonus(kind)).toBeInstanceOf(Group);
     }
     const packet = assets.createPacket();
     const enemies = (['firewall', 'virus', 'ping', 'spam', 'lag', 'quarantine', 'trojan'] as const).map((key) => assets.createEnemy(key));
@@ -74,7 +85,7 @@ describe('Character model loading', () => {
       }
     }
     let sourceTriangles = 0;
-    for (const model of loaded) {
+    for (const model of enemyLoaded) {
       model.scene.traverse((object) => {
         if (!(object instanceof Mesh)) return;
         const geometry = (object as Mesh<BufferGeometry>).geometry;
@@ -93,6 +104,7 @@ describe('Character model loading', () => {
       }
     }
     assets.dispose();
+    for (const dispose of bonusDisposals) expect(dispose).toHaveBeenCalledOnce();
   });
 
   it('releases completed models, including a late parser result, when a sibling fails', async () => {
@@ -108,11 +120,12 @@ describe('Character model loading', () => {
       .mockResolvedValueOnce(models.spam as GLTF)
       .mockReturnValueOnce(lateModel)
       .mockResolvedValueOnce(models.quarantine as GLTF)
-      .mockResolvedValueOnce(models.trojan as GLTF);
+      .mockResolvedValueOnce(models.trojan as GLTF)
+      .mockResolvedValue(models.virus as GLTF);
     const loading = ArcadeAssets.load();
-    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(7));
+    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(12));
     finishParse(models.lag as GLTF);
-    await expect(loading).rejects.toThrow('Unable to load character model firewall.glb: Invalid model');
+    await expect(loading).rejects.toThrow('Unable to load model enemies/firewall.glb: Invalid model');
     for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
   });
 
@@ -131,9 +144,10 @@ describe('Character model loading', () => {
       .mockResolvedValueOnce(models.spam as GLTF)
       .mockReturnValueOnce(lateModel)
       .mockResolvedValueOnce(models.quarantine as GLTF)
-      .mockResolvedValueOnce(models.trojan as GLTF);
+      .mockResolvedValueOnce(models.trojan as GLTF)
+      .mockResolvedValue(models.firewall as GLTF);
     const loading = ArcadeAssets.load(abort.signal);
-    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(7));
+    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(12));
     expect(fetchModel).toHaveBeenCalledWith('/assets/models/enemies/firewall.glb', { signal: abort.signal });
     abort.abort();
     finishParse(models.lag as GLTF);

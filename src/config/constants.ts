@@ -53,7 +53,7 @@ export const PACKET_DEATH_ANIMATION = {
 
 export const CAMERA = {
   zoom: 5,
-  followLerp: { x: 0.09, y: 0.09 },
+  followLerp: { x: 0.25, y: 0.25 },
 } as const;
 
 export const COARSE_POINTER_MEDIA_QUERY = '(hover: none) and (pointer: coarse)';

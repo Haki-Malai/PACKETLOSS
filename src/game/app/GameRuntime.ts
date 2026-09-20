@@ -278,9 +278,12 @@ export class GameRuntime implements PacketGame {
     this.resume();
   }
 
-  /** Counts real active frame time even when simulation steps are clamped to avoid catch-up spikes. */
+  /** Counts real active time and reports visible, unfrozen frame timing to the renderer. */
   private readonly recordActiveTime = (elapsedMs: number): void => {
-    if (this.composed?.world.isMoving && !this.composed.world.debugFrozen) this.elapsedMs += elapsedMs;
+    if (!this.composed) return;
+    const active = this.composed.world.isMoving && !this.composed.world.debugFrozen && !document.hidden;
+    this.composed.renderer.recordFrame?.(elapsedMs, active);
+    if (this.composed.world.isMoving && !this.composed.world.debugFrozen) this.elapsedMs += elapsedMs;
   };
 
   /** Advances scaled gameplay in bounded slices while frame-owned systems run once. */

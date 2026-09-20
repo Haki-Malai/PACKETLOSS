@@ -102,6 +102,19 @@ describe('CollectibleSystem', () => {
     expect(getGameState().score).toBe(expectedScore);
   });
 
+  it.each([
+    { kind: 'pellet' as const, expectedScore: 19 },
+    { kind: 'power-pellet' as const, expectedScore: 94 },
+  ])('rounds one combined level-and-icon $kind award', ({ kind, expectedScore }) => {
+    const { world, collectibles } = createCollectibles(kind);
+    world.levelMultiplier = 1.25;
+    world.scoreBonusMultiplier = 1.5;
+
+    collectibles.update(0);
+
+    expect(getGameState().score).toBe(expectedScore);
+  });
+
   it('restores the exact initial layout and clears completed-level pickup effects', () => {
     const { world, movement, collectibles } = createCollectibles();
     collectibles.update(0);

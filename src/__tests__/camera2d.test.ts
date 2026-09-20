@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CAMERA } from '../config/constants';
 import { Camera2D } from '../engine/camera';
 
 describe('Camera2D', () => {
@@ -54,6 +55,38 @@ describe('Camera2D', () => {
     expect(camera.getRenderPosition(0)).toEqual({ x: 100, y: 50 });
     expect(camera.getRenderPosition(0.5)).toEqual({ x: 102, y: 51.5 });
     expect(camera.getRenderPosition(1)).toEqual({ x: 104, y: 53 });
+  });
+
+  it('stops panning along the old axis shortly after the Packet turns or reverses', () => {
+    const camera = new Camera2D();
+    const target = { x: 500, y: 500 };
+    camera.setBounds(2000, 2000);
+    camera.setViewport(200, 200);
+    camera.setZoom(1);
+    camera.startFollow(target, CAMERA.followLerp.x, CAMERA.followLerp.y);
+    camera.snapToFollowTarget();
+
+    for (let step = 0; step < 40; step += 1) {
+      target.x += 1;
+      camera.update();
+    }
+    const beforeReversal = camera.x;
+    for (let step = 0; step < 5; step += 1) {
+      target.x -= 1;
+      camera.update();
+    }
+    expect(camera.x).toBeLessThan(beforeReversal);
+
+    for (let step = 0; step < 40; step += 1) {
+      target.x += 1;
+      camera.update();
+    }
+    for (let step = 0; step < 6; step += 1) {
+      target.y += 1;
+      camera.update();
+    }
+    expect(Math.abs(camera.x - (target.x - 100))).toBeLessThan(1);
+    expect(camera.y).toBeGreaterThan(400);
   });
 
   it('clamps camera coordinates while following near world edges', () => {

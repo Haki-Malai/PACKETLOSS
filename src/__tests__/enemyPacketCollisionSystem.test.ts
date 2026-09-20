@@ -228,11 +228,12 @@ describe('EnemyPacketCollisionSystem', () => {
     }
   });
 
-  it('rounds every scared-enemy chain award with the current level multiplier', () => {
+  it('rounds every scared-enemy chain award with both scoring factors', () => {
     const harness = new MechanicsDomainHarness({ seed: 4109, fixture: 'default-map', enemyCount: 2 });
 
     try {
       harness.world.levelMultiplier = 1.25;
+      harness.world.scoreBonusMultiplier = 1.5;
       const [first, second] = harness.world.enemies;
       const collisionTile = { x: 18, y: 18 };
       harness.movementRules.setEntityTile(harness.world.packet, collisionTile);
@@ -246,7 +247,7 @@ describe('EnemyPacketCollisionSystem', () => {
       harness.enemyPacketCollisionSystem.update();
       harness.enemyPacketCollisionSystem.update();
 
-      expect(getGameState()).toEqual({ score: 750, lives: 3 });
+      expect(getGameState()).toEqual({ score: 1125, lives: 3 });
       expect(first.state.dead).toBe(true);
       expect(second.state.dead).toBe(true);
     } finally {

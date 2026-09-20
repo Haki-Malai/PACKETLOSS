@@ -4,7 +4,8 @@ import {
   PACKET_DEATH_RECOVERY,
   SPEED,
 } from '../../config/constants';
-import { addScore, getGameState, loseLife } from '../../state/gameState';
+import { getGameState, loseLife } from '../../state/gameState';
+import { awardScore } from './awardScore';
 import { EnemyEntity } from '../domain/entities/EnemyEntity';
 import { CollisionBody } from '../domain/valueObjects/CollisionBody';
 import { EnemyCollisionCandidate, findFirstCollision } from '../domain/services/EnemyPacketCollisionService';
@@ -100,7 +101,7 @@ export class EnemyPacketCollisionSystem {
     const chainScoreIndex = Math.min(this.world.enemyEatChainCount, ENEMY_EAT_CHAIN_SCORES.length - 1);
     const baseScore = ENEMY_EAT_CHAIN_SCORES[chainScoreIndex]
       ?? ENEMY_EAT_CHAIN_SCORES[ENEMY_EAT_CHAIN_SCORES.length - 1];
-    addScore(Math.round(baseScore * this.world.levelMultiplier));
+    awardScore(this.world, baseScore);
     this.world.enemyEatChainCount += 1;
 
     this.world.enemiesExitingJail.delete(enemy);

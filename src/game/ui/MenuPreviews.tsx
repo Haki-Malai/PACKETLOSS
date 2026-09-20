@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MenuMotion } from '../infrastructure/adapters/LocalProfileStore';
 import { MenuColumns } from './MenuPanel';
+import { SCORE_BONUS_TIERS } from '../domain/valueObjects/ScoreBonus';
 
 // Concurrent effect setups share imports, while each setup owns its preview resources.
 let titleModule: Promise<typeof import('./TitleWordmark')> | undefined;
 let portraitModule: Promise<typeof import('./EnemyPortraits')> | undefined;
+let bonusModule: Promise<typeof import('./ScoreBonusPreviews')> | undefined;
 
 /** Primes both optional Three.js menu views before the title screen is revealed. */
 export async function preloadMenuPreviews(): Promise<void> {
@@ -126,6 +128,52 @@ export function EnemyGuide({ motion }: { motion: MenuMotion }) {
                     </section>
                 ))}
             </MenuColumns>
+        </section>
+    );
+}
+
+export function ScoreBonusGuide() {
+    const host = useRef<HTMLElement>(null);
+    useEffect(() => {
+        const node = host.current;
+        if (!node) return;
+        let active = true;
+        let dispose: (() => void) | undefined;
+        /** Mounts optional model previews only while this scoring page owns the host. */
+        async function initialize() {
+            try {
+                const { mountScoreBonusPreviews } = await (bonusModule ??= import('./ScoreBonusPreviews'));
+                if (active) dispose = mountScoreBonusPreviews(node!);
+            } catch {
+                // Text values and fallback badges remain readable without WebGL.
+            }
+        }
+        void initialize();
+        return () => {
+            active = false;
+            dispose?.();
+        };
+    }, []);
+
+    return (
+        <section ref={host} aria-labelledby="packet-bonus-heading">
+            <h3 id="packet-bonus-heading" className="packet-record-heading">Timed multipliers</h3>
+            <p className="packet-copy">
+                One icon appears near the pen after 35% and 70% of the level’s data and cores are recovered.
+                Collect it within 45 seconds for a 15-second boost to every score award. The icon changes with each level.
+            </p>
+            <ul className="mt-3 grid list-none grid-cols-2 gap-2 p-0 sm:grid-cols-5">
+                {SCORE_BONUS_TIERS.map(({ kind, multiplier }) => (
+                    <li key={kind} className="flex min-w-0 flex-col items-center border border-packet-line bg-packet-raised px-2 py-2 text-center">
+                        <span className="relative flex size-16 items-center justify-center text-packet-cyan" data-bonus={kind}>
+                            <span aria-hidden="true">◇</span>
+                        </span>
+                        <span className="font-heading text-xs text-packet-text capitalize">{kind}</span>
+                        <strong className="font-heading text-sm text-packet-gold">×{multiplier}</strong>
+                    </li>
+                ))}
+            </ul>
+            <p className="packet-copy mt-3">Each level offers two chances. Missed icons expire; boosts end on death and do not stack.</p>
         </section>
     );
 }

@@ -5,6 +5,7 @@ import type { LevelClearCheckpoint, RunResult, RuntimeState } from '../game/app/
 import { LocalProfileStore } from '../game/infrastructure/adapters/LocalProfileStore';
 import { GameShell } from '../game/ui/GameShell';
 import { mountEnemyPortraits } from '../game/ui/EnemyPortraits';
+import { mountScoreBonusPreviews } from '../game/ui/ScoreBonusPreviews';
 import { mountTitleWordmark } from '../game/ui/TitleWordmark';
 import { StrictMode } from 'react';
 import { addScore, resetGameState } from '../state/gameState';
@@ -18,6 +19,7 @@ import {
 
 vi.mock('../game/ui/TitleWordmark', () => ({ mountTitleWordmark: vi.fn() }));
 vi.mock('../game/ui/EnemyPortraits', () => ({ mountEnemyPortraits: vi.fn() }));
+vi.mock('../game/ui/ScoreBonusPreviews', () => ({ mountScoreBonusPreviews: vi.fn() }));
 
 const loss: RunResult = {
     outcome: 'lost',
@@ -161,6 +163,9 @@ beforeEach(() => {
     vi.mocked(mountEnemyPortraits)
         .mockReset()
         .mockReturnValue(() => {});
+    vi.mocked(mountScoreBonusPreviews)
+        .mockReset()
+        .mockReturnValue(() => {});
 });
 
 afterEach(async () => {
@@ -289,6 +294,55 @@ describe('GameShell', () => {
             page.root.querySelector('[data-action="try-out"],[data-action="tutorial"]')
         ).toBeNull();
         expect(page.createGame).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens help on Basics and navigates directly between its pages', async () => {
+        const dispose = vi.fn();
+        const disposeBonuses = vi.fn();
+        vi.mocked(mountEnemyPortraits).mockReturnValue(dispose);
+        vi.mocked(mountScoreBonusPreviews).mockReturnValue(disposeBonuses);
+        const page = setup();
+        const user = userEvent.setup();
+        fireEvent.click(page.action('help'));
+        const stepper = page.find('nav[aria-label="How to play pages"]');
+        expect(page.find('[role="dialog"] header').nextElementSibling?.contains(stepper)).toBe(
+            true
+        );
+        expect(stepper.querySelectorAll('button')).toHaveLength(3);
+        expect(page.action('help-basics').getAttribute('aria-current')).toBe('step');
+        expect(
+            Array.from(page.root.querySelectorAll('dt')).map((node) => node.textContent)
+        ).toEqual(['Move', 'Survive', 'Pause']);
+        expect(page.root.querySelector('.packet-enemy')).toBeNull();
+        expect(mountEnemyPortraits).not.toHaveBeenCalled();
+
+        page.action('help-scoring').focus();
+        await user.keyboard('{Enter}');
+        expect(page.action('help-scoring').getAttribute('aria-current')).toBe('step');
+        expect(page.action('help-basics').getAttribute('aria-current')).toBeNull();
+        expect(
+            Array.from(page.root.querySelectorAll('dt')).map((node) => node.textContent)
+        ).toEqual(['Collect', 'Enemy bonuses', 'Later levels']);
+        expect(page.find('#packet-help-content').textContent).toContain('1,600 points');
+        expect(page.find('#packet-help-content').textContent).toContain('35% and 70%');
+        expect(page.root.querySelectorAll('[data-bonus]')).toHaveLength(5);
+        await flushStart();
+        expect(mountScoreBonusPreviews).toHaveBeenCalledOnce();
+
+        fireEvent.click(page.action('help-enemies'));
+        await flushStart();
+        expect(disposeBonuses).toHaveBeenCalledOnce();
+        expect(page.action('help-enemies').getAttribute('aria-current')).toBe('step');
+        expect(page.root.querySelectorAll('.packet-enemy')).toHaveLength(7);
+        expect(page.root.querySelector('dl')).toBeNull();
+        expect(mountEnemyPortraits).toHaveBeenCalledOnce();
+
+        fireEvent.click(page.action('help-scoring'));
+        expect(dispose).toHaveBeenCalledOnce();
+        fireEvent.click(page.action('back'));
+        fireEvent.click(page.action('help'));
+        expect(page.action('help-basics').getAttribute('aria-current')).toBe('step');
+        expect(page.createGame).not.toHaveBeenCalled();
     });
 
     it('opens practice paused on the demo map and keeps live objectives outside the menu', async () => {
@@ -534,15 +588,12 @@ describe('GameShell', () => {
                 page.games[0].emit({ paused: true, result: null });
             }
             fireEvent.click(page.action('help'));
+            fireEvent.click(page.action('help-enemies'));
             await flushStart();
             expect(page.find('h1').textContent).toBe('HOW TO PLAY');
             expect(
-                Array.from(page.root.querySelectorAll('dt')).map((node) => node.textContent)
-            ).toEqual(['Move', 'Collect', 'Survive', 'Pause']);
-            expect(
                 Array.from(page.root.querySelectorAll('h3')).map((node) => node.textContent)
             ).toEqual(['Firewall', 'Virus', 'Ping', 'Spam', 'Lag', 'Quarantine', 'Trojan']);
-            expect(page.find('[aria-labelledby="packet-basics-heading"]').querySelectorAll('dl')).toHaveLength(2);
             const guide = page.find('[aria-labelledby="packet-enemies-heading"]');
             expect(guide.getAttribute('aria-labelledby')).toBe('packet-enemies-heading');
             expect(guide.querySelectorAll('ul')).toHaveLength(2);
@@ -567,10 +618,12 @@ describe('GameShell', () => {
         const page = setup();
         await flushStart();
         fireEvent.click(page.action('help'));
+        fireEvent.click(page.action('help-enemies'));
         fireEvent.click(page.action('back'));
         await flushStart();
         expect(mountEnemyPortraits).not.toHaveBeenCalled();
         fireEvent.click(page.action('help'));
+        fireEvent.click(page.action('help-enemies'));
         page.unmount();
         await flushStart();
         expect(mountEnemyPortraits).not.toHaveBeenCalled();
@@ -582,6 +635,7 @@ describe('GameShell', () => {
         });
         const page = setup();
         fireEvent.click(page.action('help'));
+        fireEvent.click(page.action('help-enemies'));
         await flushStart();
         expect(page.screen()).toBe('help');
         expect(page.root.querySelectorAll('.packet-enemy-name')).toHaveLength(7);

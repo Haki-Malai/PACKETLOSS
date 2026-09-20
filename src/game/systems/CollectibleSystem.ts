@@ -1,5 +1,5 @@
 import { COLLECTIBLE_CONFIG, ENEMY_SCARED_DURATION_MS } from '../../config/constants';
-import { addScore } from '../../state/gameState';
+import { awardScore } from './awardScore';
 import { isBodyOverlap } from '../domain/services/EnemyPacketCollisionService';
 import { getObjectNumberProperty } from '../domain/services/EnemyJailService';
 import { setActiveEnemiesScaredWindow } from '../domain/services/EnemyScaredStateService';
@@ -85,8 +85,7 @@ export class CollectibleSystem {
     this.pointsByTile.delete(tileKey(point.tile));
 
     const baseScore = point.kind === 'power' ? COLLECTIBLE_CONFIG[1].score : COLLECTIBLE_CONFIG[0].score;
-    const scoreDelta = Math.round(baseScore * this.world.levelMultiplier);
-    addScore(scoreDelta);
+    awardScore(this.world, baseScore);
     if (point.kind === 'power') {
       this.triggerScaredEnemyWindow();
     }
