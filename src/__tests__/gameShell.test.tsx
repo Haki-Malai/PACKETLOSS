@@ -181,15 +181,21 @@ describe('GameShell', () => {
         const page = setup();
         const user = userEvent.setup();
         const start = page.action('start');
+        const endless = page.action('start-endless');
         const profile = page.action('profile');
         const titlePanel = page.find('[role="dialog"]');
 
         expect(start.classList.contains('packet-primary')).toBe(true);
         expect(page.key('ArrowRight').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(endless);
+        expect(endless.classList.contains('packet-primary')).toBe(true);
+        expect(page.key('ArrowRight').defaultPrevented).toBe(true);
         expect(page.document.activeElement).toBe(profile);
         expect(titlePanel.getAttribute('data-arrow-navigation')).toBe('true');
         expect(profile.classList.contains('packet-primary')).toBe(true);
         expect(start.classList.contains('packet-primary')).toBe(false);
+        expect(page.key('ArrowLeft').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(endless);
         expect(page.key('ArrowLeft').defaultPrevented).toBe(true);
         expect(page.document.activeElement).toBe(start);
         page.key('Tab');
@@ -918,6 +924,49 @@ describe('GameShell', () => {
         fireEvent.click(page.action('main-menu'));
         expect(page.screen()).toBe('title');
         expect(game.destroy).toHaveBeenCalledOnce();
+    });
+
+    it('starts, replays, and restarts endless without mixing its result with classic records', async () => {
+        const page = setup();
+        fireEvent.click(page.action('start-endless'));
+        await flushStart();
+        expect(page.games[0].options.mode).toBe('endless');
+        expect(page.games[0].options.mapVariant).toBe('demo');
+        const endlessResult: RunResult = { ...loss, mode: 'endless', score: 850,
+            pointsCollected: 27, totalPoints: 27, levelsCleared: 0 };
+        page.games[0].emit({ paused: false, result: endlessResult });
+        expect(page.screen()).toBe('result');
+        expect(Array.from(page.find('dl').querySelectorAll('dd'), (node) => node.textContent))
+            .toEqual(['850', '27', '1:04']);
+        expect(page.root.textContent).not.toContain('Levels cleared');
+        expect(page.store.getTopRecords('default', 'endless')[0]).toMatchObject(endlessResult);
+        expect(page.store.getTopRecords('demo')).toEqual([]);
+
+        fireEvent.click(page.action('replay'));
+        await flushStart();
+        expect(page.games[1].options.mode).toBe('endless');
+        page.games[1].emit({ paused: true, result: null });
+        fireEvent.click(page.action('restart'));
+        fireEvent.click(page.action('confirm'));
+        await flushStart();
+        expect(page.games[2].options.mode).toBe('endless');
+    });
+
+    it('switches the profile record list between classic and endless runs', () => {
+        const page = setup();
+        page.store.saveRun({ ...loss, id: 'classic', map: 'demo', nickname: 'CLASSIC',
+            completedAt: '2026-09-13T12:00:00Z', mode: 'classic' });
+        page.store.saveRun({ ...loss, id: 'endless', map: 'default', nickname: 'ENDLESS',
+            completedAt: '2026-09-14T12:00:00Z', mode: 'endless', pointsCollected: 32,
+            totalPoints: 32 });
+        fireEvent.click(page.action('profile'));
+        expect(page.root.textContent).toContain('CLASSIC');
+        expect(page.root.textContent).not.toContain('ENDLESS');
+        fireEvent.click(page.find('[data-control="records-mode"]'));
+        fireEvent.click(page.find('[role="option"][data-value="endless"]'));
+        expect(page.root.textContent).toContain('ENDLESS');
+        expect(page.root.textContent).toContain('32 bits');
+        expect(page.root.textContent).not.toContain('CLASSIC');
     });
 
     it('continues clear checkpoints without saving and confirms before abandoning one', async () => {

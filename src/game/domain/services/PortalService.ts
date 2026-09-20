@@ -29,9 +29,7 @@ export class PortalService {
 
   constructor(collisionGrid: CollisionGrid, explicitPortalPairs: PortalPair[] = []) {
     if (explicitPortalPairs.length > 0) {
-      explicitPortalPairs.forEach((pair) => {
-        this.setPortalPair(pair.from, pair.to);
-      });
+      this.replacePairs(explicitPortalPairs);
       return;
     }
 
@@ -45,11 +43,15 @@ export class PortalService {
       }
     }
 
-    for (let i = 0; i + 1 < portals.length; i += 2) {
-      const from = portals[i];
-      const to = portals[i + 1];
-      this.setPortalPair(from, to);
-    }
+    const inferred: PortalPair[] = [];
+    for (let i = 0; i + 1 < portals.length; i += 2) inferred.push({ from: portals[i], to: portals[i + 1] });
+    this.replacePairs(inferred);
+  }
+
+  /** Replaces all portal links after the rolling map changes, dropping evicted endpoints. */
+  replacePairs(pairs: readonly PortalPair[]): void {
+    this.portalPairs.clear();
+    pairs.forEach((pair) => this.setPortalPair(pair.from, pair.to));
   }
 
   canAdvanceOutward(entity: PortalTrackedEntity, collisionGrid: CollisionGrid): boolean {

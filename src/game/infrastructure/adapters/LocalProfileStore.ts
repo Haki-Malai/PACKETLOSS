@@ -1,4 +1,5 @@
 import type { RunResult } from '../../app/contracts';
+import type { RunMode } from '../../app/contracts';
 import type { MapVariant } from '../../app/mapRuntimeConfig';
 
 export type MenuMotion = 'system' | 'reduced' | 'full';
@@ -48,6 +49,7 @@ function isRunRecordBase(value: unknown): value is LegacyRunRecord & Record<stri
         typeof value.completedAt === 'string' &&
         Number.isFinite(Date.parse(value.completedAt)) &&
         (value.map === 'default' || value.map === 'demo') &&
+        (value.mode === undefined || value.mode === 'classic' || value.mode === 'endless') &&
         typeof value.nickname === 'string' &&
         (value.outcome === 'lost' || value.outcome === 'cleared') &&
         isNonnegativeNumber(value.score) &&
@@ -75,6 +77,7 @@ function isLegacyRunRecord(value: unknown): value is LegacyRunRecord {
 function normalizeRecord(record: LocalRunRecord | LegacyRunRecord): LocalRunRecord {
     return {
         ...record,
+        mode: record.mode ?? 'classic',
         nickname: normalizeNickname(record.nickname),
         levelsCleared:
             'levelsCleared' in record ? record.levelsCleared : record.outcome === 'cleared' ? 1 : 0,
@@ -91,8 +94,8 @@ function bestFirst(a: LocalRunRecord, b: LocalRunRecord): number {
 
 function retainedRecords(records: LocalRunRecord[]): LocalRunRecord[] {
     const retained = new Map<string, LocalRunRecord>();
-    for (const map of ['default', 'demo'] as const) {
-        const forMap = records.filter((record) => record.map === map);
+    for (const [map, mode] of [['default', 'classic'], ['demo', 'classic'], ['default', 'endless']] as const) {
+        const forMap = records.filter((record) => record.map === map && (record.mode ?? 'classic') === mode);
         for (const record of [
             ...[...forMap].sort(bestFirst).slice(0, 10),
             ...[...forMap].sort(recentFirst).slice(0, 10),
@@ -168,12 +171,12 @@ export class LocalProfileStore {
         this.persist();
     }
 
-    getTopRecords(map: MapVariant): readonly LocalRunRecord[] {
-        return this.recordsForMap(map, bestFirst);
+    getTopRecords(map: MapVariant, mode: RunMode = 'classic'): readonly LocalRunRecord[] {
+        return this.recordsForMap(map, mode, bestFirst);
     }
 
-    getRecentRecords(map: MapVariant): readonly LocalRunRecord[] {
-        return this.recordsForMap(map, recentFirst);
+    getRecentRecords(map: MapVariant, mode: RunMode = 'classic'): readonly LocalRunRecord[] {
+        return this.recordsForMap(map, mode, recentFirst);
     }
 
     saveRun(record: LocalRunRecord): void {
@@ -181,7 +184,7 @@ export class LocalProfileStore {
         this.savedIds.add(record.id);
         this.profile.records = retainedRecords([
             ...this.profile.records,
-            { ...record, nickname: normalizeNickname(record.nickname) },
+            normalizeRecord(record),
         ]);
         this.persist();
     }
@@ -197,10 +200,11 @@ export class LocalProfileStore {
 
     private recordsForMap(
         map: MapVariant,
+        mode: RunMode,
         compare: (a: LocalRunRecord, b: LocalRunRecord) => number
     ): LocalRunRecord[] {
         return this.profile.records
-            .filter((record) => record.map === map)
+            .filter((record) => record.map === map && (record.mode ?? 'classic') === mode)
             .sort(compare)
             .slice(0, 10)
             .map((record) => ({ ...record }));

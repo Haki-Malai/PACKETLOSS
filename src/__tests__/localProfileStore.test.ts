@@ -22,6 +22,7 @@ function run(overrides: Partial<LocalRunRecord> = {}): LocalRunRecord {
         id: 'run-1',
         completedAt: '2026-09-13T12:00:00.000Z',
         map: 'default',
+        mode: 'classic',
         nickname: 'PLAYER',
         outcome: 'lost',
         score: 120,
@@ -65,7 +66,7 @@ describe('LocalProfileStore', () => {
 
     it('migrates version-one records and infers historical cleared levels', () => {
         const legacy = run({ outcome: 'cleared' });
-        const { levelsCleared: _levelsCleared, ...legacyRecord } = legacy;
+        const { levelsCleared: _levelsCleared, mode: _mode, ...legacyRecord } = legacy;
         const storage = memoryStorage(
             JSON.stringify({
                 version: 1,
@@ -79,9 +80,29 @@ describe('LocalProfileStore', () => {
         const store = new LocalProfileStore(storage);
 
         expect(store.getRecentRecords('default')).toMatchObject([
-            { outcome: 'cleared', levelsCleared: 1 },
+            { outcome: 'cleared', levelsCleared: 1, mode: 'classic' },
         ]);
         expect(storage.setItem).toHaveBeenCalledWith(KEY, expect.any(String));
+    });
+
+    it('migrates mode-less records as classic and keeps endless scores separate', () => {
+        const previous = run({ id: 'previous' });
+        const { mode: _mode, ...modeLess } = previous;
+        const storage = memoryStorage(JSON.stringify({
+            version: 2, nickname: 'OLD', motion: 'reduced', records: [modeLess],
+        }));
+        const store = new LocalProfileStore(storage);
+        expect(store.getRecentRecords('default')).toEqual([previous]);
+        expect(store.getRecentRecords('default', 'endless')).toEqual([]);
+
+        store.saveRun(run({ id: 'endless', mode: 'endless', score: 5000, pointsCollected: 30,
+            totalPoints: 30 }));
+        expect(store.getTopRecords('default').map((record) => record.id)).toEqual(['previous']);
+        expect(store.getTopRecords('default', 'endless').map((record) => record.id)).toEqual(['endless']);
+        const reloaded = new LocalProfileStore(storage);
+        expect(reloaded.getNickname()).toBe('OLD');
+        expect(reloaded.getMotion()).toBe('reduced');
+        expect(reloaded.getRecentRecords('default', 'endless')[0].pointsCollected).toBe(30);
     });
 
     it('keeps top and recent runs independently, separates maps, and deduplicates IDs', () => {

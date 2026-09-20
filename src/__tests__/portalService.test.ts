@@ -182,4 +182,21 @@ describe('PortalService', () => {
     expect(movedVertical).toBe(true);
     expect(verticalEntity.tile).toEqual({ x: 1, y: 2 });
   });
+
+  it('replaces portal links and removes endpoints from evicted sections', () => {
+    const grid = new CollisionGrid(Array.from({ length: 4 }, () =>
+      Array.from({ length: 3 }, () => openTile())));
+    const portals = new PortalService(grid, [
+      { from: { x: 0, y: 1 }, to: { x: 2, y: 1 } },
+    ]);
+    expect(portals.getTransition({ x: 0, y: 1 }, 'left', grid)).toEqual({ x: 2, y: 1 });
+
+    portals.replacePairs([{ from: { x: 0, y: 3 }, to: { x: 2, y: 3 } }]);
+    expect(portals.getTransition({ x: 0, y: 1 }, 'left', grid)).toBeNull();
+    expect(portals.getTransition({ x: 0, y: 3 }, 'left', grid)).toEqual({ x: 2, y: 3 });
+    expect(portals.getTransition({ x: 2, y: 3 }, 'right', grid)).toEqual({ x: 0, y: 3 });
+
+    portals.replacePairs([]);
+    expect(portals.getTransition({ x: 0, y: 3 }, 'left', grid)).toBeNull();
+  });
 });

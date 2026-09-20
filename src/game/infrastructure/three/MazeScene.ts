@@ -1,6 +1,6 @@
 import {
   BoxGeometry, BufferGeometry, Color, EdgesGeometry, Float32BufferAttribute, Group, InstancedMesh,
-  Material, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Vector3,
+  Material, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, Plane, PlaneGeometry, Vector3,
 } from 'three';
 import type { WorldMapData, WorldTile } from '../../domain/world/WorldState';
 import type { QuarantineWall } from '../../domain/world/WorldState';
@@ -30,15 +30,21 @@ export class MazeScene {
   private wallEdges: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
   private quarantineEdges: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
   private wallTopologyKey = '';
+  private readonly clipPlanes?: [Plane, Plane];
 
   /** Builds the authored maze from one contour pass shared by its wall mesh and outlines. */
-  constructor(world: { map: WorldMapData }) {
+  constructor(world: { map: WorldMapData }, clipBounds?: { minZ: number; maxZ: number }) {
     this.group.name = 'maze';
+    if (clipBounds) {
+      this.clipPlanes = [new Plane(new Vector3(0, 0, 1), -clipBounds.minZ),
+        new Plane(new Vector3(0, 0, -1), clipBounds.maxZ)];
+    }
     const { map } = world;
     this.map = map;
     const floorGeometry = this.own(new PlaneGeometry(map.tileWidth, map.tileHeight));
     floorGeometry.rotateX(-Math.PI / 2);
     const floorMaterial = this.own(createMazeFloorMaterial());
+    floorMaterial.clippingPlanes = this.clipPlanes ?? null;
     const tiles = map.tiles.flat().filter((tile) => tile.gid !== null);
     const floor = this.own(new InstancedMesh(floorGeometry, floorMaterial, tiles.length));
     floor.name = 'floor';
@@ -109,19 +115,28 @@ export class MazeScene {
     this.group.clear();
   }
 
+  /** Moves the two world-space clipping boundaries with a retained stream section. */
+  setClipBounds(minZ: number, maxZ: number): void {
+    if (!this.clipPlanes) return;
+    this.clipPlanes[0].constant = -minZ;
+    this.clipPlanes[1].constant = maxZ;
+  }
+
   private own<T extends BufferGeometry | Material | InstancedMesh>(resource: T): T {
     this.resources.add(resource);
     return resource;
   }
 
   private createWallMaterial(color: string): MeshStandardMaterial {
-    return this.own(new MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.12 }));
+    return this.own(new MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.12,
+      ...(this.clipPlanes ? { clippingPlanes: this.clipPlanes } : {}) }));
   }
 
   private createOutlineStrips(source: BufferGeometry, color: Color): InstancedMesh<BoxGeometry, MeshBasicMaterial> {
     const positions = source.getAttribute('position');
     const geometry = this.own(new BoxGeometry(1, 1, 1));
-    const material = this.own(new MeshBasicMaterial({ color, toneMapped: false }));
+    const material = this.own(new MeshBasicMaterial({ color, toneMapped: false,
+      ...(this.clipPlanes ? { clippingPlanes: this.clipPlanes } : {}) }));
     const lines = this.own(new InstancedMesh(geometry, material, positions.count / 2));
     const transform = new Object3D();
     const start = new Vector3();

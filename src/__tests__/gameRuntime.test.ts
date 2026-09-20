@@ -362,7 +362,8 @@ describe('GameRuntime', () => {
     for (let frame = 1; frame <= 65; frame += 1) nextFrame?.(220 + frame * 17);
     const result = onStateChange.mock.lastCall?.[0].result;
     expect(result).toMatchObject({
-      outcome: 'lost', score: 100, lives: 0, pointsCollected: 0, totalPoints: 1, levelsCleared: 0,
+      mode: 'classic', outcome: 'lost', score: 100, lives: 0,
+      pointsCollected: 0, totalPoints: 1, levelsCleared: 0,
     });
     expect(result?.elapsedMs).toBeGreaterThanOrEqual(934);
     expect(result?.elapsedMs).toBeLessThanOrEqual(951);
@@ -385,6 +386,31 @@ describe('GameRuntime', () => {
     nextFrame?.(50);
     expect(spies.world.isMoving).toBe(true);
     expect(onStateChange).toHaveBeenCalledExactlyOnceWith({ paused: false, result: null, levelClear: null });
+    runtime.destroy();
+  });
+
+  it('never checkpoints Endless and reports touched pickups after the last section empties', async () => {
+    const { composed, spies } = createComposedGame();
+    Object.assign(spies.world, { runMode: 'endless' });
+    let remaining = 10;
+    composed.getRemainingPointCount = () => remaining;
+    composed.getCollectedPointCount = () => 7;
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime({ compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot,
+      onStateChange);
+    resetGameState(80, 0);
+    await runtime.start();
+    nextFrame?.(1);
+    remaining = 0;
+    nextFrame?.(20);
+    expect(spies.world.isMoving).toBe(true);
+    expect(onStateChange.mock.lastCall?.[0].levelClear).toBeNull();
+    spies.world.outcome = 'lost';
+    nextFrame?.(40);
+    expect(onStateChange.mock.lastCall?.[0].result).toMatchObject({
+      mode: 'endless', outcome: 'lost', score: 80, pointsCollected: 7, totalPoints: 7,
+      levelsCleared: 0,
+    });
     runtime.destroy();
   });
 

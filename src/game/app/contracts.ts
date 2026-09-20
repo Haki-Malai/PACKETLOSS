@@ -5,7 +5,10 @@ import { TimerSchedulerAdapter } from '../infrastructure/adapters/TimerScheduler
 import type { TutorialController } from '../tutorial/TutorialController';
 import type { TutorialSnapshot } from '../tutorial/TutorialLesson';
 
+export type RunMode = 'classic' | 'endless';
+
 export interface RunResult {
+  mode?: RunMode;
   outcome: 'lost' | 'cleared';
   score: number;
   lives: number;
@@ -69,6 +72,7 @@ export interface ComposedGame {
   updateSystems: UpdateCapableSystem[];
   renderSystems: RenderCapableSystem[];
   getRemainingPointCount(): number;
+  getCollectedPointCount?(): number;
   resetLevel(): number;
   tutorial?: TutorialController;
   destroy: () => void;

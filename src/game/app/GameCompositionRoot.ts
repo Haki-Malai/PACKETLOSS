@@ -10,6 +10,7 @@ import { MovementRules } from '../domain/services/MovementRules';
 import { PortalService } from '../domain/services/PortalService';
 import { TilePosition } from '../domain/valueObjects/TilePosition';
 import { CollisionGrid } from '../domain/world/CollisionGrid';
+import { EndlessMazeStream } from '../domain/world/EndlessMazeStream';
 import { WorldState } from '../domain/world/WorldState';
 import { BrowserInputAdapter } from '../infrastructure/adapters/BrowserInputAdapter';
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
@@ -33,11 +34,14 @@ import { InputSystem } from '../systems/InputSystem';
 import { PacketMovementSystem } from '../systems/PacketMovementSystem';
 import { RenderSystem } from '../systems/RenderSystem';
 import { ScoreBonusSystem } from '../systems/ScoreBonusSystem';
+import { EndlessBonusSystem } from '../systems/EndlessBonusSystem';
+import { EndlessEncounterSystem } from '../systems/EndlessEncounterSystem';
+import { EndlessStreamingSystem } from '../systems/EndlessStreamingSystem';
 import { prepareTutorialWorld, TutorialController } from '../tutorial/TutorialController';
 import type { TutorialLessonId } from '../tutorial/TutorialLesson';
 import { MapVariant, resolveMapPathsForVariant, SCORE_BONUS_TILES } from './mapRuntimeConfig';
 import type { PreloadedGameResources } from './preloadGameResources';
-import { ComposedGame, RuntimeControl } from './contracts';
+import { ComposedGame, RuntimeControl, type RunMode } from './contracts';
 
 // Keep the development constructor outside the startup try/catch so production can omit its module.
 const DevelopmentDebugSystem = IS_DEV ? DebugOverlaySystem : null;
@@ -72,6 +76,8 @@ export interface GameCompositionOptions {
   tutorialLesson?: TutorialLessonId;
   rng?: (() => number) | { next(): number; int(maxExclusive: number): number };
   preloadedResources?: PreloadedGameResources;
+  mode?: RunMode;
+  endlessSeed?: number;
 }
 
 export class GameCompositionRoot {
@@ -92,6 +98,9 @@ export class GameCompositionRoot {
     }
 
     const rng = this.options.tutorialLesson ? new SeededRandom(1) : toRandomSource(this.options.rng ?? Math.random);
+    const mode: RunMode = this.options.tutorialLesson ? 'classic' : this.options.mode ?? 'classic';
+    const endlessSeed = mode === 'endless' ? this.options.endlessSeed ?? rng.int(0x100000000) : 0;
+    const stream = mode === 'endless' ? new EndlessMazeStream(endlessSeed) : undefined;
     const mapVariant = this.options.tutorialLesson ? 'demo' : this.options.mapVariant ?? 'default';
     const { mapJsonPath } = resolveMapPathsForVariant(mapVariant);
     let assets: ArcadeAssets | undefined;
@@ -101,7 +110,7 @@ export class GameCompositionRoot {
     let renderSystem: RenderSystem | undefined;
     try {
       const preloaded = this.options.preloadedResources?.take(mapVariant);
-      const map = preloaded?.map ?? await this.loadMapForVariant(
+      const map = stream?.map ?? preloaded?.map ?? await this.loadMapForVariant(
         new TiledMapRepository(), mapVariant, mapJsonPath, signal,
       );
       assets = preloaded?.assets;
@@ -122,8 +131,10 @@ export class GameCompositionRoot {
         y: Math.floor(map.height / 2),
       };
 
-      const packetTile = jailService.resolveSpawnTile(map.packetSpawn, centerTile, map);
-      const enemyJailBounds = jailService.resolveEnemyJailBounds(map, packetTile);
+      const packetTile = stream ? centerTile : jailService.resolveSpawnTile(map.packetSpawn, centerTile, map);
+      const enemyJailBounds = stream
+        ? { minX: 0, maxX: -1, y: -1000 }
+        : jailService.resolveEnemyJailBounds(map, packetTile);
 
       const enemyCountRaw = getObjectNumberProperty(map.enemyHome, 'enemyCount') ?? ENEMY_KEYS.length;
       const enemyCount = clamp(Math.round(enemyCountRaw), 0, ENEMY_KEYS.length);
@@ -152,6 +163,10 @@ export class GameCompositionRoot {
         });
 
         movementRules.setEntityTile(enemy, spawnTile);
+        if (stream) {
+          enemy.active = false;
+          enemy.state.soonFree = false;
+        }
         enemies.push(enemy);
       }
       // Reserve a bounded copy pool; inactive slots never enter jail release or collisions.
@@ -180,6 +195,7 @@ export class GameCompositionRoot {
         enemies,
         enemyJailBounds,
       });
+      world.runMode = mode;
       const tutorialPoints = this.options.tutorialLesson
         ? prepareTutorialWorld(this.options.tutorialLesson, world, movementRules)
         : undefined;
@@ -191,22 +207,31 @@ export class GameCompositionRoot {
 
       const portalService = new PortalService(collisionGrid, map.portalPairs ?? []);
       const enemyDecisions = new EnemyDecisionService();
-      const gameplayRng = this.options.tutorialLesson ? new SeededRandom(1) : rng;
+      const gameplayRng = this.options.tutorialLesson ? new SeededRandom(1)
+        : stream ? new SeededRandom(endlessSeed ^ 0x5dddc41b) : rng;
 
       const inputSystem = new InputSystem(input, world, runtimeControl, !this.options.tutorialLesson);
       const enemyAbilitySystem = new EnemyAbilitySystem(world, movementRules, portalService, gameplayRng);
-      const collectibleSystem = new CollectibleSystem(world, tutorialPoints);
+      const collectibleSystem = new CollectibleSystem(world, tutorialPoints, stream?.initialPickupSeed);
       const scoreBonusSystem = this.options.tutorialLesson
         ? undefined
-        : new ScoreBonusSystem(world, collectibleSystem, SCORE_BONUS_TILES[mapVariant]);
+        : stream ? new EndlessBonusSystem(world, stream, endlessSeed)
+          : new ScoreBonusSystem(world, collectibleSystem, SCORE_BONUS_TILES[mapVariant]);
       const mazeHazardSystem = new MazeHazardSystem(world, movementRules, gameplayRng, collectibleSystem);
       const packetSystem = new PacketMovementSystem(world, movementRules, portalService);
-      const enemyReleaseSystem = this.options.tutorialLesson
+      const enemyReleaseSystem = this.options.tutorialLesson || stream
         ? null
         : new EnemyReleaseSystem(world, movementRules, jailService, scheduler, rng);
-      const enemyMovementSystem = new EnemyMovementSystem(world, movementRules, enemyDecisions, portalService, gameplayRng);
+      const enemyMovementSystem = new EnemyMovementSystem(world, movementRules, enemyDecisions, portalService,
+        gameplayRng, stream ? () => camera.getVisibleGroundBounds() : undefined);
+      let encounterSystem: EndlessEncounterSystem | undefined;
       /** Restores the jail roster, then chooses fresh routes before rerelease. */
       const resetEnemiesToJail = (): void => {
+        if (encounterSystem) {
+          encounterSystem.onPacketRespawn();
+          enemyMovementSystem.reset();
+          return;
+        }
         enemyReleaseSystem?.resetToJail();
         enemyMovementSystem.reset();
       };
@@ -214,7 +239,7 @@ export class GameCompositionRoot {
         world,
         movementRules,
         SPEED.enemy,
-        enemyReleaseSystem ? resetEnemiesToJail : undefined,
+        enemyReleaseSystem || stream ? resetEnemiesToJail : undefined,
       );
       const animationSystem = new AnimationSystem(world, SPEED.enemy);
       const cameraSystem = new CameraSystem(world, camera, renderer, canvas, !!this.options.tutorialLesson);
@@ -224,7 +249,15 @@ export class GameCompositionRoot {
       const debugSystem = IS_DEV && DevelopmentDebugSystem
         ? new DevelopmentDebugSystem(world, camera, this.options.onDebugChange) : null;
       renderSystem = new RenderSystem(world, renderer, camera, collectibleSystem, assets,
-        tutorial ? () => tutorial.getMarkerTiles() : undefined, scoreBonusSystem);
+        tutorial ? () => tutorial.getMarkerTiles() : undefined, scoreBonusSystem, stream);
+      if (stream) {
+        encounterSystem = new EndlessEncounterSystem(world, camera, movementRules, enemyMovementSystem,
+          new SeededRandom(endlessSeed ^ 0x29a655e1), portalService);
+      }
+      const streamingSystem = stream && scoreBonusSystem instanceof EndlessBonusSystem
+        ? new EndlessStreamingSystem(world, stream, portalService, camera, collectibleSystem,
+          scoreBonusSystem, enemyMovementSystem, mazeHazardSystem, renderSystem)
+        : undefined;
       await renderer.prepare(renderSystem.scene, camera.camera);
       signal?.throwIfAborted();
 
@@ -241,6 +274,8 @@ export class GameCompositionRoot {
         cameraSystem,
         collectibleSystem,
         ...(scoreBonusSystem ? [scoreBonusSystem] : []),
+        ...(encounterSystem ? [encounterSystem] : []),
+        ...(streamingSystem ? [streamingSystem] : []),
         ...(debugSystem ? [debugSystem] : []),
       ];
 
@@ -255,12 +290,13 @@ export class GameCompositionRoot {
         updateSystems,
         renderSystems,
         getRemainingPointCount: () => collectibleSystem.getPointCount(),
+        getCollectedPointCount: () => collectibleSystem.getCollectedCount(),
         /** Refills collectibles and restores actors for an explicitly continued normal level. */
         resetLevel: () => {
           resetPacketForLevel(world, movementRules);
           resetEnemiesToJail();
           const count = collectibleSystem.refill();
-          scoreBonusSystem?.refill();
+          if (scoreBonusSystem instanceof ScoreBonusSystem) scoreBonusSystem.refill();
           return count;
         },
         ...(tutorial ? { tutorial } : {}),

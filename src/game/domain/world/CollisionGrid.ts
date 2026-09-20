@@ -38,9 +38,17 @@ export class CollisionGrid {
   readonly height: number;
   private temporaryEdges = new Set<string>();
 
-  constructor(private readonly grid: CollisionTile[][]) {
+  constructor(private grid: CollisionTile[][]) {
     this.height = grid.length;
     this.width = grid[0]?.length ?? 0;
+  }
+
+  /** Replaces authored tiles for a rolling maze while retaining temporary closures. */
+  replaceGrid(grid: CollisionTile[][]): void {
+    if (grid.length !== this.height || grid.some((row) => row.length !== this.width)) {
+      throw new Error('Replacement collision grid dimensions must match.');
+    }
+    this.grid = grid;
   }
 
   /** Reads authored collision with temporary passage closures applied symmetrically. */

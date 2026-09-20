@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { IS_DEV } from '../../config/environment';
 import { useEnvironment } from '../../config/EnvironmentContext';
 import type { CreatePacketGameOptions } from '../app/createPacketGame';
+import type { RunMode } from '../app/contracts';
 import type { LevelClearCheckpoint, PacketGame, RunResult, RuntimeState } from '../app/contracts';
 import type { MapVariant } from '../app/mapRuntimeConfig';
 import type { PreloadedGameResources } from '../app/preloadGameResources';
@@ -56,6 +57,7 @@ interface ShellState {
     errorMessage: string;
     focusTarget: string | null;
     navigation: number;
+    runMode: RunMode;
 }
 
 /**
@@ -84,6 +86,7 @@ export function useGameSession(options: GameShellOptions) {
         errorMessage: '',
         focusTarget: null,
         navigation: 0,
+        runMode: 'classic',
     });
     // Runtime callbacks and repeated clicks must see transitions before React commits them.
     const current = useRef(state);
@@ -162,12 +165,15 @@ export function useGameSession(options: GameShellOptions) {
         }
         if (runtime.result) {
             if (view.result) return;
-            const best = store.getTopRecords(options.mapVariant)[0];
+            const mode = runtime.result.mode ?? view.runMode;
+            const recordMap = mode === 'endless' ? 'default' : options.mapVariant;
+            const best = store.getTopRecords(recordMap, mode)[0];
             store.saveRun({
                 ...runtime.result,
                 id,
                 nickname,
-                map: options.mapVariant,
+                map: recordMap,
+                mode,
                 completedAt: new Date().toISOString(),
             });
             show('result', null, {
@@ -192,7 +198,7 @@ export function useGameSession(options: GameShellOptions) {
      *
      * @param tutorialLesson - Practice lesson to start, or omit for a normal run on the chosen map.
      */
-    function startRun(tutorialLesson?: TutorialLessonId) {
+    function startRun(tutorialLesson?: TutorialLessonId, mode: RunMode = 'classic') {
         const owner = lifetime.current;
         if (!owner.active || current.current.screen === 'loading') return;
         disposeRun();
@@ -218,6 +224,7 @@ export function useGameSession(options: GameShellOptions) {
             tutorialLesson: tutorialLesson ?? null,
             tutorial,
             newBest: false,
+            runMode: tutorialLesson ? 'classic' : mode,
         });
         /** Checks that this startup attempt still belongs to the mounted session. */
         const valid = () => owner.active && owner.generation === generation;
@@ -233,6 +240,7 @@ export function useGameSession(options: GameShellOptions) {
             const game = createGame({
                 mountId: 'packet-scene',
                 mapVariant: tutorialLesson ? 'demo' : options.mapVariant,
+                mode: tutorialLesson ? 'classic' : mode,
                 ...(options.preloadedResources
                     ? { preloadedResources: options.preloadedResources }
                     : {}),
@@ -286,6 +294,7 @@ export function useGameSession(options: GameShellOptions) {
             tutorialLesson: null,
             tutorial: null,
             confirmation: null,
+            runMode: 'classic',
         });
     }
 
@@ -400,7 +409,7 @@ export function useGameSession(options: GameShellOptions) {
         /** Leaves practice and returns focus to the title menu's Tutorial button. */
         exitTutorial: () => mainMenu('[data-action="tutorial"]'),
         /** Restarts the current practice lesson or normal run after a failed attempt. */
-        retrySession: () => startRun(current.current.tutorialLesson ?? undefined),
+        retrySession: () => startRun(current.current.tutorialLesson ?? undefined, current.current.runMode),
         /**
          * Rerenders the current menu after profile or preference changes.
          *

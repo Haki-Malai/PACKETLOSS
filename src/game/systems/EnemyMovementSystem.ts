@@ -8,11 +8,12 @@ import { WorldState } from '../domain/world/WorldState';
 import { CollisionGrid } from '../domain/world/CollisionGrid';
 import { Direction, OPPOSITE_DIRECTION } from '../domain/valueObjects/Direction';
 import { ENEMY_EAT_DURATION_MS } from '../shared/enemyEating';
+import { ENDLESS_SETTINGS } from '../shared/endlessSettings';
 
 export class EnemyMovementSystem {
   private readonly navigation: EnemyNavigationService;
   private readonly physicalNavigation: EnemyNavigationService;
-  private readonly patrolNavigation: EnemyNavigationService;
+  private patrolNavigation: EnemyNavigationService;
   private readonly returnNavigation: EnemyNavigationService;
   private readonly returningEnemies = new WeakSet<EnemyEntity>();
 
@@ -23,6 +24,7 @@ export class EnemyMovementSystem {
     private readonly decisions: EnemyDecisionService,
     private readonly portalService: PortalService,
     private readonly rng: RandomSource,
+    private readonly endlessVisibleBounds?: () => { minY: number; maxY: number },
   ) {
     this.navigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService);
     this.physicalNavigation = new EnemyNavigationService(world.collisionGrid, world.tileSize, portalService, 'physical');
@@ -109,6 +111,19 @@ export class EnemyMovementSystem {
     this.prepareFirewallPatrols();
   }
 
+  /** Drops patrol routes and their old topology snapshot after a streamed section shift. */
+  onTopologyChanged(): void {
+    this.patrolNavigation = new EnemyNavigationService(
+      new CollisionGrid(this.world.collisionGrid.toArray()), this.world.tileSize, this.portalService);
+    this.decisions.reset();
+    this.prepareFirewallPatrols();
+  }
+
+  /** Gives a newly entered Firewall its long patrol on the current topology. */
+  onEnemyActivated(enemy: EnemyEntity): void {
+    if (enemy.key === 'firewall') this.prepareFirewallPatrol(enemy);
+  }
+
   /** Advances collapse timing, then moves a harmless enemy toward the jail. */
   private returnToJail(enemy: EnemyEntity, deltaMs: number): void {
     const elapsed = Number.isFinite(deltaMs) && deltaMs > 0 ? deltaMs : 0;
@@ -118,6 +133,11 @@ export class EnemyMovementSystem {
     const movementElapsed = previousElapsed < ENEMY_EAT_DURATION_MS
       ? Math.max(0, previousElapsed + elapsed - ENEMY_EAT_DURATION_MS) : elapsed;
     if (movementElapsed <= 0) return;
+
+    if (this.world.runMode === 'endless') {
+      this.fleeEndlessMaze(enemy, movementElapsed);
+      return;
+    }
 
     enemy.speed = enemy.baseSpeed * 2;
     const centered = enemy.moved.x === 0 && enemy.moved.y === 0;
@@ -148,6 +168,39 @@ export class EnemyMovementSystem {
     this.movementRules.syncEntityPosition(enemy);
   }
 
+  /** Routes a harmless eaten bug to the nearest physical corridor outside the camera. */
+  private fleeEndlessMaze(enemy: EnemyEntity, deltaMs: number): void {
+    const bounds = this.endlessVisibleBounds?.();
+    if (!bounds) return;
+    const margin = this.world.tileSize * ENDLESS_SETTINGS.bugExitMarginTiles;
+    if (enemy.y < bounds.minY - margin || enemy.y > bounds.maxY + margin) {
+      enemy.active = false;
+      enemy.state.dead = false;
+      enemy.eatenElapsedMs = null;
+      enemy.resetAbilities();
+      this.world.enemyAnimations.delete(enemy);
+      return;
+    }
+    if (enemy.moved.x === 0 && enemy.moved.y === 0) {
+      const upperRow = Math.max(0, Math.floor((bounds.minY - margin) / this.world.tileSize) - 1);
+      const lowerRow = Math.min(this.world.map.height - 1,
+        Math.ceil((bounds.maxY + margin) / this.world.tileSize) + 1);
+      const targets = [upperRow, lowerRow].flatMap((y) =>
+        Array.from({ length: this.world.map.width }, (_, x) => ({ x, y })))
+        .filter(({ x, y }) => {
+          const tile = this.world.map.tiles[y]?.[x];
+          return tile && tile.localId !== null && tile.localId < 16;
+        });
+      const path = this.physicalNavigation.findPathToAny(enemy.tile, targets)?.steps;
+      if (!path?.length) return;
+      enemy.direction = path[0].direction;
+    }
+    enemy.speed = enemy.baseSpeed * 2;
+    this.movementRules.advanceEntity(enemy, enemy.direction,
+      this.movementRules.movementDistance(enemy.speed, deltaMs));
+    this.movementRules.syncEntityPosition(enemy);
+  }
+
   private chooseReturnDirection(enemy: EnemyEntity): Direction | null {
     const target = this.world.enemyJailReturnTile;
     const anchorPath = this.returnNavigation.findPath(enemy.tile, target);
@@ -167,7 +220,7 @@ export class EnemyMovementSystem {
   /** Chooses new patrols for active Firewall instances at their current lifecycle origin. */
   private prepareFirewallPatrols(): void {
     this.world.enemies.forEach((enemy) => {
-      if (enemy.active && enemy.key === 'firewall') this.prepareFirewallPatrol(enemy);
+      if (enemy.active && enemy.key === 'firewall' && !enemy.state.dead) this.prepareFirewallPatrol(enemy);
     });
   }
 

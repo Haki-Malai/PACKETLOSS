@@ -4,6 +4,7 @@ import { MovementProgress } from '../valueObjects/MovementProgress';
 import { TilePosition } from '../valueObjects/TilePosition';
 import { CollisionGrid, CollisionTile } from './CollisionGrid';
 import type { WallConnection } from './MazeFootprint';
+import type { RunMode } from '../../app/contracts';
 
 export interface WorldProperty {
   name: string;
@@ -54,6 +55,7 @@ export interface WorldMapData {
   collectibleObjects?: WorldObject[];
   packetSpawn?: WorldObject;
   enemyHome?: WorldObject;
+  topologyRevision?: number;
 }
 
 export type AnimationKey = 'scaredIdle' | `${EnemyEntity['key']}Idle`;
@@ -122,6 +124,8 @@ export interface MovableEntity {
 }
 
 export class WorldState {
+  runMode: RunMode = 'classic';
+  powerRemainingMs = 0;
   readonly map: WorldMapData;
   readonly tileSize: number;
   readonly collisionGrid: CollisionGrid;

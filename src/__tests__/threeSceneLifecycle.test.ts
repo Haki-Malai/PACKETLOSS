@@ -134,6 +134,21 @@ describe('Three.js scene lifecycle', () => {
     system.destroy();
   });
 
+  it('shows duplicate random icon kinds and releases extra models after their sections leave', () => {
+    const { system, bonuses } = createSceneHarness(true);
+    const original = bonuses!.getPickups();
+    const duplicate = { ...original[0], x: 40, y: 40 };
+    const getPickups = vi.spyOn(bonuses!, 'getPickups').mockReturnValue([...original, duplicate]);
+    system.render();
+    const extra = system.scene.getObjectByName('score-bonus-bug-2');
+    expect(extra?.visible).toBe(true);
+    expect(extra?.position.x).toBe(40);
+    getPickups.mockReturnValue(original);
+    system.render();
+    expect(system.scene.getObjectByName('score-bonus-bug-2')).toBeUndefined();
+    system.destroy();
+  });
+
   it('hides covered bits without changing collection state and restores them when the icon leaves', () => {
     const { world, system, bonuses, collectibles } = createSceneHarness(true);
     const bits = system.scene.getObjectByName('pellets-base') as InstancedMesh;

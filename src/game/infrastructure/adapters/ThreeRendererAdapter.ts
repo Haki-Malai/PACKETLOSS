@@ -33,6 +33,7 @@ export class ThreeRendererAdapter implements RendererViewport {
     }
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
+    this.renderer.localClippingEnabled = true;
   }
 
   get width(): number {

@@ -95,6 +95,12 @@ export class Camera2D {
     };
   }
 
+  /** Rebases current and previous tracking coordinates without a visual camera jump. */
+  translateY(pixels: number): void {
+    this.y += pixels;
+    this.previousY += pixels;
+  }
+
   private syncPreviousPosition(): void {
     this.previousX = this.x;
     this.previousY = this.y;
