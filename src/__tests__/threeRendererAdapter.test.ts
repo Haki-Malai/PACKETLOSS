@@ -9,6 +9,7 @@ const renderer = vi.hoisted(() => {
     toneMapping: 0,
     setDrawingBufferSize: vi.fn((_width: number, _height: number, value: number) => { pixelRatio = value; }),
     getPixelRatio: vi.fn(() => pixelRatio),
+    compileAsync: vi.fn(async () => {}),
     render: vi.fn(),
     dispose: vi.fn(),
   };
@@ -137,6 +138,19 @@ describe('ThreeRendererAdapter', () => {
 
     expect(renderer.dispose).toHaveBeenCalledOnce();
     expect(renderer.render).toHaveBeenCalledOnce();
+  });
+
+  it('waits for scene shaders before drawing and does not compile after disposal', async () => {
+    const adapter = new ThreeRendererAdapter({} as HTMLCanvasElement);
+    const scene = new Scene();
+    const camera = new OrthographicCamera();
+    await adapter.prepare(scene, camera);
+    adapter.render(scene, camera);
+    expect(renderer.compileAsync).toHaveBeenCalledExactlyOnceWith(scene, camera);
+    expect(renderer.compileAsync.mock.invocationCallOrder[0]).toBeLessThan(renderer.render.mock.invocationCallOrder[0]);
+    adapter.dispose();
+    await adapter.prepare(scene, camera);
+    expect(renderer.compileAsync).toHaveBeenCalledTimes(1);
   });
 
   it('can dispose before the first frame', () => {

@@ -121,8 +121,9 @@ describe('GameCompositionRoot startup', () => {
     loadMap.mockClear();
     const loadAssets = vi.spyOn(ArcadeAssets, 'load');
     const rendererDispose = vi.fn();
+    const prepare = vi.fn(async () => {});
     vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
-      return { dispose: rendererDispose } as unknown as ThreeRendererAdapter;
+      return { dispose: rendererDispose, prepare } as unknown as ThreeRendererAdapter;
     });
     const preloadedResources = new PreloadedGameResources({ default: map, demo: map }, assets);
 
@@ -132,9 +133,40 @@ describe('GameCompositionRoot startup', () => {
     expect(loadAssets).not.toHaveBeenCalled();
     expect(composed.world.map).toBe(map);
     const render = composed.renderSystems.find((system) => system instanceof RenderSystem)!;
+    expect(prepare).toHaveBeenCalledExactlyOnceWith(render.scene, expect.anything());
     render.destroy?.();
     composed.destroy();
     expect(rendererDispose).toHaveBeenCalledOnce();
+    expect(mount.children).toHaveLength(0);
+  });
+
+  it('keeps the canvas unmounted and releases the scene if shader preparation is cancelled', async () => {
+    const { mount } = prepareComposition();
+    const assets = createCharacterAssets();
+    const disposeAssets = vi.spyOn(assets, 'dispose');
+    vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(assets);
+    let finishPreparation!: () => void;
+    const preparation = new Promise<void>((resolve) => { finishPreparation = resolve; });
+    const prepare = vi.fn(() => preparation);
+    const disposeRenderer = vi.fn();
+    vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
+      return { prepare, dispose: disposeRenderer } as unknown as ThreeRendererAdapter;
+    });
+    const destroyInput = vi.fn();
+    vi.mocked(BrowserInputAdapter).mockImplementationOnce(function () {
+      return { destroy: destroyInput } as unknown as BrowserInputAdapter;
+    });
+    const abort = new AbortController();
+    const starting = new GameCompositionRoot().compose(runtimeControl, abort.signal);
+
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+    expect(mount.children).toHaveLength(0);
+    abort.abort();
+    finishPreparation();
+    await expect(starting).rejects.toMatchObject({ name: 'AbortError' });
+    expect(disposeRenderer).toHaveBeenCalledOnce();
+    expect(disposeAssets).toHaveBeenCalledOnce();
+    expect(destroyInput).toHaveBeenCalledOnce();
     expect(mount.children).toHaveLength(0);
   });
 
@@ -185,7 +217,7 @@ describe('GameCompositionRoot startup', () => {
     vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(assets);
     const rendererDispose = vi.fn();
     vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
-      return { dispose: rendererDispose } as unknown as ThreeRendererAdapter;
+      return { dispose: rendererDispose, prepare: vi.fn(async () => {}) } as unknown as ThreeRendererAdapter;
     });
     const composed = await new GameCompositionRoot({ rng: () => 0.5 }).compose(runtimeControl);
     const render = composed.renderSystems.find((system) => system instanceof RenderSystem)!;
@@ -215,7 +247,7 @@ describe('GameCompositionRoot startup', () => {
     vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(createCharacterAssets());
     const rendererDispose = vi.fn();
     vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
-      return { dispose: rendererDispose } as unknown as ThreeRendererAdapter;
+      return { dispose: rendererDispose, prepare: vi.fn(async () => {}) } as unknown as ThreeRendererAdapter;
     });
     const composed = await new GameCompositionRoot({ rng: () => 0.5 }).compose(runtimeControl);
     const originals = composed.world.enemies.filter((enemy) => !enemy.isCopy);
@@ -270,7 +302,7 @@ describe('GameCompositionRoot startup', () => {
     const setZoom = vi.spyOn(Camera3D.prototype, 'setZoom');
     const rendererDispose = vi.fn();
     vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
-      return { dispose: rendererDispose, resize: vi.fn(), width: 320, height: 568 } as unknown as ThreeRendererAdapter;
+      return { dispose: rendererDispose, prepare: vi.fn(async () => {}), resize: vi.fn(), width: 320, height: 568 } as unknown as ThreeRendererAdapter;
     });
     const rng = vi.fn(() => 0.9);
     const composed = await new GameCompositionRoot({ mapVariant: 'default', tutorialLesson: 'ping', rng })

@@ -223,6 +223,8 @@ export class GameCompositionRoot {
         ? new DevelopmentDebugSystem(world, camera, this.options.onDebugChange) : null;
       renderSystem = new RenderSystem(world, renderer, camera, collectibleSystem, assets,
         tutorial ? () => tutorial.getMarkerTiles() : undefined, scoreBonusSystem);
+      await renderer.prepare(renderSystem.scene, camera.camera);
+      signal?.throwIfAborted();
 
       const updateSystems = [
         inputSystem,

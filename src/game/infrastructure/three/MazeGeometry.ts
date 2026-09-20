@@ -19,14 +19,13 @@ interface BoundaryEdge {
   visited: boolean;
 }
 
+const TURN_ORDER = [1, 0, 3, 2] as const;
 
+/** Traces each occupied pixel boundary into an oriented, simplified wall contour. */
 export function traceWallContours(footprint: MazeFootprint): WallContourPoint[][] {
   const edges: BoundaryEdge[] = [];
   const outgoing = new Map<number, BoundaryEdge[]>();
   const pointKey = (point: WallContourPoint): number => point.y * (footprint.width + 1) + point.x;
-  const occupied = (x: number, y: number): boolean =>
-    x >= 0 && y >= 0 && x < footprint.width && y < footprint.height
-      && Boolean(footprint.solid[y * footprint.width + x]);
   const addEdge = (x: number, y: number, endX: number, endY: number, direction: number): void => {
     const edge = { start: { x, y }, end: { x: endX, y: endY }, direction, visited: false };
     edges.push(edge);
@@ -36,13 +35,16 @@ export function traceWallContours(footprint: MazeFootprint): WallContourPoint[][
     outgoing.set(key, neighbors);
   };
 
-  for (let y = 0; y < footprint.height; y += 1) {
-    for (let x = 0; x < footprint.width; x += 1) {
-      if (!occupied(x, y)) continue;
-      if (!occupied(x, y - 1)) addEdge(x, y, x + 1, y, 0);
-      if (!occupied(x + 1, y)) addEdge(x + 1, y, x + 1, y + 1, 1);
-      if (!occupied(x, y + 1)) addEdge(x + 1, y + 1, x, y + 1, 2);
-      if (!occupied(x - 1, y)) addEdge(x, y + 1, x, y, 3);
+  const { width, height, solid } = footprint;
+  for (let y = 0; y < height; y += 1) {
+    const row = y * width;
+    for (let x = 0; x < width; x += 1) {
+      const index = row + x;
+      if (!solid[index]) continue;
+      if (y === 0 || !solid[index - width]) addEdge(x, y, x + 1, y, 0);
+      if (x === width - 1 || !solid[index + 1]) addEdge(x + 1, y, x + 1, y + 1, 1);
+      if (y === height - 1 || !solid[index + width]) addEdge(x + 1, y + 1, x, y + 1, 2);
+      if (x === 0 || !solid[index - 1]) addEdge(x, y + 1, x, y, 3);
     }
   }
 
@@ -55,11 +57,21 @@ export function traceWallContours(footprint: MazeFootprint): WallContourPoint[][
       edge.visited = true;
       points.push(edge.start);
       if (pointKey(edge.end) === pointKey(first.start)) break;
-      const candidates = outgoing.get(pointKey(edge.end)) ?? [];
+      const candidates = outgoing.get(pointKey(edge.end));
       // Keep occupied pixels on the right; diagonal-only contacts stay separate.
-      const next = [1, 0, 3, 2].map((turn) =>
-        candidates.find((candidate) => !candidate.visited && candidate.direction === (edge.direction + turn) % 4),
-      ).find((candidate) => candidate !== undefined);
+      let next: BoundaryEdge | undefined;
+      if (candidates) {
+        for (const turn of TURN_ORDER) {
+          const direction = (edge.direction + turn) % 4;
+          for (const candidate of candidates) {
+            if (!candidate.visited && candidate.direction === direction) {
+              next = candidate;
+              break;
+            }
+          }
+          if (next) break;
+        }
+      }
       if (!next) throw new Error('Wall footprint contains an open boundary');
       edge = next;
     } while (!edge.visited);
@@ -104,8 +116,10 @@ export function buildMazeWallGeometry(map: WorldMapData): BufferGeometry {
   return buildMazeWallGeometryFromFootprint(buildMazeWallFootprint(map));
 }
 
+/** Builds visible wall outlines, optionally reusing contours from the matching wall mesh. */
 export function buildMazeWallEdgeGeometry(
   footprint: MazeFootprint, adjoiningFootprint?: MazeFootprint, includeOuterContours = true,
+  contours = traceWallContours(footprint),
 ): BufferGeometry {
   const positions: number[] = [];
   const corners = new Set<string>();
@@ -116,7 +130,7 @@ export function buildMazeWallEdgeGeometry(
     return column >= 0 && column < adjoiningFootprint.width && row >= 0 && row < adjoiningFootprint.height
       && Boolean(adjoiningFootprint.solid[row * adjoiningFootprint.width + column]);
   };
-  for (const contour of traceWallContours(footprint)) {
+  for (const contour of contours) {
     if (!includeOuterContours && signedArea(contour) > 0) continue;
     // The square wall profile keeps both rings aligned, including around holes.
     for (const height of [0.08, WALL_HEIGHT + 0.01]) {
@@ -216,8 +230,10 @@ export function splitMazeWallEdgesByOwnership(
   };
 }
 
-export function buildMazeWallGeometryFromFootprint(footprint: MazeFootprint): BufferGeometry {
-  const contours = traceWallContours(footprint);
+/** Extrudes a wall footprint, optionally sharing its contours with the outline builder. */
+export function buildMazeWallGeometryFromFootprint(
+  footprint: MazeFootprint, contours = traceWallContours(footprint),
+): BufferGeometry {
   const outlines = contours.filter((contour) => signedArea(contour) > 0).map((contour) => {
     const shape = new Shape();
     setPathPoints(shape, contour);

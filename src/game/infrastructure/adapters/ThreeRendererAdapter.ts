@@ -115,6 +115,12 @@ export class ThreeRendererAdapter implements RendererViewport {
     this.renderer.setDrawingBufferSize(this.viewportWidth, this.viewportHeight, pixelRatio);
   }
 
+  /** Waits for scene shaders to finish compiling before the first gameplay frame. */
+  async prepare(scene: Scene, camera: OrthographicCamera): Promise<void> {
+    if (this.disposed) return;
+    await this.renderer.compileAsync(scene, camera);
+  }
+
   render(scene: Scene, camera: OrthographicCamera): void {
     if (this.disposed) {
       return;

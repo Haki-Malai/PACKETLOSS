@@ -8,7 +8,7 @@ import { clamp, lerp } from '../../engine/math';
 import { ENEMY_CONFIG, ENEMY_SCARED_WARNING_DURATION_MS, PACKET_DEATH_ANIMATION, PACKET_PORTAL_BLINK } from '../../config/constants';
 import { EnemyEntity } from '../domain/entities/EnemyEntity';
 import type { TilePosition } from '../domain/valueObjects/TilePosition';
-import type { ScoreBonusKind } from '../domain/valueObjects/ScoreBonus';
+import { SCORE_BONUS_TIERS, type ScoreBonusKind } from '../domain/valueObjects/ScoreBonus';
 import { WorldState } from '../domain/world/WorldState';
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { ArcadeAssets } from '../infrastructure/three/ArcadeAssets';
@@ -112,6 +112,17 @@ export class RenderSystem {
       this.scene.add(points);
     }
     this.syncPoints();
+    if (this.scoreBonuses) {
+      for (const { kind } of SCORE_BONUS_TIERS) {
+        const model = this.assets.createScoreBonus(kind);
+        if (!model) continue;
+        model.name = `score-bonus-${kind}`;
+        model.scale.setScalar(2.2);
+        model.visible = false;
+        this.bonusModels.set(kind, model);
+        this.scene.add(model);
+      }
+    }
   }
 
   capturePreviousState(): void {
@@ -267,7 +278,7 @@ export class RenderSystem {
     power.computeBoundingSphere();
   }
 
-  /** Shows the one available authored pickup, reusing its model across spawns. */
+  /** Shows the one available authored pickup using its model prepared at startup. */
   private syncScoreBonus(timeSeconds: number): void {
     const pickup = this.scoreBonuses?.getPickup();
     if (!pickup) {
@@ -275,15 +286,8 @@ export class RenderSystem {
       this.visibleBonus = null;
       return;
     }
-    let model = this.bonusModels.get(pickup.kind);
-    if (!model) {
-      model = this.assets.createScoreBonus(pickup.kind) ?? undefined;
-      if (!model) return;
-      model.name = `score-bonus-${pickup.kind}`;
-      model.scale.setScalar(2.2);
-      this.bonusModels.set(pickup.kind, model);
-      this.scene.add(model);
-    }
+    const model = this.bonusModels.get(pickup.kind);
+    if (!model) return;
     if (this.visibleBonus && this.visibleBonus !== model) this.visibleBonus.visible = false;
     this.visibleBonus = model;
     model.visible = true;
