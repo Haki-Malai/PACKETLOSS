@@ -1,8 +1,12 @@
 import {
   BufferGeometry,
+  Group,
   InstancedMesh,
   LineSegments,
   Material,
+  Matrix4,
+  Quaternion,
+  Vector3,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -17,9 +21,12 @@ import { CollisionGrid, createEmptyCollisionTile } from '../game/domain/world/Co
 import { WorldState, type WorldMapData } from '../game/domain/world/WorldState';
 import { CollectibleSystem } from '../game/systems/CollectibleSystem';
 import { RenderSystem } from '../game/systems/RenderSystem';
+import { ScoreBonusSystem } from '../game/systems/ScoreBonusSystem';
+import { setPointTransform } from '../game/infrastructure/three/PickupPresentation';
 import { createCharacterAssets } from './fixtures/characterFixtures';
 
-function createSceneHarness() {
+/** Builds an authored scene with optional bonus icons and a covered data bit. */
+function createSceneHarness(withBonuses = false) {
   const tiles = Array.from({ length: 3 }, (_, y) => Array.from({ length: 4 }, (_, x) => ({
     x,
     y,
@@ -46,6 +53,7 @@ function createSceneHarness() {
     collectibleObjects: [
       { type: 'pellet', x: 8, y: 24 },
       { type: 'power-pellet', x: 56, y: 24 },
+      ...(withBonuses ? [{ type: 'pellet', x: 24, y: 8 }] : []),
     ],
   };
   const packet = new PacketEntity({ x: 0, y: 1 }, 10, 10);
@@ -73,8 +81,15 @@ function createSceneHarness() {
   camera.snapToFollowTarget();
   const renderer = { pixelRatio: 1, render: vi.fn(), dispose: vi.fn() };
   const collectibles = new CollectibleSystem(world);
-  const system = new RenderSystem(world, renderer, camera, collectibles, createCharacterAssets());
-  return { world, enemy, camera, renderer, collectibles, system };
+  const assets = createCharacterAssets();
+  const bonuses = withBonuses
+    ? new ScoreBonusSystem(world, collectibles, [
+        { x: 1, y: 0 }, { x: 3, y: 0 }, { x: 0, y: 2 }, { x: 2, y: 2 }, { x: 3, y: 2 },
+      ])
+    : undefined;
+  if (bonuses) vi.spyOn(assets, 'createScoreBonus').mockImplementation(() => new Group());
+  const system = new RenderSystem(world, renderer, camera, collectibles, assets, undefined, bonuses);
+  return { world, enemy, camera, renderer, collectibles, system, bonuses };
 }
 
 type DisposableResource = BufferGeometry | Material | Texture | InstancedMesh;
@@ -98,6 +113,75 @@ function sceneResources(scene: Object3D): Set<DisposableResource> {
 }
 
 describe('Three.js scene lifecycle', () => {
+  it('shows all five preset bonus models and hides only the collected kind', () => {
+    const { world, system, bonuses } = createSceneHarness(true);
+    const first = system.scene.getObjectByName('score-bonus-bug')!;
+    const second = system.scene.getObjectByName('score-bonus-key')!;
+    system.render();
+    expect(first.visible).toBe(true);
+    expect(second.visible).toBe(true);
+    expect(['cloud', 'wifi', 'chip'].every((kind) =>
+      system.scene.getObjectByName(`score-bonus-${kind}`)?.visible)).toBe(true);
+    expect([first.position.x, second.position.x]).toEqual([24, 56]);
+
+    world.packet.x = 24;
+    world.packet.y = 8;
+    bonuses!.update(0);
+    system.render();
+    expect(first.visible).toBe(false);
+    expect(second.visible).toBe(true);
+    expect(second.position.x).toBe(56);
+    system.destroy();
+  });
+
+  it('hides covered bits without changing collection state and restores them when the icon leaves', () => {
+    const { world, system, bonuses, collectibles } = createSceneHarness(true);
+    const bits = system.scene.getObjectByName('pellets-base') as InstancedMesh;
+    system.render();
+    expect(bits.count).toBe(1);
+    const matrix = new Matrix4();
+    bits.getMatrixAt(0, matrix);
+    expect(new Vector3().setFromMatrixPosition(matrix).x).toBe(8);
+    expect(collectibles.getPointCount()).toBe(3);
+
+    world.packet.x = 24;
+    world.packet.y = 8;
+    bonuses!.update(0);
+    system.render();
+    expect(bits.count).toBe(2);
+    expect(collectibles.getPointCount()).toBe(3);
+    collectibles.update(0);
+    system.render();
+    expect(bits.count).toBe(1);
+    expect(collectibles.getPointCount()).toBe(2);
+    system.destroy();
+  });
+
+  it('gives all five icons the power-core turn and freezes it while paused', () => {
+    const { world, system, bonuses } = createSceneHarness(true);
+    const matrix = new Matrix4();
+    const expected = new Quaternion();
+    const position = new Vector3();
+    const scale = new Vector3();
+    for (const time of [0, 1.5, 3, 4.5, 6]) {
+      if (time > 0) system.update(1500);
+      system.render();
+      for (const pickup of bonuses!.getPickups()) {
+        const model = system.scene.getObjectByName(`score-bonus-${pickup.kind}`)!;
+        setPointTransform(matrix, 'power', pickup.x, pickup.y, time);
+        matrix.decompose(position, expected, scale);
+        expect(model.quaternion.angleTo(expected)).toBeLessThan(1e-7);
+      }
+    }
+    const bug = system.scene.getObjectByName('score-bonus-bug')!;
+    const pausedRotation = bug.quaternion.clone();
+    world.isMoving = false;
+    system.update(1500);
+    system.render();
+    expect(bug.quaternion.equals(pausedRotation)).toBe(true);
+    system.destroy();
+  });
+
   it('disposes active and cached GPU resources once, including retired effects and sign lettering', () => {
     const { system, world, enemy, renderer, collectibles } = createSceneHarness();
     const calls = new Map<DisposableResource, () => number>();

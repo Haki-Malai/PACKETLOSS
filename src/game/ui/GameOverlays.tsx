@@ -50,9 +50,11 @@ export function Hud({ onPause }: { onPause: () => void }) {
             </div>
             {bonus && (
                 <div className="packet-hud-section flex flex-col gap-1" data-hud-bonus={bonus.phase}>
-                    <span className="packet-hud-label">{bonus.phase === 'active' ? 'Boost' : 'Pickup'}</span>
-                    <span className="packet-hud-score" aria-label={`${bonus.kind} ${bonus.multiplier} times, ${bonus.seconds} seconds ${bonus.phase}`}>
-                        ×{bonus.multiplier} · {bonus.seconds}s
+                    <span className="packet-hud-label">{bonus.phase === 'active' ? 'Boost' : 'Pickups'}</span>
+                    <span className="packet-hud-score" aria-label={bonus.phase === 'active'
+                        ? `${bonus.kind} boost, ${bonus.multiplier} times, ${bonus.seconds} seconds active`
+                        : `${bonus.count} multiplier pickups available`}>
+                        {bonus.phase === 'active' ? `×${bonus.multiplier} · ${bonus.seconds}s` : `${bonus.count} available`}
                     </span>
                 </div>
             )}

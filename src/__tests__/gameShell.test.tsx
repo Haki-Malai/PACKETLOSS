@@ -324,7 +324,8 @@ describe('GameShell', () => {
             Array.from(page.root.querySelectorAll('dt')).map((node) => node.textContent)
         ).toEqual(['Collect', 'Enemy bonuses', 'Later levels']);
         expect(page.find('#packet-help-content').textContent).toContain('1,600 points');
-        expect(page.find('#packet-help-content').textContent).toContain('35% and 70%');
+        expect(page.find('#packet-help-content').textContent).toContain('All five icons wait');
+        expect(page.find('#packet-help-content').textContent).toContain('multiply its current value');
         expect(page.root.querySelectorAll('[data-bonus]')).toHaveLength(5);
         await flushStart();
         expect(mountScoreBonusPreviews).toHaveBeenCalledOnce();

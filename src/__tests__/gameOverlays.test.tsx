@@ -33,10 +33,10 @@ describe('React game overlays', () => {
         });
         expect(page.container.querySelector('[data-hud-score-value]')?.textContent).toBe('170');
         expect(page.container.querySelector('[data-hud-lives-value]')?.textContent).toBe('2');
-        act(() => setScoreBonusStatus({ kind: 'bug', multiplier: 1.5, seconds: 45, phase: 'available' }));
-        expect(page.container.querySelector('[data-hud-bonus="available"]')?.textContent).toContain('×1.5 · 45s');
-        act(() => setScoreBonusStatus({ kind: 'bug', multiplier: 1.5, seconds: 15, phase: 'active' }));
-        expect(page.container.querySelector('[data-hud-bonus="active"]')?.textContent).toContain('×1.5 · 15s');
+        act(() => setScoreBonusStatus({ phase: 'available', count: 5 }));
+        expect(page.container.querySelector('[data-hud-bonus="available"]')?.textContent).toContain('5 available');
+        act(() => setScoreBonusStatus({ kind: 'key', multiplier: 3, seconds: 15, phase: 'active' }));
+        expect(page.container.querySelector('[data-hud-bonus="active"]')?.textContent).toContain('×3 · 15s');
         act(() => setScoreBonusStatus(null));
         expect(page.container.querySelector('[data-hud-bonus]')).toBeNull();
         act(() => setLives(-0.5));

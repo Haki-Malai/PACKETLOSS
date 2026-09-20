@@ -18,7 +18,7 @@ import { EnemyEatPresentation } from '../infrastructure/three/EnemyEatPresentati
 import { MazeScene } from '../infrastructure/three/MazeScene';
 import { QuarantineWalls } from '../infrastructure/three/QuarantineWalls';
 import { TrojanDisguise } from '../infrastructure/three/TrojanDisguise';
-import { createEatEffectMesh, sampleEatEffect, setPointTransform } from '../infrastructure/three/PickupPresentation';
+import { createEatEffectMesh, samplePickupRotation, sampleEatEffect, setPointTransform } from '../infrastructure/three/PickupPresentation';
 import { addGameplayLighting } from '../infrastructure/three/ScenePresentation';
 import { TutorialMarker } from '../infrastructure/three/TutorialMarker';
 import { samplePickupPulse } from '../shared/pickupEffects';
@@ -49,8 +49,8 @@ export class RenderSystem {
   private readonly pointMatrix = new Matrix4();
   private readonly powerPoints: Array<{ x: number; y: number }> = [];
   private readonly bonusModels = new Map<ScoreBonusKind, Group>();
-  private visibleBonus: Group | null = null;
   private lastPointCount = -1;
+  private lastBonusCount = -1;
   private animationTime = 0;
   private previousAnimationTime = 0;
   private motionX = 0;
@@ -250,10 +250,14 @@ export class RenderSystem {
     this.renderer.dispose();
   }
 
+  /** Refreshes visible bits when points or covering bonuses change, and animates power cores. */
   private syncPoints(timeSeconds = 0): void {
     const pointCount = this.collectibles.getPointCount();
+    const pickups = this.scoreBonuses?.getPickups();
+    const bonusCount = pickups?.length ?? 0;
     const power = this.points.get('power')!;
-    if (pointCount !== this.lastPointCount) {
+    if (pointCount !== this.lastPointCount || bonusCount !== this.lastBonusCount) {
+      this.lastBonusCount = bonusCount;
       this.lastPointCount = pointCount;
       this.powerPoints.length = 0;
       const base = this.points.get('base')!;
@@ -262,6 +266,7 @@ export class RenderSystem {
         if (point.kind === 'power') {
           this.powerPoints.push(point);
         } else {
+          if (pickups?.some((pickup) => pickup.x === point.x && pickup.y === point.y)) continue;
           setPointTransform(this.pointMatrix, point.kind, point.x, point.y);
           base.setMatrixAt(base.count++, this.pointMatrix);
         }
@@ -278,21 +283,16 @@ export class RenderSystem {
     power.computeBoundingSphere();
   }
 
-  /** Shows the one available authored pickup using its model prepared at startup. */
+  /** Shows each available authored pickup using its model prepared at startup. */
   private syncScoreBonus(timeSeconds: number): void {
-    const pickup = this.scoreBonuses?.getPickup();
-    if (!pickup) {
-      if (this.visibleBonus) this.visibleBonus.visible = false;
-      this.visibleBonus = null;
-      return;
+    const pickups = this.scoreBonuses?.getPickups() ?? [];
+    for (const [kind, model] of this.bonusModels) {
+      const pickup = pickups.find((candidate) => candidate.kind === kind);
+      model.visible = Boolean(pickup);
+      if (!pickup) continue;
+      model.position.set(pickup.x, 2.9 + Math.sin(timeSeconds * 3) * 0.25, pickup.y);
+      samplePickupRotation(model.quaternion, pickup.x, pickup.y, timeSeconds);
     }
-    const model = this.bonusModels.get(pickup.kind);
-    if (!model) return;
-    if (this.visibleBonus && this.visibleBonus !== model) this.visibleBonus.visible = false;
-    this.visibleBonus = model;
-    model.visible = true;
-    model.position.set(pickup.x, 1.6 + Math.sin(timeSeconds * 3) * 0.25, pickup.y);
-    model.rotation.y = timeSeconds * 1.1;
   }
 
   private syncEffects(): void {

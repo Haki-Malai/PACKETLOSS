@@ -35,7 +35,7 @@ import { RenderSystem } from '../systems/RenderSystem';
 import { ScoreBonusSystem } from '../systems/ScoreBonusSystem';
 import { prepareTutorialWorld, TutorialController } from '../tutorial/TutorialController';
 import type { TutorialLessonId } from '../tutorial/TutorialLesson';
-import { MapVariant, resolveMapPathsForVariant } from './mapRuntimeConfig';
+import { MapVariant, resolveMapPathsForVariant, SCORE_BONUS_TILES } from './mapRuntimeConfig';
 import type { PreloadedGameResources } from './preloadGameResources';
 import { ComposedGame, RuntimeControl } from './contracts';
 
@@ -196,7 +196,9 @@ export class GameCompositionRoot {
       const inputSystem = new InputSystem(input, world, runtimeControl, !this.options.tutorialLesson);
       const enemyAbilitySystem = new EnemyAbilitySystem(world, movementRules, portalService, gameplayRng);
       const collectibleSystem = new CollectibleSystem(world, tutorialPoints);
-      const scoreBonusSystem = this.options.tutorialLesson ? undefined : new ScoreBonusSystem(world, collectibleSystem);
+      const scoreBonusSystem = this.options.tutorialLesson
+        ? undefined
+        : new ScoreBonusSystem(world, collectibleSystem, SCORE_BONUS_TILES[mapVariant]);
       const mazeHazardSystem = new MazeHazardSystem(world, movementRules, gameplayRng, collectibleSystem);
       const packetSystem = new PacketMovementSystem(world, movementRules, portalService);
       const enemyReleaseSystem = this.options.tutorialLesson
