@@ -11,6 +11,7 @@ import {
   buildMazeWallFootprint,
   buildMazeWallGeometryFromFootprint,
   splitMazeWallEdgesByOwnership,
+  traceWallContours,
   WALL_HEIGHT,
 } from './MazeGeometry';
 import type { MazeFootprint } from './MazeGeometry';
@@ -30,6 +31,7 @@ export class MazeScene {
   private quarantineEdges: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
   private wallTopologyKey = '';
 
+  /** Builds the authored maze from one contour pass shared by its wall mesh and outlines. */
   constructor(world: { map: WorldMapData }) {
     this.group.name = 'maze';
     const { map } = world;
@@ -51,13 +53,14 @@ export class MazeScene {
 
     this.penFootprint = tiles.some((tile) => tile.localId === 16) ? buildMazePenFootprint(map) : undefined;
     this.wallFootprint = buildMazeWallFootprint(map);
-    const wallGeometry = this.own(buildMazeWallGeometryFromFootprint(this.wallFootprint));
+    const contours = traceWallContours(this.wallFootprint);
+    const wallGeometry = this.own(buildMazeWallGeometryFromFootprint(this.wallFootprint, contours));
     const wallMaterial = this.createWallMaterial('#1e0d20');
     this.walls = new Mesh(wallGeometry, wallMaterial);
     this.walls.name = 'walls';
     this.group.add(this.walls);
     this.wallEdges = this.createOutlineStrips(
-      buildMazeWallEdgeGeometry(this.wallFootprint, this.penFootprint),
+      buildMazeWallEdgeGeometry(this.wallFootprint, this.penFootprint, true, contours),
       new Color('#b579a1'),
     );
     this.wallEdges.name = 'wall-edges';
@@ -82,13 +85,14 @@ export class MazeScene {
     if (key !== this.wallTopologyKey) {
       this.wallTopologyKey = key;
       const combined = extendMazeWallFootprint(this.map, this.wallFootprint, active);
-      const geometry = this.own(buildMazeWallGeometryFromFootprint(combined));
+      const contours = traceWallContours(combined);
+      const geometry = this.own(buildMazeWallGeometryFromFootprint(combined, contours));
       this.resources.delete(this.walls.geometry);
       this.walls.geometry.dispose();
       this.walls.geometry = geometry;
-      const contours = buildMazeWallEdgeGeometry(combined, this.penFootprint);
-      const split = splitMazeWallEdgesByOwnership(contours, this.wallFootprint);
-      contours.dispose();
+      const edges = buildMazeWallEdgeGeometry(combined, this.penFootprint, true, contours);
+      const split = splitMazeWallEdgesByOwnership(edges, this.wallFootprint);
+      edges.dispose();
       this.wallEdges = this.replaceOutlineStrips(this.wallEdges, split.authored, new Color('#b579a1'));
       this.quarantineEdges = this.replaceOutlineStrips(this.quarantineEdges, split.temporary, new Color('#b846ff'));
       this.quarantineEdges.material.transparent = true;
