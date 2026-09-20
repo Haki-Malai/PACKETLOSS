@@ -7,12 +7,10 @@ export type GameState = {
   lives: number;
 };
 
-export type ScoreBonusStatus = {
-  kind: ScoreBonusKind;
-  multiplier: number;
-  seconds: number;
-  phase: 'available' | 'active';
-} | null;
+export type ScoreBonusStatus =
+  | { phase: 'available'; count: number }
+  | { phase: 'active'; kind: ScoreBonusKind; multiplier: number; seconds: number }
+  | null;
 
 export const GameEvent = {
   ScoreChanged: 'score-changed',
@@ -56,8 +54,12 @@ export function resetGameState(initialScore = 0, initialLives = INITIAL_LIVES): 
 
 /** Publishes only visible changes to the multiplier HUD snapshot. */
 export function setScoreBonusStatus(next: ScoreBonusStatus): void {
-  if (scoreBonusStatus?.kind === next?.kind && scoreBonusStatus?.multiplier === next?.multiplier
-    && scoreBonusStatus?.seconds === next?.seconds && scoreBonusStatus?.phase === next?.phase) return;
+  if (!scoreBonusStatus && !next) return;
+  if (scoreBonusStatus?.phase === 'available' && next?.phase === 'available'
+    && scoreBonusStatus.count === next.count) return;
+  if (scoreBonusStatus?.phase === 'active' && next?.phase === 'active'
+    && scoreBonusStatus.kind === next.kind && scoreBonusStatus.multiplier === next.multiplier
+    && scoreBonusStatus.seconds === next.seconds) return;
   scoreBonusStatus = next;
   gameEvents.emit(GameEvent.BonusChanged, next);
 }

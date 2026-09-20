@@ -159,8 +159,8 @@ export function ScoreBonusGuide() {
         <section ref={host} aria-labelledby="packet-bonus-heading">
             <h3 id="packet-bonus-heading" className="packet-record-heading">Timed multipliers</h3>
             <p className="packet-copy">
-                One icon appears near the pen after 35% and 70% of the level’s data and cores are recovered.
-                Collect it within 45 seconds for a 15-second boost to every score award. The icon changes with each level.
+                All five icons wait at fixed spots far from the start of each level: two mirrored pairs and one on the centerline.
+                They stay until collected or the level ends. Each starts a 15-second boost to every score award.
             </p>
             <ul className="mt-3 grid list-none grid-cols-2 gap-2 p-0 sm:grid-cols-5">
                 {SCORE_BONUS_TIERS.map(({ kind, multiplier }) => (
@@ -173,7 +173,7 @@ export function ScoreBonusGuide() {
                     </li>
                 ))}
             </ul>
-            <p className="packet-copy mt-3">Each level offers two chances. Missed icons expire; boosts end on death and do not stack.</p>
+            <p className="packet-copy mt-3">Collect another icon during a boost to multiply its current value by that icon’s factor and reset the 15-second timer. Uncollected icons survive death; active boosts end on death.</p>
         </section>
     );
 }

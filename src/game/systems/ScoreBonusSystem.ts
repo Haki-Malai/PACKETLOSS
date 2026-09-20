@@ -1,103 +1,44 @@
 import { getScoreBonusStatus, setScoreBonusStatus } from '../../state/gameState';
 import {
     SCORE_BONUS_ACTIVE_MS,
-    SCORE_BONUS_MILESTONES,
-    SCORE_BONUS_PICKUP_MS,
-    scoreBonusTier,
+    SCORE_BONUS_TIERS,
     type ScoreBonusKind,
 } from '../domain/valueObjects/ScoreBonus';
 import { isBodyOverlap } from '../domain/services/EnemyPacketCollisionService';
-import { canMove } from '../domain/services/MovementRules';
-import { DIRECTIONS, DIRECTION_VECTORS } from '../domain/valueObjects/Direction';
 import type { TilePosition } from '../domain/valueObjects/TilePosition';
 import type { WorldState } from '../domain/world/WorldState';
 import type { CollectibleSystem } from './CollectibleSystem';
 
 export interface ScoreBonusPickup {
     kind: ScoreBonusKind;
+    multiplier: number;
     x: number;
     y: number;
-    remainingMs: number;
 }
 
-/** Selects one stable packet-reachable tile near the pen without consuming randomness. */
-export function findScoreBonusTile(
-    world: WorldState,
-    collectibles: Pick<CollectibleSystem, 'getPoints'>
-): TilePosition | null {
-    const occupied = new Set(
-        Array.from(collectibles.getPoints(), (point) => `${point.tile.x},${point.tile.y}`)
-    );
-    const portals = new Set(
-        (world.map.portalPairs ?? []).flatMap((pair) => [
-            `${pair.from.x},${pair.from.y}`,
-            `${pair.to.x},${pair.to.y}`,
-        ])
-    );
-    const queue = [world.packetSpawnTile];
-    const seen = new Set<string>();
-    const centerX = (world.enemyJailBounds.minX + world.enemyJailBounds.maxX) / 2;
-    const centerY = world.enemyJailBounds.y + 1;
-    let best: { tile: TilePosition; distance: number; occupied: boolean } | null = null;
-
-    for (let index = 0; index < queue.length; index += 1) {
-        const tile = queue[index];
-        const key = `${tile.x},${tile.y}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const mapTile = world.map.tiles[tile.y]?.[tile.x];
-        if (!mapTile || mapTile.gid === null || mapTile.collision.penGate) continue;
-        const distance = Math.abs(tile.x - centerX) + Math.abs(tile.y - centerY);
-        const hasPoint = occupied.has(key);
-        if (
-            !portals.has(key) &&
-            (!best ||
-                distance < best.distance ||
-                (distance === best.distance && Number(hasPoint) < Number(best.occupied)) ||
-                (distance === best.distance &&
-                    hasPoint === best.occupied &&
-                    (tile.y < best.tile.y || (tile.y === best.tile.y && tile.x < best.tile.x))))
-        ) {
-            best = { tile, distance, occupied: hasPoint };
-        }
-        const collisionTiles = world.collisionGrid.getTilesAt(tile);
-        for (const direction of DIRECTIONS) {
-            const delta = DIRECTION_VECTORS[direction];
-            const next = { x: tile.x + delta.dx, y: tile.y + delta.dy };
-            const nextMapTile = world.map.tiles[next.y]?.[next.x];
-            if (nextMapTile?.gid === null || !nextMapTile || nextMapTile.collision.penGate)
-                continue;
-            if (canMove(direction, 0, 0, collisionTiles, world.tileSize, 'packet'))
-                queue.push(next);
-        }
-    }
-    return best?.tile ?? null;
-}
-
-/** Owns deterministic pickup scheduling and its temporary scoring factor. */
+/** Owns five fixed-position pickups and the temporary scoring factor for each level. */
 export class ScoreBonusSystem {
-    private level = 1;
     private initialPointCount: number;
-    private nextMilestone = 0;
-    private pending = 0;
-    private pickup: ScoreBonusPickup | null = null;
+    private pickups: ScoreBonusPickup[] = [];
     private activeRemainingMs = 0;
-    private readonly tile: TilePosition | null;
+    private activeKind: ScoreBonusKind | null = null;
 
     constructor(
         private readonly world: WorldState,
-        private readonly collectibles: Pick<CollectibleSystem, 'getPointCount' | 'getPoints'>
+        private readonly collectibles: Pick<CollectibleSystem, 'getPointCount'>,
+        private readonly tiles: readonly TilePosition[]
     ) {
         this.initialPointCount = collectibles.getPointCount();
-        this.tile = findScoreBonusTile(world, collectibles);
+        this.placePickups();
+        this.publishStatus();
     }
 
-    /** Returns the current world pickup without advancing either timer. */
-    getPickup(): Readonly<ScoreBonusPickup> | null {
-        return this.pickup;
+    /** Returns the uncollected pickups without advancing the boost timer. */
+    getPickups(): readonly Readonly<ScoreBonusPickup>[] {
+        return this.pickups;
     }
 
-    /** Advances simulation-time windows after regular collection and enemy collisions. */
+    /** Checks fixed pickups and advances the active boost in simulation time. */
     update(deltaMs: number): void {
         if (!this.world.isMoving) return;
         if (
@@ -107,93 +48,82 @@ export class ScoreBonusSystem {
             this.clearLevel();
             return;
         }
-        if (!this.tile || this.initialPointCount === 0) return;
-
         if (this.world.packet.deathAnimationRemainingMs > 0) this.endBoost();
-        else if (this.activeRemainingMs > 0) {
-            this.activeRemainingMs = Math.max(0, this.activeRemainingMs - deltaMs);
-            if (this.activeRemainingMs === 0) this.endBoost();
-        }
-        if (this.pickup) {
-            this.pickup.remainingMs = Math.max(0, this.pickup.remainingMs - deltaMs);
-            if (this.pickup.remainingMs === 0) this.pickup = null;
-        }
-        if (this.pickup && this.world.packet.deathAnimationRemainingMs === 0) {
+        else {
+            if (this.activeRemainingMs > 0) {
+                this.activeRemainingMs = Math.max(0, this.activeRemainingMs - deltaMs);
+                if (this.activeRemainingMs === 0) this.endBoost();
+            }
             const packet = this.world.packet;
             const radius = Math.min(packet.displayWidth, packet.displayHeight) / 2;
-            if (
+            const index = this.pickups.findIndex((pickup) =>
                 isBodyOverlap(
                     { x: packet.x, y: packet.y, radius },
-                    { x: this.pickup.x, y: this.pickup.y, radius: 2.5 }
+                    { x: pickup.x, y: pickup.y, radius: 2.5 }
                 )
-            ) {
-                this.pickup = null;
+            );
+            if (index >= 0) {
+                const [pickup] = this.pickups.splice(index, 1);
                 this.activeRemainingMs = SCORE_BONUS_ACTIVE_MS;
-                this.world.scoreBonusMultiplier = scoreBonusTier(this.level).multiplier;
+                this.activeKind = pickup.kind;
+                this.world.scoreBonusMultiplier *= pickup.multiplier;
             }
-        }
-
-        const collected = this.initialPointCount - this.collectibles.getPointCount();
-        while (
-            this.nextMilestone < SCORE_BONUS_MILESTONES.length &&
-            collected >=
-                Math.ceil(this.initialPointCount * SCORE_BONUS_MILESTONES[this.nextMilestone])
-        ) {
-            this.pending += 1;
-            this.nextMilestone += 1;
-        }
-        if (!this.pickup && this.pending > 0) {
-            this.pending -= 1;
-            const x = (this.tile.x + 0.5) * this.world.tileSize;
-            const y = (this.tile.y + 0.5) * this.world.tileSize;
-            this.pickup = {
-                kind: scoreBonusTier(this.level).kind,
-                x,
-                y,
-                remainingMs: SCORE_BONUS_PICKUP_MS,
-            };
         }
         this.publishStatus();
     }
 
-    /** Starts the next level with the same fixed tile and two fresh milestones. */
+    /** Starts the next level with all five pickups at their original positions. */
     refill(): void {
         this.clearLevel();
-        this.level += 1;
         this.initialPointCount = this.collectibles.getPointCount();
-        this.nextMilestone = 0;
+        this.placePickups();
+        this.publishStatus();
     }
 
-    /** Removes pending pickups and the temporary scoring factor at a clear checkpoint. */
+    /** Removes uncollected pickups and the active boost at a clear checkpoint. */
     clearLevel(): void {
-        this.pickup = null;
-        this.pending = 0;
+        this.pickups = [];
         this.endBoost();
         this.publishStatus();
     }
 
-    /** Ends the active multiplier without disturbing an uncollected pickup. */
+    /** Places authored tiles that exist outside the enemy pen. */
+    private placePickups(): void {
+        if (this.initialPointCount === 0) return;
+        this.pickups = SCORE_BONUS_TIERS.flatMap((tier, index) => {
+            const tile = this.tiles[index];
+            if (!tile) return [];
+            const mapTile = this.world.map.tiles[tile.y]?.[tile.x];
+            if (!mapTile || mapTile.gid === null || mapTile.collision.penGate) return [];
+            return [{
+                kind: tier.kind,
+                multiplier: tier.multiplier,
+                x: (tile.x + 0.5) * this.world.tileSize,
+                y: (tile.y + 0.5) * this.world.tileSize,
+            }];
+        });
+    }
+
+    /** Ends the active multiplier without disturbing uncollected pickups. */
     private endBoost(): void {
         this.activeRemainingMs = 0;
+        this.activeKind = null;
         this.world.scoreBonusMultiplier = 1;
     }
 
-    /** Updates the HUD only when the displayed whole-second value changes. */
+    /** Updates the HUD only when the available state or whole-second boost changes. */
     private publishStatus(): void {
-        const tier = scoreBonusTier(this.level);
         const next =
-            this.activeRemainingMs > 0
+            this.activeRemainingMs > 0 && this.activeKind
                 ? {
-                      kind: tier.kind,
-                      multiplier: tier.multiplier,
+                      kind: this.activeKind,
+                      multiplier: this.world.scoreBonusMultiplier,
                       seconds: Math.ceil(this.activeRemainingMs / 1000),
                       phase: 'active' as const,
                   }
-                : this.pickup
+                : this.pickups.length > 0
                   ? {
-                        kind: tier.kind,
-                        multiplier: tier.multiplier,
-                        seconds: Math.ceil(this.pickup.remainingMs / 1000),
+                        count: this.pickups.length,
                         phase: 'available' as const,
                     }
                   : null;
