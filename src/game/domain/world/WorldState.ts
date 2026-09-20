@@ -149,6 +149,7 @@ export class WorldState {
   debugFrozen = false;
   debugPowerOverrideEnabled = false;
   levelMultiplier = 1;
+  scoreBonusMultiplier = 1;
   outcome: 'lost' | 'cleared' | null = null;
   collisionDebugEnabled = false;
   hoveredDebugTile: TilePosition | null = null;

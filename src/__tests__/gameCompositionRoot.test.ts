@@ -11,6 +11,7 @@ import { AnimationSystem } from '../game/systems/AnimationSystem';
 import { CameraSystem } from '../game/systems/CameraSystem';
 import { EnemyReleaseSystem } from '../game/systems/EnemyReleaseSystem';
 import { RenderSystem } from '../game/systems/RenderSystem';
+import { ScoreBonusSystem } from '../game/systems/ScoreBonusSystem';
 import { DebugOverlaySystem } from '../game/systems/DebugOverlaySystem';
 import { getGameState, resetGameState } from '../state/gameState';
 import { createCharacterAssets } from './fixtures/characterFixtures';
@@ -194,6 +195,7 @@ describe('GameCompositionRoot startup', () => {
     expect(composed.renderSystems.some((system) => system instanceof DebugOverlaySystem)).toBe(isDev);
     expect(render.scene.getObjectByName('collision-debug') !== undefined).toBe(isDev);
     expect(composed.updateSystems.some((system) => system instanceof EnemyReleaseSystem)).toBe(true);
+    expect(composed.updateSystems.some((system) => system instanceof ScoreBonusSystem)).toBe(true);
     expect(composed.tutorial).toBeUndefined();
     expect(mount.children).toHaveLength(1);
     expect(render.scene.getObjectByName('binary-000')).toBeDefined();
@@ -260,6 +262,7 @@ describe('GameCompositionRoot startup', () => {
 
   it('forces the demo and authored Ping pickup for practice without automatic releases', async () => {
     const { mount } = prepareComposition();
+    Object.assign(mount, { getBoundingClientRect: () => ({ width: 320, height: 568 }) });
     const map = createHarnessMap('demo-map');
     const loadMap = vi.spyOn(TiledMapRepository.prototype, 'loadMap').mockResolvedValue(map);
     vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(createCharacterAssets());
@@ -279,6 +282,7 @@ describe('GameCompositionRoot startup', () => {
     expect(composed.tutorial?.getSnapshot()).toMatchObject({ lesson: 'ping', phase: 'introduction' });
     expect(composed.getRemainingPointCount()).toBe(1);
     expect(composed.updateSystems.some((system) => system instanceof EnemyReleaseSystem)).toBe(false);
+    expect(composed.updateSystems.some((system) => system instanceof ScoreBonusSystem)).toBe(false);
     expect(composed.world.enemies.filter((enemy) => enemy.active).map((enemy) => enemy.key)).toEqual(['ping']);
     const camera = composed.updateSystems.find((system) => system instanceof CameraSystem)!;
     camera.start();

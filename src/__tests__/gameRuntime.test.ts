@@ -214,6 +214,29 @@ describe('GameRuntime', () => {
     expect(spies.render).toHaveBeenCalled();
   });
 
+  it('feeds only visible, unfrozen play to adaptive rendering', async () => {
+    const { composed, spies } = createComposedGame();
+    const recordFrame = vi.fn();
+    composed.renderer = { recordFrame } as never;
+    const runtime = new GameRuntime({ compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot);
+    await runtime.start();
+    nextFrame?.(20);
+    expect(recordFrame).toHaveBeenLastCalledWith(20, true);
+
+    spies.world.debugFrozen = true;
+    nextFrame?.(40);
+    expect(recordFrame).toHaveBeenLastCalledWith(20, false);
+    spies.world.debugFrozen = false;
+    setDocumentHidden(true);
+    nextFrame?.(60);
+    expect(recordFrame).toHaveBeenLastCalledWith(20, false);
+    setDocumentHidden(false);
+    runtime.pause();
+    nextFrame?.(80);
+    expect(recordFrame).toHaveBeenLastCalledWith(20, false);
+    runtime.destroy();
+  });
+
   it.each([
     { kind: 'pellet' as const, score: 10, enemyState: undefined },
     { kind: 'power-pellet' as const, score: 50, enemyState: undefined },

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Hud, DebugOverlay } from '../game/ui/GameOverlays';
 import { createDebugStore } from '../game/ui/debugStore';
 import { EMPTY_DEBUG } from '../game/shared/events/DebugSnapshot';
-import { addScore, gameEvents, resetGameState, setLives } from '../state/gameState';
+import { addScore, gameEvents, resetGameState, setLives, setScoreBonusStatus } from '../state/gameState';
 
 afterEach(() => {
     cleanup();
@@ -33,6 +33,12 @@ describe('React game overlays', () => {
         });
         expect(page.container.querySelector('[data-hud-score-value]')?.textContent).toBe('170');
         expect(page.container.querySelector('[data-hud-lives-value]')?.textContent).toBe('2');
+        act(() => setScoreBonusStatus({ kind: 'bug', multiplier: 1.5, seconds: 45, phase: 'available' }));
+        expect(page.container.querySelector('[data-hud-bonus="available"]')?.textContent).toContain('×1.5 · 45s');
+        act(() => setScoreBonusStatus({ kind: 'bug', multiplier: 1.5, seconds: 15, phase: 'active' }));
+        expect(page.container.querySelector('[data-hud-bonus="active"]')?.textContent).toContain('×1.5 · 15s');
+        act(() => setScoreBonusStatus(null));
+        expect(page.container.querySelector('[data-hud-bonus]')).toBeNull();
         act(() => setLives(-0.5));
         expect(page.container.querySelector('[data-hud-lives-value]')?.textContent).toBe('0');
         page.unmount();

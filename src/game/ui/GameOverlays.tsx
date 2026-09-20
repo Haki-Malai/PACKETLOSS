@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { GameEvent, gameEvents, getGameState } from '../../state/gameState';
+import { GameEvent, gameEvents, getGameState, getScoreBonusStatus } from '../../state/gameState';
 import type { DebugStore } from './debugStore';
 import { MenuButton } from './MenuPanel';
 
@@ -21,6 +21,11 @@ const subscribeLives = (listener: () => void) => {
     gameEvents.on(GameEvent.LivesChanged, listener);
     return () => gameEvents.off(GameEvent.LivesChanged, listener);
 };
+/** Subscribes the HUD to discrete multiplier status changes. */
+const subscribeBonus = (listener: () => void) => {
+    gameEvents.on(GameEvent.BonusChanged, listener);
+    return () => gameEvents.off(GameEvent.BonusChanged, listener);
+};
 /** Reads a primitive score snapshot so unrelated state updates do not rerender the HUD. */
 const getScore = () => getGameState().score;
 /** Reads a nonnegative whole life count as a stable primitive snapshot. */
@@ -30,6 +35,7 @@ export function Hud({ onPause }: { onPause: () => void }) {
     // HUD is event-driven through game state events.
     const score = useSyncExternalStore(subscribeScore, getScore);
     const lives = useSyncExternalStore(subscribeLives, getLives);
+    const bonus = useSyncExternalStore(subscribeBonus, getScoreBonusStatus);
     // HUD is rendered in DOM overlay; no canvas draw required.
     return (
         <div
@@ -42,6 +48,14 @@ export function Hud({ onPause }: { onPause: () => void }) {
                     {score}
                 </span>
             </div>
+            {bonus && (
+                <div className="packet-hud-section flex flex-col gap-1" data-hud-bonus={bonus.phase}>
+                    <span className="packet-hud-label">{bonus.phase === 'active' ? 'Boost' : 'Pickup'}</span>
+                    <span className="packet-hud-score" aria-label={`${bonus.kind} ${bonus.multiplier} times, ${bonus.seconds} seconds ${bonus.phase}`}>
+                        ×{bonus.multiplier} · {bonus.seconds}s
+                    </span>
+                </div>
+            )}
             <div className="packet-hud-section flex flex-col gap-1" data-hud-lives="true">
                 <span className="packet-hud-label">Lives</span>
                 <span className="packet-hud-lives" data-hud-lives-value="true">

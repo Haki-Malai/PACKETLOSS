@@ -59,7 +59,7 @@ describe('CameraSystem', () => {
     system.start();
 
     expect(camera.setBounds).toHaveBeenCalledWith(world.map.widthInPixels, world.map.heightInPixels);
-    expect(camera.setZoom).toHaveBeenCalledWith(CAMERA.zoom);
+    expect(camera.setZoom).toHaveBeenCalledWith(CAMERA.zoom * canvas.height / 1080);
     expect(camera.startFollow).toHaveBeenCalledWith(world.packet, CAMERA.followLerp.x, CAMERA.followLerp.y);
     expect(renderer.resize).toHaveBeenCalledWith(1280, 720);
     expect(camera.setViewport).toHaveBeenCalledWith(canvas.width, canvas.height);
@@ -81,7 +81,7 @@ describe('CameraSystem', () => {
 
     expect(renderer.resize).toHaveBeenNthCalledWith(2, 1440, 900);
     expect(camera.setViewport).toHaveBeenNthCalledWith(2, 800, 600);
-    expect(camera.setZoom).toHaveBeenCalledExactlyOnceWith(CAMERA.zoom);
+    expect(camera.setZoom).toHaveBeenLastCalledWith(CAMERA.zoom * canvas.height / 1080);
     expect(camera.snapToFollowTarget).toHaveBeenCalledOnce();
   });
 
@@ -104,7 +104,7 @@ describe('CameraSystem', () => {
       system.update();
       expect(camera.getRenderPosition()).toEqual(beforeMove);
       expect(camera.getRenderPosition(0)).toEqual(camera.getRenderPosition(1));
-      expect(camera.getZoom()).toBeLessThanOrEqual(CAMERA.zoom);
+      expect(camera.getZoom()).toBeLessThanOrEqual(CAMERA.zoom * height / 1080);
       camera.present();
       for (const [x, z] of [[0, 0], [map.widthInPixels, 0], [0, map.heightInPixels],
         [map.widthInPixels, map.heightInPixels]]) {
@@ -125,5 +125,84 @@ describe('CameraSystem', () => {
 
     system.destroy();
     expect(removeEventListenerSpy).toHaveBeenCalledWith('resize', expect.any(Function));
+  });
+
+  it('keeps the same world framing across 16:9 sizes and scales other aspect ratios by height', () => {
+    const { system, camera, canvas } = createSystem();
+    system.start();
+    for (const [width, height] of [[1280, 720], [1920, 1080], [2560, 1440], [2560, 1080], [720, 1280]]) {
+      const stubWindow = globalThis.window as unknown as { innerWidth: number; innerHeight: number };
+      stubWindow.innerWidth = width;
+      stubWindow.innerHeight = height;
+      canvas.width = width;
+      canvas.height = height;
+      resizeHandler?.();
+      expect(camera.setZoom).toHaveBeenLastCalledWith(CAMERA.zoom * height / 1080);
+      expect(camera.setViewport).toHaveBeenLastCalledWith(width, height);
+    }
+    system.destroy();
+  });
+
+  it('preserves the visible world span across 16:9 sizes and resolution tiers', () => {
+    const camera = new Camera3D();
+    const world = { map: { widthInPixels: 3000, heightInPixels: 3000 }, packet: { x: 1500, y: 1500 } };
+    const canvas = { width: 1280, height: 720 } as HTMLCanvasElement;
+    const renderer = { resize: vi.fn() };
+    const system = new CameraSystem(world as never, camera, renderer as never, canvas);
+    system.start();
+    const spans: number[] = [];
+    for (const [width, height] of [[1280, 720], [1920, 1080], [2560, 1440], [2560, 1080], [720, 1280]]) {
+      const stubWindow = globalThis.window as unknown as { innerWidth: number; innerHeight: number };
+      stubWindow.innerWidth = width;
+      stubWindow.innerHeight = height;
+      canvas.width = width;
+      canvas.height = height;
+      resizeHandler?.();
+      camera.present(1, 1);
+      const left = camera.screenToWorld(0, height / 2).x;
+      const right = camera.screenToWorld(width, height / 2).x;
+      spans.push(right - left);
+      const center = camera.screenToWorld(width / 2, height / 2);
+      camera.present(1, 2 / 3);
+      const lowerQualityCenter = camera.screenToWorld(width / 2, height / 2);
+      expect(Math.abs(lowerQualityCenter.x - center.x)).toBeLessThan(2 / camera.getZoom());
+      expect(Math.abs(lowerQualityCenter.y - center.y)).toBeLessThan(2 / camera.getZoom());
+    }
+    expect(spans[1]).toBeCloseTo(spans[0], 5);
+    expect(spans[2]).toBeCloseTo(spans[0], 5);
+    expect(spans[3]).toBeGreaterThan(spans[1]);
+    expect(spans[4]).toBeLessThan(spans[1]);
+    system.destroy();
+  });
+
+  it('observes its container, ignores zero size, and disconnects on disposal', () => {
+    let onObservedResize: (() => void) | undefined;
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    vi.stubGlobal('ResizeObserver', vi.fn(function (callback: () => void) {
+      onObservedResize = callback;
+      return { observe, disconnect };
+    }));
+    const { system, camera, renderer, canvas } = createSystem();
+    let width = 1920;
+    let height = 1080;
+    const container = { getBoundingClientRect: () => ({ width, height }) } as HTMLElement;
+    Object.defineProperty(canvas, 'parentElement', { value: container });
+    system.start();
+    expect(observe).toHaveBeenCalledWith(container);
+    expect(renderer.resize).toHaveBeenCalledWith(1920, 1080);
+
+    width = 0;
+    onObservedResize?.();
+    expect(renderer.resize).toHaveBeenCalledTimes(1);
+    width = 1280;
+    height = 720;
+    canvas.width = width;
+    canvas.height = height;
+    onObservedResize?.();
+    expect(renderer.resize).toHaveBeenLastCalledWith(1280, 720);
+    expect(camera.setZoom).toHaveBeenLastCalledWith(CAMERA.zoom * 720 / 1080);
+    system.destroy();
+    expect(disconnect).toHaveBeenCalledOnce();
   });
 });

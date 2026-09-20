@@ -2,15 +2,44 @@ import { useEffect, useState, type ReactNode, type Ref, type RefObject } from 'r
 import { getTutorialLesson, TUTORIAL_LESSONS } from '../tutorial/TutorialLesson';
 import type { MenuMotion } from '../infrastructure/adapters/LocalProfileStore';
 import { CustomSelect, MenuPanel, MenuButton, MenuColumns, fieldLayout } from './MenuPanel';
-import { EnemyGuide, TitleHeading } from './MenuPreviews';
+import { EnemyGuide, ScoreBonusGuide, TitleHeading } from './MenuPreviews';
 import { ProfileBody, score, duration } from './ProfileScreen';
 import type { GameSession, Screen } from './useGameSession';
 
 const basics = [
-    ['Move', 'Arrow keys or WASD. On touchscreens, swipe in the direction you want to go. Turns queue until the corridor allows them.'],
-    ['Collect', 'Data bits score 10 points. Larger power cores score 50 and let you eat scared enemies for increasing bonuses.'],
-    ['Survive', 'You have three lives. Recovering every point opens a clear checkpoint; continuing refills the maze at higher speed and scoring.'],
-    ['Pause', 'Press Space or Escape, use the Pause button, or click/tap the game. Choose Resume when ready.'],
+    [
+        'Move',
+        'Arrow keys or WASD. On touchscreens, swipe in the direction you want to go. Turns queue until the corridor allows them.',
+    ],
+    [
+        'Survive',
+        'You have three lives. Recovering every point opens a clear checkpoint; continuing refills the maze at higher speed and scoring.',
+    ],
+    [
+        'Pause',
+        'Press Space or Escape, use the Pause button, or click/tap the game. Choose Resume when ready.',
+    ],
+] as const;
+
+const scoring = [
+    [
+        'Collect',
+        'Data bits score 10 points. Larger power cores score 50 and let you eat scared enemies.',
+    ],
+    [
+        'Enemy bonuses',
+        'Scared enemies score 200, 400, 800, then 1,600 points. A new power core resets this chain.',
+    ],
+    [
+        'Later levels',
+        'Each continued level speeds up gameplay and increases every score award by another 25%.',
+    ],
+] as const;
+
+const helpPages = [
+    { id: 'basics', label: 'Basics' },
+    { id: 'scoring', label: 'Scoring' },
+    { id: 'enemies', label: 'Enemies' },
 ] as const;
 
 const titles: Record<
@@ -321,30 +350,7 @@ export function MenuScreens({
             actions = <FullscreenControl rootRef={rootRef} />;
             break;
         case 'help':
-            body = (
-                <div className="my-4 mb-2 flex min-w-0 flex-col gap-4">
-                    <section aria-labelledby="packet-basics-heading">
-                        <h2 id="packet-basics-heading" className="packet-record-heading mt-0">
-                            The basics
-                        </h2>
-                        <MenuColumns>
-                            {[basics.slice(0, 2), basics.slice(2)].map((items, index) => (
-                                <section key={index} aria-label={index === 0 ? 'Movement and collecting' : 'Survival and pausing'}>
-                                    <dl className="packet-help">
-                                        {items.map(([label, text]) => (
-                                            <div key={label}>
-                                                <dt>{label}</dt>
-                                                <dd>{text}</dd>
-                                            </div>
-                                        ))}
-                                    </dl>
-                                </section>
-                            ))}
-                        </MenuColumns>
-                    </section>
-                    <EnemyGuide motion={store.getMotion()} />
-                </div>
-            );
+            body = <HelpScreen motion={store.getMotion()} />;
             break;
         case 'profile':
             body = <ProfileBody session={s} />;
@@ -391,6 +397,65 @@ export function MenuScreens({
         >
             {body}
         </MenuPanel>
+    );
+}
+
+function HelpScreen({ motion }: { motion: MenuMotion }) {
+    const [page, setPage] = useState<(typeof helpPages)[number]['id']>('basics');
+    const facts = page === 'scoring' ? scoring : basics;
+    const heading = page === 'scoring' ? 'Scoring' : 'The basics';
+    const headingId = page === 'scoring' ? 'packet-scoring-heading' : 'packet-basics-heading';
+
+    return (
+        <div className="my-4 mb-2 flex min-w-0 flex-col gap-4">
+            <nav aria-label="How to play pages">
+                <ol className="m-0 grid list-none grid-cols-3 gap-2 p-0">
+                    {helpPages.map((step, index) => (
+                        <li key={step.id} className="min-w-0">
+                            <MenuButton
+                                action={`help-${step.id}`}
+                                layout="compact"
+                                aria-current={page === step.id ? 'step' : undefined}
+                                aria-controls="packet-help-content"
+                                className={`w-full min-w-0 flex-col gap-1 px-1 text-[0.65rem] sm:text-xs ${page === step.id ? 'border-packet-cyan bg-packet-raised text-packet-focus' : ''}`}
+                                onClick={() => setPage(step.id)}
+                            >
+                                <span className="text-[0.6rem] text-packet-gold" aria-hidden="true">
+                                    {String(index + 1).padStart(2, '0')}
+                                </span>
+                                {step.label}
+                            </MenuButton>
+                        </li>
+                    ))}
+                </ol>
+            </nav>
+            <div id="packet-help-content">
+                {page === 'enemies' ? (
+                    <EnemyGuide motion={motion} />
+                ) : (
+                    <section aria-labelledby={headingId}>
+                        <h2 id={headingId} className="packet-record-heading mt-0">
+                            {heading}
+                        </h2>
+                        <MenuColumns>
+                            {[facts.slice(0, 2), facts.slice(2)].map((items, index) => (
+                                <section key={index}>
+                                    <dl className="packet-help">
+                                        {items.map(([label, text]) => (
+                                            <div key={label}>
+                                                <dt>{label}</dt>
+                                                <dd>{text}</dd>
+                                            </div>
+                                        ))}
+                                    </dl>
+                                </section>
+                            ))}
+                        </MenuColumns>
+                        {page === 'scoring' && <ScoreBonusGuide />}
+                    </section>
+                )}
+            </div>
+        </div>
     );
 }
 

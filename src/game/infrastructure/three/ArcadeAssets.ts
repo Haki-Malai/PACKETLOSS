@@ -18,6 +18,7 @@ import {
 } from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { ENEMY_KEYS, type EnemyKey } from '../../domain/entities/EnemyEntity';
+import { SCORE_BONUS_TIERS, type ScoreBonusKind } from '../../domain/valueObjects/ScoreBonus';
 import { HologramPacket } from './HologramPacket';
 import { ReturnEnemyPresentation } from './ReturnEnemyPresentation';
 import { StateTransition } from './StateTransition';
@@ -27,6 +28,7 @@ import powerStarGeometry from './power-star.json';
 type EnemyAppearance = EnemyKey | 'scared';
 type CharacterModel = Pick<GLTF, 'scene' | 'animations'>;
 export type CharacterModels = Record<EnemyKey, CharacterModel>;
+export type ScoreBonusModels = Record<ScoreBonusKind, CharacterModel>;
 
 interface Resources {
   geometries: Set<BufferGeometry>;
@@ -93,20 +95,21 @@ export class ArcadeAssets {
   private readonly packets = new Map<Group, HologramPacket>();
   private disposed = false;
 
-  constructor(private readonly models: CharacterModels) {
+  constructor(private readonly models: CharacterModels, private readonly bonusModels?: ScoreBonusModels) {
     for (const model of Object.values(models)) collectResources(model.scene, this.resources);
+    if (bonusModels) for (const model of Object.values(bonusModels)) collectResources(model.scene, this.resources);
   }
 
   /** Loads every roster model and disposes completed loads if a sibling fails or loading is cancelled. */
   static async load(signal?: AbortSignal): Promise<ArcadeAssets> {
     signal?.throwIfAborted();
     const loader = new GLTFLoader();
-    const keys = ENEMY_KEYS;
-    const results = await Promise.allSettled(keys.map(async (key) => {
+    /** Fetches one self-contained local GLB with cancellation and a useful asset error. */
+    const loadModel = async (folder: string, key: string) => {
       try {
         // The local inspector is a nested URL; resolve dev assets from Vite's root.
         const baseUrl = import.meta.env.DEV ? '/' : import.meta.env.BASE_URL;
-        const url = `${baseUrl}assets/models/enemies/${key}.glb`;
+        const url = `${baseUrl}assets/models/${folder}/${key}.glb`;
         const response = await fetch(url, { signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const model = await loader.parseAsync(await response.arrayBuffer(), '');
@@ -114,17 +117,25 @@ export class ArcadeAssets {
       } catch (error) {
         signal?.throwIfAborted();
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Unable to load character model ${key}.glb: ${message}`);
+        throw new Error(`Unable to load model ${folder}/${key}.glb: ${message}`);
       }
-    }));
+    };
+    const [results, bonusResults] = await Promise.all([
+      Promise.allSettled(ENEMY_KEYS.map((key) => loadModel('enemies', key))),
+      Promise.allSettled(SCORE_BONUS_TIERS.map(({ kind }) => loadModel('multipliers', kind))),
+    ]);
     const models = new Map<keyof CharacterModels, CharacterModel>();
     for (const result of results) {
-      if (result.status === 'fulfilled') models.set(result.value.key, result.value.model);
+      if (result.status === 'fulfilled') models.set(result.value.key as EnemyKey, result.value.model);
     }
-    const failed = results.find((result) => result.status === 'rejected');
+    const bonusModels = new Map<ScoreBonusKind, CharacterModel>();
+    for (const result of bonusResults) {
+      if (result.status === 'fulfilled') bonusModels.set(result.value.key as ScoreBonusKind, result.value.model);
+    }
+    const failed = [...results, ...bonusResults].find((result) => result.status === 'rejected');
     if (failed || signal?.aborted) {
       const resources: Resources = { geometries: new Set(), materials: new Set(), textures: new Set() };
-      for (const model of models.values()) collectResources(model.scene, resources);
+      for (const model of [...models.values(), ...bonusModels.values()]) collectResources(model.scene, resources);
       disposeResources(resources);
       signal?.throwIfAborted();
       throw failed?.reason;
@@ -133,7 +144,15 @@ export class ArcadeAssets {
       firewall: models.get('firewall')!, virus: models.get('virus')!, ping: models.get('ping')!,
       spam: models.get('spam')!, lag: models.get('lag')!,
       quarantine: models.get('quarantine')!, trojan: models.get('trojan')!,
+    }, {
+      bug: bonusModels.get('bug')!, key: bonusModels.get('key')!, cloud: bonusModels.get('cloud')!,
+      wifi: bonusModels.get('wifi')!, chip: bonusModels.get('chip')!,
     });
+  }
+
+  /** Clones one pickup while retaining geometry and materials in this asset owner's lifetime. */
+  createScoreBonus(kind: ScoreBonusKind): Group | null {
+    return this.bonusModels?.[kind].scene.clone(true) ?? null;
   }
 
   createPacket(): Group {
