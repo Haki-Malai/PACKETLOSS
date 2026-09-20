@@ -10,11 +10,12 @@ import { buildMazeWallFootprint, connectionCenterIsOpen, connectionTouchesAuthor
 import type { WallConnection } from '../domain/world/MazeFootprint';
 import type { RandomSource } from '../shared/random/RandomSource';
 import type { CollectibleSystem } from './CollectibleSystem';
+import { ENDLESS_SETTINGS } from '../shared/endlessSettings';
 
 /** Owns temporary maze blockers and Trojan ambushes using simulation time and seeded randomness. */
 export class MazeHazardSystem {
-  private readonly navigation: EnemyNavigationService;
-  private readonly permanentWalls = buildMazeWallFootprint(this.world.map);
+  private navigation: EnemyNavigationService;
+  private permanentWalls = buildMazeWallFootprint(this.world.map);
 
   /** Shares live movement rules and point state; fake points never enter the collectible system. */
   constructor(
@@ -25,6 +26,13 @@ export class MazeHazardSystem {
   ) {
     this.navigation = new EnemyNavigationService(world.collisionGrid, world.tileSize,
       new PortalService(world.collisionGrid, world.map.portalPairs ?? []));
+  }
+
+  /** Refreshes wall pixels and portal-aware reachability after a streamed shift. */
+  onTopologyChanged(): void {
+    this.permanentWalls = buildMazeWallFootprint(this.world.map);
+    this.navigation = new EnemyNavigationService(this.world.collisionGrid, this.world.tileSize,
+      new PortalService(this.world.collisionGrid, this.world.map.portalPairs ?? []));
   }
 
   /** Ages walls and advances eligible enemies; pause and terminal checkpoints freeze all hazards. */
@@ -163,6 +171,8 @@ export class MazeHazardSystem {
   /** Accepts only actor-free open passages whose new rail joins permanent wall geometry. */
   private canCloseConnection(connection: WallConnection, neighbor: TilePosition): boolean {
     const { tile, side } = connection;
+    if (this.world.runMode === 'endless' && side === 'down'
+      && tile.y % ENDLESS_SETTINGS.sectionRows === ENDLESS_SETTINGS.sectionRows - 1) return false;
     return this.isOpenPlacement(tile) && this.isOpenPlacement(neighbor)
       && this.isClearOfActors(tile, 1.5) && this.isClearOfActors(neighbor, 1.5)
       && this.movement.canMove(side, 0, 0, this.world.collisionGrid.getTilesAt(tile))

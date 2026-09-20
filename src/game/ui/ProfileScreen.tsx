@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { LocalRunRecord } from '../infrastructure/adapters/LocalProfileStore';
-import { MenuButton, MenuColumns, fieldLayout, inputLayout } from './MenuPanel';
+import type { RunMode } from '../app/contracts';
+import { CustomSelect, MenuButton, MenuColumns, fieldLayout, inputLayout } from './MenuPanel';
 import type { GameSession } from './useGameSession';
 
 /** Formats a score with consistent US-English digit grouping. */
@@ -21,8 +22,17 @@ export function duration(elapsedMs: number): string {
 export function ProfileBody({ session }: { session: GameSession }) {
     const { store, mapVariant } = session;
     const [nickname, setNickname] = useState(() => store.getNickname());
+    const [mode, setMode] = useState<RunMode>('classic');
+    const recordsMap = mode === 'endless' ? 'default' : mapVariant;
     return (
         <>
+            <CustomSelect
+                ariaLabel="Records mode"
+                value={mode}
+                options={[{ value: 'classic', label: 'Classic' }, { value: 'endless', label: 'Endless' }]}
+                onChange={setMode}
+                control="records-mode"
+            />
             <form
                 className="grid gap-3 min-[600px]:grid-cols-[1fr_auto] min-[600px]:items-end"
                 onSubmit={(event) => {
@@ -50,10 +60,10 @@ export function ProfileBody({ session }: { session: GameSession }) {
                 </MenuButton>
             </form>
             <MenuColumns>
-                <RecordSection title="TOP SCORES" records={store.getTopRecords(mapVariant)} />
+                <RecordSection title="TOP SCORES" records={store.getTopRecords(recordsMap, mode)} />
                 <RecordSection
                     title="RECENT RUNS"
-                    records={store.getRecentRecords(mapVariant)}
+                    records={store.getRecentRecords(recordsMap, mode)}
                     recent
                 />
             </MenuColumns>
@@ -84,8 +94,9 @@ function RecordSection({
                                 {record.nickname}
                                 <small>
                                     {record.outcome === 'cleared' ? 'Cleared' : 'Lost'} ·{' '}
-                                    {record.levelsCleared}{' '}
-                                    {record.levelsCleared === 1 ? 'level' : 'levels'} ·{' '}
+                                    {record.mode === 'endless'
+                                        ? `${record.pointsCollected} bits`
+                                        : `${record.levelsCleared} ${record.levelsCleared === 1 ? 'level' : 'levels'}`} ·{' '}
                                     {duration(record.elapsedMs)} ·{' '}
                                     {new Date(record.completedAt).toLocaleDateString()}
                                 </small>

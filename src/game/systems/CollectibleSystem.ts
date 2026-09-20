@@ -6,6 +6,9 @@ import { setActiveEnemiesScaredWindow } from '../domain/services/EnemyScaredStat
 import { buildPointLayout } from '../domain/services/PointLayoutService';
 import { TilePosition } from '../domain/valueObjects/TilePosition';
 import { WorldState } from '../domain/world/WorldState';
+import type { ResidentEndlessSection } from '../domain/world/EndlessMazeStream';
+import { ENDLESS_SETTINGS } from '../shared/endlessSettings';
+import { CollisionGrid } from '../domain/world/CollisionGrid';
 import { createEatEffect, type CollectibleKind, type EatEffect } from '../shared/pickupEffects';
 
 export type { CollectibleKind, EatEffect } from '../shared/pickupEffects';
@@ -25,8 +28,11 @@ export class CollectibleSystem {
   private readonly pointsByTile = new Map<string, CollectiblePoint>();
   private readonly eatEffects: EatEffect[] = [];
   private readonly initialPoints: readonly CollectiblePoint[];
+  private revision = 0;
+  private collectedCount = 0;
 
-  constructor(private readonly world: WorldState, points?: readonly CollectiblePoint[]) {
+  constructor(private readonly world: WorldState, points?: readonly CollectiblePoint[],
+    private readonly endlessPickupSeed?: number) {
     if (points) {
       points.forEach((point) => {
         this.pointsByTile.set(tileKey(point.tile), { ...point, tile: { ...point.tile } });
@@ -61,6 +67,47 @@ export class CollectibleSystem {
     return this.pointsByTile.size;
   }
 
+  /** Returns the pickup content revision, including same-count stream replacements. */
+  getRevision(): number {
+    return this.revision;
+  }
+
+  /** Counts only pickups the Packet touched, independent of section eviction. */
+  getCollectedCount(): number {
+    return this.collectedCount;
+  }
+
+  /** Keeps resident pickups and creates fresh points for an incoming maze section. */
+  shiftEndlessSection(section: ResidentEndlessSection, rows: number, newSlot: number): void {
+    const pixels = rows * this.world.tileSize;
+    const retained = Array.from(this.pointsByTile.values()).map((point) => ({
+      ...point, tile: { x: point.tile.x, y: point.tile.y + rows }, y: point.y + pixels,
+    })).filter((point) => point.tile.y >= 0 && point.tile.y < this.world.map.height);
+    this.pointsByTile.clear();
+    retained.forEach((point) => this.pointsByTile.set(tileKey(point.tile), point));
+    const layout = buildPointLayout({
+      map: section.map,
+      collisionGrid: new CollisionGrid(section.map.tiles.map((row) => row.map((tile) => tile.collision))),
+      startTile: { x: Math.floor(section.map.width / 2), y: Math.floor(section.map.height / 2) },
+      tileSize: this.world.tileSize,
+      options: { seed: section.pickupSeed,
+        powerPointRatio: ENDLESS_SETTINGS.powerCoresPerTile,
+        minPowerPoints: ENDLESS_SETTINGS.sectionPowerCores.min,
+        maxPowerPoints: ENDLESS_SETTINGS.sectionPowerCores.max },
+    });
+    const add = (tiles: readonly TilePosition[], kind: CollectibleKind): void => {
+      tiles.forEach((tile) => {
+        const positioned = { x: tile.x, y: tile.y + newSlot * section.map.height };
+        const center = this.toPointCenter(positioned);
+        this.pointsByTile.set(tileKey(positioned), { tile: positioned, ...center, kind });
+      });
+    };
+    add(layout.basePoints, 'base');
+    add(layout.powerPoints, 'power');
+    this.eatEffects.forEach((effect) => { effect.y += pixels; });
+    this.revision += 1;
+  }
+
   getEatEffects(): readonly EatEffect[] {
     return this.eatEffects;
   }
@@ -83,6 +130,8 @@ export class CollectibleSystem {
     if (!point) return;
 
     this.pointsByTile.delete(tileKey(point.tile));
+    this.collectedCount += 1;
+    this.revision += 1;
 
     const baseScore = point.kind === 'power' ? COLLECTIBLE_CONFIG[1].score : COLLECTIBLE_CONFIG[0].score;
     awardScore(this.world, baseScore);
@@ -104,6 +153,7 @@ export class CollectibleSystem {
 
   private triggerScaredEnemyWindow(): void {
     setActiveEnemiesScaredWindow(this.world, ENEMY_SCARED_DURATION_MS);
+    if (this.world.runMode === 'endless') this.world.powerRemainingMs = ENEMY_SCARED_DURATION_MS;
     this.world.enemyEatChainCount = 0;
   }
 
@@ -186,6 +236,11 @@ export class CollectibleSystem {
       collisionGrid: this.world.collisionGrid,
       startTile: this.world.packet.tile,
       tileSize: this.world.tileSize,
+      ...(this.world.runMode === 'endless'
+        ? { options: { seed: this.endlessPickupSeed,
+          powerPointRatio: ENDLESS_SETTINGS.powerCoresPerTile,
+          minPowerPoints: ENDLESS_SETTINGS.initialPowerCores.min,
+          maxPowerPoints: ENDLESS_SETTINGS.initialPowerCores.max } } : {}),
     });
 
     const powerTiles = new Set(pointLayout.powerPoints.map((tile) => tileKey(tile)));

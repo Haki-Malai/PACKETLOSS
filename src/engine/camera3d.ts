@@ -60,6 +60,22 @@ export class Camera3D {
     this.tracker.update();
   }
 
+  /** Rebases the rolling maze's vertical camera coordinates. */
+  translateY(pixels: number): void {
+    this.tracker.translateY(pixels);
+  }
+
+  /** Returns the projected ground rectangle currently covered by the game camera. */
+  getVisibleGroundBounds(): { minX: number; maxX: number; minY: number; maxY: number } {
+    const position = this.tracker.getRenderPosition();
+    return {
+      minX: position.x,
+      maxX: position.x + this.viewportWidth / this.tracker.getZoom(),
+      minY: position.y,
+      maxY: position.y + this.viewportHeight / this.tracker.getZoom() / GROUND_VERTICAL_SCALE,
+    };
+  }
+
   getRenderPosition(alpha = 1): { x: number; y: number } {
     return this.tracker.getRenderPosition(alpha);
   }

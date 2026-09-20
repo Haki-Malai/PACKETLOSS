@@ -64,6 +64,17 @@ export class EntityPresentation {
     return previous.output;
   }
 
+  /** Translates buffered interpolation samples when a rolling maze recenters. */
+  translateY(pixels: number): void {
+    for (const entity of [this.world.packet, ...this.world.enemies]) {
+      const previous = this.previousPositions.get(entity);
+      if (!previous) continue;
+      previous.y += pixels;
+      previous.output.y += pixels;
+      previous.samples.forEach((sample) => { sample.y += pixels; });
+    }
+  }
+
   private capture(entity: PresentedEntity): void {
     const previous = this.previousPositions.get(entity);
     if (previous) {

@@ -10,6 +10,8 @@ import { ArcadeAssets } from '../game/infrastructure/three/ArcadeAssets';
 import { AnimationSystem } from '../game/systems/AnimationSystem';
 import { CameraSystem } from '../game/systems/CameraSystem';
 import { EnemyReleaseSystem } from '../game/systems/EnemyReleaseSystem';
+import { EndlessEncounterSystem } from '../game/systems/EndlessEncounterSystem';
+import { EndlessStreamingSystem } from '../game/systems/EndlessStreamingSystem';
 import { RenderSystem } from '../game/systems/RenderSystem';
 import { ScoreBonusSystem } from '../game/systems/ScoreBonusSystem';
 import { DebugOverlaySystem } from '../game/systems/DebugOverlaySystem';
@@ -137,6 +139,42 @@ describe('GameCompositionRoot startup', () => {
     render.destroy?.();
     composed.destroy();
     expect(rendererDispose).toHaveBeenCalledOnce();
+    expect(mount.children).toHaveLength(0);
+  });
+
+  it('composes Endless from generated tiles with seven originals and three reusable Spam slots', async () => {
+    environment.isDev = false;
+    const { mount } = prepareComposition();
+    const loadMap = vi.spyOn(TiledMapRepository.prototype, 'loadMap');
+    loadMap.mockClear();
+    vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(createCharacterAssets());
+    vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
+      return { dispose: vi.fn(), prepare: vi.fn(async () => {}) } as unknown as ThreeRendererAdapter;
+    });
+
+    const composed = await new GameCompositionRoot({ mode: 'endless', endlessSeed: 123 }).compose(runtimeControl);
+    expect(loadMap).not.toHaveBeenCalled();
+    expect(composed.world.runMode).toBe('endless');
+    expect([composed.world.map.width, composed.world.map.height]).toEqual([25, 120]);
+    expect(composed.world.packetSpawnTile).toEqual({ x: 12, y: 60 });
+    expect(composed.world.packet.tile).toEqual({ x: 12, y: 60 });
+    expect(composed.world.map.tiles[59].slice(10, 15).map((tile) => tile.localId))
+      .toEqual([17, 18, 19, 20, 21]);
+    expect(composed.world.map.portalPairs).toContainEqual({
+      from: { x: 1, y: 60 }, to: { x: 23, y: 60 },
+    });
+    for (let x = 1; x < 23; x += 1) {
+      expect(composed.world.map.tiles[60][x].collision.right).toBe(false);
+    }
+    expect(composed.world.enemies).toHaveLength(10);
+    expect(composed.world.enemies.filter((enemy) => !enemy.isCopy)).toHaveLength(7);
+    expect(composed.world.enemies.filter((enemy) => enemy.isCopy)).toHaveLength(3);
+    expect(composed.world.enemies.every((enemy) => !enemy.active)).toBe(true);
+    expect(composed.updateSystems.some((system) => system instanceof EnemyReleaseSystem)).toBe(false);
+    expect(composed.updateSystems.some((system) => system instanceof EndlessEncounterSystem)).toBe(true);
+    expect(composed.updateSystems.some((system) => system instanceof EndlessStreamingSystem)).toBe(true);
+    composed.renderSystems.forEach((system) => system.destroy?.());
+    composed.destroy();
     expect(mount.children).toHaveLength(0);
   });
 

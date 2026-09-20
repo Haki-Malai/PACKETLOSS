@@ -340,7 +340,7 @@ export class GameRuntime implements PacketGame {
     if (!this.composed || this.result || this.levelClear) return;
     const remaining = this.composed.getRemainingPointCount();
     const world = this.composed.world;
-    if (!world.outcome && this.totalPoints > 0 && remaining === 0) {
+    if (world.runMode !== 'endless' && !world.outcome && this.totalPoints > 0 && remaining === 0) {
       world.outcome = 'cleared';
       this.levelsCleared += 1;
       this.levelClear = {
@@ -356,12 +356,15 @@ export class GameRuntime implements PacketGame {
     }
     if (world.outcome !== 'lost') return;
 
+    const recovered = world.runMode === 'endless'
+      ? this.composed.getCollectedPointCount?.() ?? 0 : this.totalPoints - remaining;
     this.result = {
       outcome: world.outcome,
+      mode: world.runMode ?? 'classic',
       ...getGameState(),
       elapsedMs: Math.round(this.elapsedMs),
-      pointsCollected: this.totalPoints - remaining,
-      totalPoints: this.totalPoints,
+      pointsCollected: recovered,
+      totalPoints: world.runMode === 'endless' ? recovered : this.totalPoints,
       levelsCleared: this.levelsCleared,
     };
     this.freezeSimulation();

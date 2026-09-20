@@ -82,9 +82,11 @@ export class EnemyPacketCollisionSystem {
 
   /** Restores the Packet after a nonfinal death, then resets enemies through the owning composition. */
   private respawnPacket(): void {
-    this.movementRules.setEntityTile(this.world.packet, this.world.packetSpawnTile);
-    this.world.packet.direction.current = PACKET_RESPAWN_DIRECTION;
-    this.world.packet.direction.next = PACKET_RESPAWN_DIRECTION;
+    if (this.world.runMode === 'classic') {
+      this.movementRules.setEntityTile(this.world.packet, this.world.packetSpawnTile);
+      this.world.packet.direction.current = PACKET_RESPAWN_DIRECTION;
+      this.world.packet.direction.next = PACKET_RESPAWN_DIRECTION;
+    }
     if (this.world.packet.portalBlinkRemainingMs !== Infinity) {
       this.world.packet.portalBlinkRemainingMs = 0;
       this.world.packet.portalBlinkElapsedMs = 0;

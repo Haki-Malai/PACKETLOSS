@@ -124,6 +124,9 @@ export function MenuScreens({
                     <MenuButton action="start" variant="primary" onClick={() => s.startRun()}>
                         Start game
                     </MenuButton>
+                    <MenuButton action="start-endless" onClick={() => s.startRun(undefined, 'endless')}>
+                        Endless maze
+                    </MenuButton>
                     <MenuButton action="profile" onClick={() => s.submenu('profile', 'profile')}>
                         Profile &amp; records
                     </MenuButton>
@@ -155,7 +158,7 @@ export function MenuScreens({
                             onClick={() =>
                                 s.confirm(
                                     'Restart this run? Your unfinished score will not be saved.',
-                                    () => s.startRun(),
+                                    () => s.startRun(undefined, state.runMode),
                                     'restart'
                                 )
                             }
@@ -245,11 +248,14 @@ export function MenuScreens({
                     <p className="packet-eyebrow">{state.newBest ? 'NEW BEST' : 'FINAL SCORE'}</p>
                     <dl className="packet-stats">
                         {[
-                            ['Best score', score(store.getTopRecords(mapVariant)[0]?.score ?? 0)],
-                            ['Levels cleared', String(result!.levelsCleared)],
+                            ['Best score', score(store.getTopRecords(result!.mode === 'endless' ? 'default' : mapVariant,
+                                result!.mode ?? 'classic')[0]?.score ?? 0)],
+                            ...(result!.mode === 'endless' ? [] : [['Levels cleared', String(result!.levelsCleared)]]),
                             [
                                 'Data recovered',
-                                `${result!.pointsCollected} / ${result!.totalPoints}`,
+                                result!.mode === 'endless'
+                                    ? String(result!.pointsCollected)
+                                    : `${result!.pointsCollected} / ${result!.totalPoints}`,
                             ],
                             ['Play time', duration(result!.elapsedMs)],
                         ].map(([label, value]) => (
@@ -272,7 +278,7 @@ export function MenuScreens({
                             Continue
                         </MenuButton>
                     ) : (
-                        <MenuButton action="replay" variant="primary" onClick={() => s.startRun()}>
+                        <MenuButton action="replay" variant="primary" onClick={() => s.startRun(undefined, state.runMode)}>
                             {result?.outcome === 'lost' ? 'Try again' : 'Play again'}
                         </MenuButton>
                     )}

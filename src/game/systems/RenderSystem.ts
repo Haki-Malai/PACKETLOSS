@@ -16,6 +16,8 @@ import { CollisionDebugScene } from '../infrastructure/three/CollisionDebugScene
 import { EnemyEffects } from '../infrastructure/three/EnemyEffects';
 import { EnemyEatPresentation } from '../infrastructure/three/EnemyEatPresentation';
 import { MazeScene } from '../infrastructure/three/MazeScene';
+import { EndlessMazePresentation } from '../infrastructure/three/EndlessMazePresentation';
+import type { EndlessMazeStream } from '../domain/world/EndlessMazeStream';
 import { QuarantineWalls } from '../infrastructure/three/QuarantineWalls';
 import { TrojanDisguise } from '../infrastructure/three/TrojanDisguise';
 import { createEatEffectMesh, samplePickupRotation, sampleEatEffect, setPointTransform } from '../infrastructure/three/PickupPresentation';
@@ -31,8 +33,8 @@ import type { ScoreBonusSystem } from './ScoreBonusSystem';
 export class RenderSystem {
   readonly scene = new Scene();
   private readonly presentation: EntityPresentation;
-  private readonly maze: MazeScene;
-  private readonly debug: CollisionDebugScene | undefined;
+  private maze: MazeScene | EndlessMazePresentation;
+  private debug: CollisionDebugScene | undefined;
   private readonly packet: Group;
   private readonly packetShadow: Mesh;
   private readonly pickupTarget: Object3D;
@@ -48,8 +50,9 @@ export class RenderSystem {
   private readonly tutorialMarker: TutorialMarker | undefined;
   private readonly pointMatrix = new Matrix4();
   private readonly powerPoints: Array<{ x: number; y: number }> = [];
-  private readonly bonusModels = new Map<ScoreBonusKind, Group>();
+  private readonly bonusModels = new Map<ScoreBonusKind, Group[]>();
   private lastPointCount = -1;
+  private lastPointRevision = -1;
   private lastBonusCount = -1;
   private animationTime = 0;
   private previousAnimationTime = 0;
@@ -59,6 +62,7 @@ export class RenderSystem {
   private previousMotionAmount = 0;
   private previousDeathRemainingMs = 0;
   private previousEnemyEatRemainingMs = 0;
+  private pickupPhaseOffsetY = 0;
   private destroyed = false;
 
   /** Creates scene resources, allocating collision inspection geometry only in development. */
@@ -69,11 +73,12 @@ export class RenderSystem {
     private readonly collectibles: CollectibleSystem,
     private readonly assets: ArcadeAssets,
     private readonly getTutorialMarkers?: () => readonly Readonly<TilePosition>[],
-    private readonly scoreBonuses?: ScoreBonusSystem,
+    private readonly scoreBonuses?: Pick<ScoreBonusSystem, 'getPickups'>,
+    private readonly endlessStream?: EndlessMazeStream,
   ) {
     this.presentation = new EntityPresentation(world);
     addGameplayLighting(this.scene);
-    this.maze = new MazeScene(world);
+    this.maze = endlessStream ? new EndlessMazePresentation(endlessStream) : new MazeScene(world);
     this.quarantineWalls = new QuarantineWalls(world.tileSize);
     this.debug = IS_DEV ? new CollisionDebugScene(world) : undefined;
     this.scene.add(this.maze.group, this.enemyEffects.group, this.quarantineWalls.group);
@@ -103,7 +108,8 @@ export class RenderSystem {
 
     const initialPoints = Array.from(this.collectibles.getPoints());
     for (const kind of ['base', 'power'] as const) {
-      const count = initialPoints.filter((point) => point.kind === kind).length;
+      const count = world.runMode === 'endless' ? world.map.width * world.map.height
+        : initialPoints.filter((point) => point.kind === kind).length;
       const material = kind === 'power' ? this.assets.powerPelletMaterial : this.assets.pelletMaterial;
       const geometry = kind === 'power' ? this.assets.powerPelletGeometry : this.assets.pelletGeometry;
       const points = new InstancedMesh(geometry, material, count);
@@ -119,7 +125,7 @@ export class RenderSystem {
         model.name = `score-bonus-${kind}`;
         model.scale.setScalar(2.2);
         model.visible = false;
-        this.bonusModels.set(kind, model);
+        this.bonusModels.set(kind, [model]);
         this.scene.add(model);
       }
     }
@@ -131,6 +137,26 @@ export class RenderSystem {
     this.previousMotionAmount = this.motionAmount;
     this.previousDeathRemainingMs = this.world.packet.deathAnimationRemainingMs;
     this.previousEnemyEatRemainingMs = this.world.packet.enemyEatRemainingMs;
+  }
+
+  /** Refreshes streamed geometry and keeps interpolation continuous after a map shift. */
+  onEndlessShift(pixels: number): void {
+    this.presentation.translateY(pixels);
+    this.pickupPhaseOffsetY -= pixels;
+    if (this.maze instanceof EndlessMazePresentation) this.maze.onShift();
+    else {
+      this.scene.remove(this.maze.group);
+      this.maze.dispose();
+      this.maze = new MazeScene(this.world);
+      this.scene.add(this.maze.group);
+    }
+    if (this.debug) {
+      this.scene.remove(this.debug.group);
+      this.debug.dispose();
+      this.debug = new CollisionDebugScene(this.world);
+      this.scene.add(this.debug.group);
+    }
+    this.lastPointRevision = -1;
   }
 
   /** Advances presentation time and records the latest bounded simulation position. */
@@ -253,12 +279,14 @@ export class RenderSystem {
   /** Refreshes visible bits when points or covering bonuses change, and animates power cores. */
   private syncPoints(timeSeconds = 0): void {
     const pointCount = this.collectibles.getPointCount();
+    const pointRevision = this.collectibles.getRevision();
     const pickups = this.scoreBonuses?.getPickups();
     const bonusCount = pickups?.length ?? 0;
     const power = this.points.get('power')!;
-    if (pointCount !== this.lastPointCount || bonusCount !== this.lastBonusCount) {
+    if (pointCount !== this.lastPointCount || pointRevision !== this.lastPointRevision || bonusCount !== this.lastBonusCount) {
       this.lastBonusCount = bonusCount;
       this.lastPointCount = pointCount;
+      this.lastPointRevision = pointRevision;
       this.powerPoints.length = 0;
       const base = this.points.get('base')!;
       base.count = 0;
@@ -276,7 +304,8 @@ export class RenderSystem {
       power.count = this.powerPoints.length;
     }
     this.powerPoints.forEach((point, index) => {
-      setPointTransform(this.pointMatrix, 'power', point.x, point.y, timeSeconds);
+      setPointTransform(this.pointMatrix, 'power', point.x, point.y, timeSeconds,
+        point.y + this.pickupPhaseOffsetY);
       power.setMatrixAt(index, this.pointMatrix);
     });
     power.instanceMatrix.needsUpdate = true;
@@ -286,12 +315,25 @@ export class RenderSystem {
   /** Shows each available authored pickup using its model prepared at startup. */
   private syncScoreBonus(timeSeconds: number): void {
     const pickups = this.scoreBonuses?.getPickups() ?? [];
-    for (const [kind, model] of this.bonusModels) {
-      const pickup = pickups.find((candidate) => candidate.kind === kind);
-      model.visible = Boolean(pickup);
-      if (!pickup) continue;
-      model.position.set(pickup.x, 2.9 + Math.sin(timeSeconds * 3) * 0.25, pickup.y);
-      samplePickupRotation(model.quaternion, pickup.x, pickup.y, timeSeconds);
+    for (const [kind, models] of this.bonusModels) {
+      const matching = pickups.filter((pickup) => pickup.kind === kind);
+      while (models.length < matching.length) {
+        const model = this.assets.createScoreBonus(kind);
+        if (!model) break;
+        model.name = `score-bonus-${kind}-${models.length + 1}`;
+        model.scale.setScalar(2.2);
+        models.push(model);
+        this.scene.add(model);
+      }
+      while (models.length > Math.max(1, matching.length)) this.scene.remove(models.pop()!);
+      models.forEach((model, index) => {
+        const pickup = matching[index];
+        model.visible = Boolean(pickup);
+        if (!pickup) return;
+        model.position.set(pickup.x, 2.9 + Math.sin(timeSeconds * 3) * 0.25, pickup.y);
+        samplePickupRotation(model.quaternion, pickup.x, pickup.y, timeSeconds,
+          pickup.y + this.pickupPhaseOffsetY);
+      });
     }
   }
 
@@ -316,7 +358,8 @@ export class RenderSystem {
         this.effects.set(effect, mesh);
         this.scene.add(mesh);
       }
-      sampleEatEffect(mesh, effect, this.pickupTarget, this.animationTime - effect.elapsedMs / 1000);
+      sampleEatEffect(mesh, effect, this.pickupTarget,
+        this.animationTime - effect.elapsedMs / 1000, effect.y + this.pickupPhaseOffsetY);
     }
   }
 
