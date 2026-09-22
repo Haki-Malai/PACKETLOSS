@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode, type Ref, type RefObject } from 'react';
-import { getTutorialLesson, TUTORIAL_LESSONS } from '../tutorial/TutorialLesson';
+import { getTutorialLesson } from '../tutorial/TutorialLesson';
 import type { MenuMotion } from '../infrastructure/adapters/LocalProfileStore';
 import { CustomSelect, MenuPanel, MenuButton, MenuColumns, fieldLayout } from './MenuPanel';
 import { EnemyGuide, ScoreBonusGuide, TitleHeading } from './MenuPreviews';
@@ -42,20 +42,17 @@ const helpPages = [
     { id: 'enemies', label: 'Enemies' },
 ] as const;
 
-const titles: Record<
-    Exclude<Screen, 'playing' | 'tutorial' | 'result'>,
-    readonly [string, string]
-> = {
-    title: ['A maze arcade game', 'PACKETLOSS'],
-    mode: ['', 'Start game'],
-    paused: ['Signal on hold', 'PAUSED'],
-    settings: ['Make yourself comfortable', 'SETTINGS'],
-    help: ['Keep your signal alive', 'ABOUT'],
-    profile: ['', 'PROFILE & RECORDS'],
-    loading: ['Connecting', 'Loading the maze'],
-    error: ['Signal interrupted', 'Unable to start'],
-    confirm: ['One more thing', 'Are you sure?'],
-    'tutorial-complete': ['Practice complete', 'READY TO PLAY'],
+const titles: Record<Exclude<Screen, 'playing' | 'tutorial' | 'result'>, string> = {
+    title: 'PACKETLOSS',
+    mode: 'PACKETLOSS',
+    paused: 'PAUSED',
+    settings: 'SETTINGS',
+    help: 'ABOUT',
+    profile: 'PROFILE & RECORDS',
+    loading: 'Loading the maze',
+    error: 'Unable to start',
+    confirm: 'Are you sure?',
+    'tutorial-complete': 'READY TO PLAY',
 };
 
 export function MenuScreens({
@@ -70,18 +67,17 @@ export function MenuScreens({
     const { state, store, mapVariant } = s;
     const { screen, result, levelClear, tutorial, tutorialLesson } = state;
     if (screen === 'playing') return null;
-    const [eyebrow, title] =
+    const title =
         screen === 'tutorial'
-            ? [
-                  `Practice · Lesson ${TUTORIAL_LESSONS.findIndex((lesson) => lesson.id === tutorialLesson) + 1} of ${TUTORIAL_LESSONS.length}`,
-                  tutorialLesson ? getTutorialLesson(tutorialLesson).title : 'Tutorial',
-              ]
+            ? tutorialLesson
+                ? getTutorialLesson(tutorialLesson).title
+                : 'Tutorial'
             : screen === 'result'
               ? levelClear
-                  ? ['', 'MAZE CLEARED']
+                  ? 'MAZE CLEARED'
                   : result?.outcome === 'lost'
-                    ? ['All lives lost', 'PACKET LOST']
-                    : ['All data recovered', 'MAZE CLEARED']
+                    ? 'PACKET LOST'
+                    : 'MAZE CLEARED'
               : titles[screen];
     let body: ReactNode;
     let actions: ReactNode;
@@ -96,10 +92,10 @@ export function MenuScreens({
     );
     const preferences = (
         <>
-            <MenuButton action="settings" onClick={() => s.submenu('settings', 'settings')}>
+            <MenuButton action="settings" onClick={() => s.submenu('settings')}>
                 Settings
             </MenuButton>
-            <MenuButton action="help" onClick={() => s.submenu('help', 'help')}>
+            <MenuButton action="help" onClick={() => s.submenu('help')}>
                 About
             </MenuButton>
         </>
@@ -107,29 +103,24 @@ export function MenuScreens({
     switch (screen) {
         case 'title':
             body = (
-                <>
-                    <p className="packet-copy">
-                        Recover data. Evade enemies. Keep your signal alive.
-                    </p>
-                    <div
-                        data-identity
-                        className="mb-2.5 flex flex-wrap items-center justify-between gap-3 font-heading text-[0.72rem] wrap-anywhere text-packet-gold"
-                    >
-                        <span>{store.getNickname()}</span>
-                        <span>BEST {score(store.getTopRecords(mapVariant)[0]?.score ?? 0)}</span>
-                    </div>
-                </>
+                <div
+                    data-identity
+                    className="mb-2.5 flex flex-wrap items-center justify-between gap-3 font-heading text-[0.72rem] wrap-anywhere text-packet-gold"
+                >
+                    <span>{store.getNickname()}</span>
+                    <span>BEST {score(store.getTopRecords(mapVariant)[0]?.score ?? 0)}</span>
+                </div>
             );
             actions = (
                 <>
                     <MenuButton
                         action="start"
                         variant="primary"
-                        onClick={() => s.submenu('mode', 'start')}
+                        onClick={() => s.submenu('mode')}
                     >
                         Start game
                     </MenuButton>
-                    <MenuButton action="profile" onClick={() => s.submenu('profile', 'profile')}>
+                    <MenuButton action="profile" onClick={() => s.submenu('profile')}>
                         Profile &amp; records
                     </MenuButton>
                     {preferences}
@@ -153,7 +144,7 @@ export function MenuScreens({
                         action="start-level"
                         onClick={() => s.startRun(undefined, 'classic')}
                     >
-                        Level
+                        Classic
                     </MenuButton>
                 </>
             );
@@ -401,13 +392,12 @@ export function MenuScreens({
     return (
         <MenuPanel
             panelRef={panelRef}
-            eyebrow={eyebrow}
             title={title}
             wide={screen === 'help' || screen === 'profile'}
             compact={screen === 'mode'}
             centered={screen === 'title'}
             heading={
-                screen === 'title'
+                screen === 'title' || screen === 'mode'
                     ? (id) => <TitleHeading id={id} motion={store.getMotion()} />
                     : undefined
             }

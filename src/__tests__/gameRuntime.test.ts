@@ -13,7 +13,7 @@ import { CollectibleSystem } from '../game/systems/CollectibleSystem';
 import { EnemyMovementSystem } from '../game/systems/EnemyMovementSystem';
 import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
 import { TutorialController } from '../game/tutorial/TutorialController';
-import { getGameState, resetGameState } from '../state/gameState';
+import { addScore, getGameState, resetGameState } from '../state/gameState';
 import { createCollisionTile, createMapFixture } from './fixtures/pointLayoutFixtures';
 
 type EventCallback = (_event?: Event) => void;
@@ -318,6 +318,37 @@ describe('GameRuntime', () => {
     });
     runtime.continueLevel();
     expect(spies.world.levelMultiplier).toBe(1.5625);
+    runtime.destroy();
+  });
+
+  it('applies Endless score speed to simulation only, preserving active wall-clock time', async () => {
+    const { composed, spies } = createComposedGame();
+    Object.assign(spies.world, { runMode: 'endless' });
+    const onStateChange = vi.fn<(_state: RuntimeState) => void>();
+    const runtime = new GameRuntime(
+      { compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot,
+      onStateChange,
+    );
+    await runtime.start();
+    nextFrame?.(1);
+    nextFrame?.(20);
+    spies.scheduler.update.mockClear();
+    addScore(2000);
+    nextFrame?.(40);
+    expect(spies.scheduler.update.mock.calls).toHaveLength(2);
+    expect(spies.scheduler.update.mock.calls[0]?.[0]).toBeCloseTo(1000 / 60);
+    expect(spies.scheduler.update.mock.calls[1]?.[0]).toBeCloseTo((1000 / 60) * 0.2);
+    expect(getGameState().score).toBe(2000);
+    runtime.pause();
+    spies.scheduler.update.mockClear();
+    nextFrame?.(1000);
+    expect(spies.scheduler.update).not.toHaveBeenCalled();
+    runtime.resume();
+    nextFrame?.(1020);
+    expect(spies.scheduler.update).toHaveBeenCalled();
+    spies.world.outcome = 'lost';
+    nextFrame?.(1040);
+    expect(onStateChange.mock.lastCall?.[0].result?.elapsedMs).toBe(80);
     runtime.destroy();
   });
 

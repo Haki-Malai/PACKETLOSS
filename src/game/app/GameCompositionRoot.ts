@@ -252,7 +252,8 @@ export class GameCompositionRoot {
         tutorial ? () => tutorial.getMarkerTiles() : undefined, scoreBonusSystem, stream);
       if (stream) {
         encounterSystem = new EndlessEncounterSystem(world, camera, movementRules, enemyMovementSystem,
-          new SeededRandom(endlessSeed ^ 0x29a655e1), portalService);
+          new SeededRandom(endlessSeed ^ 0x29a655e1), portalService,
+          () => stream.getExploredSectionCount());
       }
       const streamingSystem = stream && scoreBonusSystem instanceof EndlessBonusSystem
         ? new EndlessStreamingSystem(world, stream, portalService, camera, collectibleSystem,

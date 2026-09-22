@@ -183,13 +183,15 @@ describe('GameShell', () => {
         expect(page.root.querySelector('[data-action="start-endless"]')).toBeNull();
         for (const exit of ['back', 'escape']) {
             fireEvent.click(page.action('start'));
-            expect(page.document.activeElement).toBe(page.action('start-endless'));
+            expect(page.document.activeElement).toBe(page.find('[role="dialog"]'));
+            expect(page.action('start-endless').classList.contains('packet-primary')).toBe(true);
+            expect(page.action('start-level').textContent).toBe('Classic');
             page.key('ArrowDown');
             expect(page.document.activeElement).toBe(page.action('start-level'));
             if (exit === 'back') fireEvent.click(page.action('back'));
             else page.key('Escape');
             expect(page.screen()).toBe('title');
-            expect(page.document.activeElement).toBe(page.action('start'));
+            expect(page.document.activeElement).toBe(page.find('[role="dialog"]'));
             expect(page.createGame).not.toHaveBeenCalled();
         }
         fireEvent.click(page.action('start'));
@@ -218,7 +220,7 @@ describe('GameShell', () => {
         await user.keyboard('{Enter}');
         expect(page.screen()).toBe('mode');
         const endless = page.action('start-endless');
-        expect(page.document.activeElement).toBe(endless);
+        expect(page.document.activeElement).toBe(page.find('[role="dialog"]'));
         expect(endless.classList.contains('packet-primary')).toBe(true);
         page.key('ArrowDown');
         expect(page.document.activeElement).toBe(page.action('start-level'));
@@ -588,26 +590,31 @@ describe('GameShell', () => {
     });
 
     it.each(['settings', 'help', 'profile'])(
-        'uses the shared header Back control in %s and restores parent focus',
+        'uses the shared header Back control in %s and returns focus to the parent panel',
         async (screen) => {
             const page = setup();
             await flushStart();
             fireEvent.click(page.action(screen));
             const back = page.action('back');
-            expect(page.find('[role="dialog"] header').contains(back)).toBe(true);
+            const header = page.find('[role="dialog"] header');
+            const heading = page.find('h1');
+            expect(header.contains(back)).toBe(true);
             expect(back.closest('header')).not.toBeNull();
+            expect(heading.parentElement?.parentElement).toBe(header);
+            expect(heading.parentElement?.classList.contains('text-left')).toBe(true);
+            expect(header.querySelector('.packet-eyebrow')).toBeNull();
             expect(page.root.querySelectorAll('[data-action="back"]')).toHaveLength(1);
             expect(back.getAttribute('aria-label')).toBe('Back');
             expect(back.querySelector('span')?.getAttribute('aria-hidden')).toBe('true');
             expect(page.find('[role="dialog"]').getAttribute('aria-labelledby')).toBe(
-                page.find('h1').id
+                heading.id
             );
             page.key('Tab');
             expect(page.document.activeElement).toBe(back);
             expect(page.key(' ', back).defaultPrevented).toBe(false);
             fireEvent.click(back);
             expect(page.screen()).toBe('title');
-            expect(page.document.activeElement).toBe(page.action(screen));
+            expect(page.document.activeElement).toBe(page.find('[role="dialog"]'));
         }
     );
 
@@ -648,7 +655,7 @@ describe('GameShell', () => {
             else expect(page.games[0].resume).not.toHaveBeenCalled();
             page.key('Escape');
             expect(page.screen()).toBe(parent);
-            expect(page.document.activeElement).toBe(page.action('help'));
+            expect(page.document.activeElement).toBe(page.find('[role="dialog"]'));
             expect(dispose).toHaveBeenCalledOnce();
             page.unmount();
             expect(dispose).toHaveBeenCalledOnce();
@@ -712,6 +719,32 @@ describe('GameShell', () => {
             'reduced'
         );
         page.unmount();
+        expect(dispose).toHaveBeenCalledTimes(2);
+    });
+
+    it('removes the title tagline and replaces the mode title with the wordmark', async () => {
+        const dispose = vi.fn();
+        vi.mocked(mountTitleWordmark).mockReturnValue(dispose);
+        const page = setup();
+        await flushStart();
+        expect(page.root.textContent).not.toContain(
+            'Recover data. Evade enemies. Keep your signal alive.'
+        );
+
+        fireEvent.click(page.action('start'));
+        expect(dispose).toHaveBeenCalledOnce();
+        expect(page.find('[role="dialog"]').textContent).not.toContain('Start game');
+        expect(page.find('h1').textContent).toBe('PACKETLOSS');
+        const modeWordmark = page.find('.packet-wordmark');
+        expect(modeWordmark.getAttribute('aria-hidden')).toBeNull();
+        expect(page.find('[role="dialog"]').getAttribute('aria-labelledby')).toBe(
+            page.find('h1').id
+        );
+        expect(modeWordmark.textContent).toBe('PACKETLOSS');
+        await flushStart();
+        expect(mountTitleWordmark).toHaveBeenLastCalledWith(modeWordmark, 'system');
+
+        fireEvent.click(page.action('back'));
         expect(dispose).toHaveBeenCalledTimes(2);
     });
 
@@ -822,7 +855,7 @@ describe('GameShell', () => {
         expect(page.createGame).toHaveBeenCalledTimes(2);
     });
 
-    it('keeps submenu navigation paused, restores focus, and resumes only through an explicit action', async () => {
+    it('keeps submenu navigation paused, returns focus to the panel, and resumes only through an explicit action', async () => {
         const page = setup();
         fireEvent.click(page.action('start'));
         fireEvent.click(page.action('start-level'));
@@ -846,7 +879,7 @@ describe('GameShell', () => {
         expect(page.find('.game-shell').getAttribute('data-menu-motion')).toBe('reduced');
         page.key('Escape');
         expect(page.screen()).toBe('paused');
-        expect(page.document.activeElement).toBe(page.action('settings'));
+        expect(page.document.activeElement).toBe(page.find('[role="dialog"]'));
         expect(game.resume).not.toHaveBeenCalled();
         fireEvent.click(page.action('resume'));
         expect(game.resume).toHaveBeenCalledOnce();
@@ -907,6 +940,8 @@ describe('GameShell', () => {
         expect(copy).not.toContain('saved on this device');
         fireEvent.click(page.action('main-menu'));
         fireEvent.click(page.action('profile'));
+        fireEvent.click(page.find('[data-control="records-mode"]'));
+        fireEvent.click(page.find('[role="option"][data-value="classic"]'));
         expect(page.find('.packet-record-name').textContent).toContain('PLAYER');
     });
 
@@ -1009,13 +1044,19 @@ describe('GameShell', () => {
             completedAt: '2026-09-14T12:00:00Z', mode: 'endless', pointsCollected: 32,
             totalPoints: 32 });
         fireEvent.click(page.action('profile'));
-        expect(page.root.textContent).toContain('CLASSIC');
-        expect(page.root.textContent).not.toContain('ENDLESS');
-        fireEvent.click(page.find('[data-control="records-mode"]'));
-        fireEvent.click(page.find('[role="option"][data-value="endless"]'));
+        expect(page.find('[data-control="records-mode"]').textContent).toContain('Endless');
         expect(page.root.textContent).toContain('ENDLESS');
         expect(page.root.textContent).toContain('32 bits');
         expect(page.root.textContent).not.toContain('CLASSIC');
+        fireEvent.click(page.find('[data-control="records-mode"]'));
+        expect(
+            Array.from(page.root.querySelectorAll('[role="option"]')).map((option) =>
+                option.getAttribute('data-value')
+            )
+        ).toEqual(['endless', 'classic']);
+        fireEvent.click(page.find('[role="option"][data-value="classic"]'));
+        expect(page.root.textContent).toContain('CLASSIC');
+        expect(page.root.textContent).not.toContain('ENDLESS');
     });
 
     it('continues clear checkpoints without saving and confirms before abandoning one', async () => {
@@ -1074,6 +1115,8 @@ describe('GameShell', () => {
             completedAt: '2026-09-13T12:00:00Z',
         });
         fireEvent.click(page.action('profile'));
+        fireEvent.click(page.find('[data-control="records-mode"]'));
+        fireEvent.click(page.find('[role="option"][data-value="classic"]'));
         const nickname = page.find<HTMLInputElement>('[data-control="nickname"]');
         fireEvent.change(nickname, { target: { value: ' <b>ME</b> ' } });
         expect(page.key('ArrowDown', nickname).defaultPrevented).toBe(false);

@@ -145,7 +145,6 @@ function StartupMessage({
             data-menu-motion="system"
         >
             <MenuPanel
-                eyebrow={error ? 'Signal interrupted' : 'Connecting'}
                 title={error && title === 'Asset Lab' ? 'Unable to start' : title}
                 actions={action}
             >

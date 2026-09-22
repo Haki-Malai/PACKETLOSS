@@ -26,6 +26,8 @@ export class EndlessMazeStream {
   private readonly pickupRng: SeededRandom;
   readonly initialPickupSeed: number;
   private firstIndex = -Math.floor(ENDLESS_RESIDENT_SECTIONS / 2);
+  private lowestEnteredIndex = 0;
+  private highestEnteredIndex = 0;
   private revision = 0;
 
   constructor(private readonly runSeed: number) {
@@ -61,6 +63,18 @@ export class EndlessMazeStream {
   /** Returns resident sections in top-to-bottom order. */
   getSections(): readonly ResidentEndlessSection[] {
     return Array.from({ length: ENDLESS_RESIDENT_SECTIONS }, (_, i) => this.sections.get(this.firstIndex + i)!);
+  }
+
+  /** Records the Packet's global section, ignoring preloaded and revisited geography. */
+  recordPacketSection(localRow: number): void {
+    const index = this.firstIndex + Math.floor(localRow / ENDLESS_SECTION_HEIGHT);
+    this.lowestEnteredIndex = Math.min(this.lowestEnteredIndex, index);
+    this.highestEnteredIndex = Math.max(this.highestEnteredIndex, index);
+  }
+
+  /** Counts distinct section boundaries crossed in either direction. */
+  getExploredSectionCount(): number {
+    return this.highestEnteredIndex - this.lowestEnteredIndex;
   }
 
   /** Moves the window one section and returns the local coordinate translation. */

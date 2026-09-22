@@ -2,6 +2,7 @@ import { FixedStepLoop } from '../../engine/loop';
 import { LEVEL_MULTIPLIER_STEP } from '../../config/constants';
 import { MOVEMENT_STEP_MS } from '../domain/services/MovementRules';
 import { getGameState } from '../../state/gameState';
+import { endlessSpeedMultiplier } from '../shared/endlessSettings';
 import {
   ComposedGame,
   LevelClearCheckpoint,
@@ -305,7 +306,8 @@ export class GameRuntime implements PacketGame {
     this.composed.renderSystems.forEach((system) => {
       system.capturePreviousState?.();
     });
-    const simulationDeltaMs = deltaMs * this.composed.world.levelMultiplier;
+    const simulationDeltaMs = deltaMs * this.composed.world.levelMultiplier
+      * (this.composed.world.runMode === 'endless' ? endlessSpeedMultiplier(getGameState().score) : 1);
     this.beforeSystems.forEach((system) => system.update(deltaMs));
 
     let remainingMs = simulationDeltaMs;
