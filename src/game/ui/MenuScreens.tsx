@@ -47,9 +47,10 @@ const titles: Record<
     readonly [string, string]
 > = {
     title: ['A maze arcade game', 'PACKETLOSS'],
+    mode: ['', 'Start game'],
     paused: ['Signal on hold', 'PAUSED'],
     settings: ['Make yourself comfortable', 'SETTINGS'],
-    help: ['Keep your signal alive', 'HOW TO PLAY'],
+    help: ['Keep your signal alive', 'ABOUT'],
     profile: ['', 'PROFILE & RECORDS'],
     loading: ['Connecting', 'Loading the maze'],
     error: ['Signal interrupted', 'Unable to start'],
@@ -99,7 +100,7 @@ export function MenuScreens({
                 Settings
             </MenuButton>
             <MenuButton action="help" onClick={() => s.submenu('help', 'help')}>
-                How to play
+                About
             </MenuButton>
         </>
     );
@@ -121,11 +122,12 @@ export function MenuScreens({
             );
             actions = (
                 <>
-                    <MenuButton action="start" variant="primary" onClick={() => s.startRun()}>
+                    <MenuButton
+                        action="start"
+                        variant="primary"
+                        onClick={() => s.submenu('mode', 'start')}
+                    >
                         Start game
-                    </MenuButton>
-                    <MenuButton action="start-endless" onClick={() => s.startRun(undefined, 'endless')}>
-                        Endless maze
                     </MenuButton>
                     <MenuButton action="profile" onClick={() => s.submenu('profile', 'profile')}>
                         Profile &amp; records
@@ -133,6 +135,25 @@ export function MenuScreens({
                     {preferences}
                     <MenuButton action="tutorial" onClick={() => s.startRun('movement')}>
                         Tutorial
+                    </MenuButton>
+                </>
+            );
+            break;
+        case 'mode':
+            actions = (
+                <>
+                    <MenuButton
+                        action="start-endless"
+                        variant="primary"
+                        onClick={() => s.startRun(undefined, 'endless')}
+                    >
+                        Endless
+                    </MenuButton>
+                    <MenuButton
+                        action="start-level"
+                        onClick={() => s.startRun(undefined, 'classic')}
+                    >
+                        Level
                     </MenuButton>
                 </>
             );
@@ -383,13 +404,14 @@ export function MenuScreens({
             eyebrow={eyebrow}
             title={title}
             wide={screen === 'help' || screen === 'profile'}
+            compact={screen === 'mode'}
             centered={screen === 'title'}
             heading={
                 screen === 'title'
                     ? (id) => <TitleHeading id={id} motion={store.getMotion()} />
                     : undefined
             }
-            onBack={['settings', 'help', 'profile'].includes(screen) ? s.back : undefined}
+            onBack={['settings', 'help', 'profile', 'mode'].includes(screen) ? s.back : undefined}
             outcome={screen === 'result' ? (levelClear ? 'cleared' : result?.outcome) : undefined}
             tutorialPhase={screen === 'tutorial' ? tutorial?.phase : undefined}
             actions={actions}
@@ -414,21 +436,23 @@ function HelpScreen({ motion }: { motion: MenuMotion }) {
 
     return (
         <div className="my-4 mb-2 flex min-w-0 flex-col gap-4">
-            <nav aria-label="How to play pages">
+            <nav aria-label="About sections">
                 <ol className="m-0 grid list-none grid-cols-3 gap-2 p-0">
-                    {helpPages.map((step, index) => (
+                    {helpPages.map((step) => (
                         <li key={step.id} className="min-w-0">
                             <MenuButton
                                 action={`help-${step.id}`}
                                 layout="compact"
+                                variant={page === step.id ? 'primary' : ''}
                                 aria-current={page === step.id ? 'step' : undefined}
                                 aria-controls="packet-help-content"
-                                className={`w-full min-w-0 flex-col gap-1 px-1 text-[0.65rem] sm:text-xs ${page === step.id ? 'border-packet-cyan bg-packet-raised text-packet-focus' : ''}`}
-                                onClick={() => setPage(step.id)}
+                                className="w-full min-w-0 px-1 text-[0.65rem] sm:text-xs"
+                                onFocus={() => setPage(step.id)}
+                                onClick={(event) => {
+                                    event.currentTarget.focus({ preventScroll: true });
+                                    setPage(step.id);
+                                }}
                             >
-                                <span className="text-[0.6rem] text-packet-gold" aria-hidden="true">
-                                    {String(index + 1).padStart(2, '0')}
-                                </span>
                                 {step.label}
                             </MenuButton>
                         </li>

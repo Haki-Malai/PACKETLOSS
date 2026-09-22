@@ -18,6 +18,7 @@ import { createDebugStore } from './debugStore';
 
 export type Screen =
     | 'title'
+    | 'mode'
     | 'loading'
     | 'playing'
     | 'paused'
@@ -346,9 +347,9 @@ export function useGameSession(options: GameShellOptions) {
      * @param screen - Submenu to display.
      * @param action - Parent button's data-action value, used to restore focus when returning.
      */
-    function submenu(screen: 'settings' | 'help' | 'profile', action: string) {
+    function submenu(screen: 'settings' | 'help' | 'profile' | 'mode', action: string) {
         lifetime.current.game?.pause();
-        show(screen, null, {
+        show(screen, screen === 'mode' ? '[data-action="start-endless"]' : null, {
             parentScreen: lifetime.current.game ? 'paused' : 'title',
             returnAction: action,
         });

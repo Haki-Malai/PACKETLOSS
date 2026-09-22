@@ -232,6 +232,7 @@ export function MenuPanel({
     title,
     heading,
     wide,
+    compact,
     centered,
     onBack,
     children,
@@ -245,6 +246,7 @@ export function MenuPanel({
     title: string;
     heading?: (_id: string) => ReactNode;
     wide?: boolean;
+    compact?: boolean;
     centered?: boolean;
     onBack?: () => void;
     children?: ReactNode;
@@ -358,7 +360,7 @@ export function MenuPanel({
         <MenuSelection.Provider value={selectedButtonId}>
             <div
                 ref={capturePanel}
-                className={`packet-panel relative z-1 flex w-full shrink-0 flex-col border border-packet-line bg-packet-surface outline-none ${tutorialPhase ? 'mt-auto mr-0 mb-0 ml-0 max-w-[480px] gap-4 p-[clamp(18px,3vw,26px)]' : `m-auto gap-6 p-[clamp(22px,5vw,40px)] ${wide ? 'max-w-[1040px]' : 'max-w-[640px]'}`} ${centered ? 'packet-title-panel' : ''}`}
+                className={`packet-panel relative z-1 flex w-full shrink-0 flex-col border border-packet-line bg-packet-surface outline-none ${tutorialPhase ? 'mt-auto mr-0 mb-0 ml-0 max-w-[480px] gap-4 p-[clamp(18px,3vw,26px)]' : compact ? 'm-auto max-w-[480px] gap-4 p-[clamp(18px,3vw,26px)]' : `m-auto gap-6 p-[clamp(22px,5vw,40px)] ${wide ? 'max-w-[1040px]' : 'max-w-[640px]'}`} ${centered ? 'packet-title-panel' : ''}`}
                 tabIndex={-1}
                 role="dialog"
                 aria-modal="true"
