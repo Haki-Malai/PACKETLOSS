@@ -177,32 +177,55 @@ afterEach(async () => {
 });
 
 describe('GameShell', () => {
+    it('returns from mode selection and restores Endless as the default on every visit', async () => {
+        const page = setup();
+        const user = userEvent.setup();
+        expect(page.root.querySelector('[data-action="start-endless"]')).toBeNull();
+        for (const exit of ['back', 'escape']) {
+            fireEvent.click(page.action('start'));
+            expect(page.document.activeElement).toBe(page.action('start-endless'));
+            page.key('ArrowDown');
+            expect(page.document.activeElement).toBe(page.action('start-level'));
+            if (exit === 'back') fireEvent.click(page.action('back'));
+            else page.key('Escape');
+            expect(page.screen()).toBe('title');
+            expect(page.document.activeElement).toBe(page.action('start'));
+            expect(page.createGame).not.toHaveBeenCalled();
+        }
+        fireEvent.click(page.action('start'));
+        await user.keyboard('{Enter}');
+        await flushStart();
+        expect(page.games[0].options.mode).toBe('endless');
+    });
+
     it('moves the shared menu highlight with arrows and activates it with Enter', async () => {
         const page = setup();
         const user = userEvent.setup();
         const start = page.action('start');
-        const endless = page.action('start-endless');
         const profile = page.action('profile');
         const titlePanel = page.find('[role="dialog"]');
 
         expect(start.classList.contains('packet-primary')).toBe(true);
-        expect(page.key('ArrowRight').defaultPrevented).toBe(true);
-        expect(page.document.activeElement).toBe(endless);
-        expect(endless.classList.contains('packet-primary')).toBe(true);
         expect(page.key('ArrowRight').defaultPrevented).toBe(true);
         expect(page.document.activeElement).toBe(profile);
         expect(titlePanel.getAttribute('data-arrow-navigation')).toBe('true');
         expect(profile.classList.contains('packet-primary')).toBe(true);
         expect(start.classList.contains('packet-primary')).toBe(false);
         expect(page.key('ArrowLeft').defaultPrevented).toBe(true);
-        expect(page.document.activeElement).toBe(endless);
-        expect(page.key('ArrowLeft').defaultPrevented).toBe(true);
         expect(page.document.activeElement).toBe(start);
         page.key('Tab');
         expect(titlePanel.getAttribute('data-arrow-navigation')).toBeNull();
         await user.keyboard('{Enter}');
+        expect(page.screen()).toBe('mode');
+        const endless = page.action('start-endless');
+        expect(page.document.activeElement).toBe(endless);
+        expect(endless.classList.contains('packet-primary')).toBe(true);
+        page.key('ArrowDown');
+        expect(page.document.activeElement).toBe(page.action('start-level'));
+        await user.keyboard('{Enter}');
         await flushStart();
         const game = page.games[0];
+        expect(game.options.mode).toBe('classic');
         expect(page.screen()).toBe('playing');
 
         game.emit({ paused: true, result: null });
@@ -244,6 +267,7 @@ describe('GameShell', () => {
         resetGameState(70, 2);
         const page = setup();
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         await flushStart();
         const first = page.games[0];
         const canvas = page.find('canvas');
@@ -280,11 +304,12 @@ describe('GameShell', () => {
         expect(page.root.children).toHaveLength(0);
         expect(page.games[1].destroy).toHaveBeenCalledOnce();
     });
-    it('places Tutorial below How to play in the main menu and keeps help free of practice controls', async () => {
+    it('places Tutorial below About in the main menu and keeps help free of practice controls', async () => {
         const page = setup();
         const help = page.action('help');
         const buttons = Array.from(help.parentElement!.children);
         expect(buttons[buttons.indexOf(help) + 1]).toBe(page.action('tutorial'));
+        expect(help.textContent).toBe('About');
         expect(page.action('tutorial').textContent).toBe('Tutorial');
         fireEvent.click(page.action('help'));
         expect(
@@ -293,6 +318,7 @@ describe('GameShell', () => {
         expect(page.createGame).not.toHaveBeenCalled();
         fireEvent.click(page.action('back'));
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         await flushStart();
         page.games[0].emit({ paused: true, result: null });
         fireEvent.click(page.action('help'));
@@ -302,30 +328,35 @@ describe('GameShell', () => {
         expect(page.createGame).toHaveBeenCalledTimes(1);
     });
 
-    it('opens help on Basics and navigates directly between its pages', async () => {
+    it('opens About on Basics and changes sections immediately with arrow navigation', async () => {
         const dispose = vi.fn();
         const disposeBonuses = vi.fn();
         vi.mocked(mountEnemyPortraits).mockReturnValue(dispose);
         vi.mocked(mountScoreBonusPreviews).mockReturnValue(disposeBonuses);
         const page = setup();
-        const user = userEvent.setup();
         fireEvent.click(page.action('help'));
-        const stepper = page.find('nav[aria-label="How to play pages"]');
+        expect(page.find('h1').textContent).toBe('ABOUT');
+        const stepper = page.find('nav[aria-label="About sections"]');
         expect(page.find('[role="dialog"] header').nextElementSibling?.contains(stepper)).toBe(
             true
         );
         expect(stepper.querySelectorAll('button')).toHaveLength(3);
+        expect(
+            Array.from(stepper.querySelectorAll('button')).map((button) => button.textContent)
+        ).toEqual(['Basics', 'Scoring', 'Enemies']);
         expect(page.action('help-basics').getAttribute('aria-current')).toBe('step');
+        expect(page.action('help-basics').classList.contains('packet-primary')).toBe(true);
         expect(
             Array.from(page.root.querySelectorAll('dt')).map((node) => node.textContent)
         ).toEqual(['Move', 'Survive', 'Pause']);
         expect(page.root.querySelector('.packet-enemy')).toBeNull();
         expect(mountEnemyPortraits).not.toHaveBeenCalled();
 
-        page.action('help-scoring').focus();
-        await user.keyboard('{Enter}');
+        expect(page.key('ArrowDown').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(page.action('help-scoring'));
         expect(page.action('help-scoring').getAttribute('aria-current')).toBe('step');
         expect(page.action('help-basics').getAttribute('aria-current')).toBeNull();
+        expect(page.action('help-scoring').classList.contains('packet-primary')).toBe(true);
         expect(
             Array.from(page.root.querySelectorAll('dt')).map((node) => node.textContent)
         ).toEqual(['Collect', 'Enemy bonuses', 'Later levels']);
@@ -336,7 +367,8 @@ describe('GameShell', () => {
         await flushStart();
         expect(mountScoreBonusPreviews).toHaveBeenCalledOnce();
 
-        fireEvent.click(page.action('help-enemies'));
+        expect(page.key('ArrowRight').defaultPrevented).toBe(true);
+        expect(page.document.activeElement).toBe(page.action('help-enemies'));
         await flushStart();
         expect(disposeBonuses).toHaveBeenCalledOnce();
         expect(page.action('help-enemies').getAttribute('aria-current')).toBe('step');
@@ -523,7 +555,7 @@ describe('GameShell', () => {
         expect(ambient.getAttribute('aria-hidden')).toBe('true');
         expect(viewport.contains(ambient)).toBe(false);
 
-        for (const action of ['help', 'settings', 'profile']) {
+        for (const action of ['help', 'settings', 'profile', 'start']) {
             viewport.scrollTop = 200;
             fireEvent.click(page.action(action));
             expect(page.find('.packet-ambient')).toBe(ambient);
@@ -541,6 +573,7 @@ describe('GameShell', () => {
             await flushStart();
         }
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         await flushStart();
         expect(page.find('[data-screen]').hidden).toBe(true);
         expect(page.find('.packet-ambient')).toBe(ambient);
@@ -591,13 +624,14 @@ describe('GameShell', () => {
             fireEvent.click(page.action('back'));
             if (parent === 'paused') {
                 fireEvent.click(page.action('start'));
+                fireEvent.click(page.action('start-level'));
                 await flushStart();
                 page.games[0].emit({ paused: true, result: null });
             }
             fireEvent.click(page.action('help'));
             fireEvent.click(page.action('help-enemies'));
             await flushStart();
-            expect(page.find('h1').textContent).toBe('HOW TO PLAY');
+            expect(page.find('h1').textContent).toBe('ABOUT');
             expect(
                 Array.from(page.root.querySelectorAll('h3')).map((node) => node.textContent)
             ).toEqual(['Firewall', 'Virus', 'Ping', 'Spam', 'Lag', 'Quarantine', 'Trojan']);
@@ -708,6 +742,7 @@ describe('GameShell', () => {
         fireEvent(host, new Event('packet-wordmark-unavailable'));
         expect(host.getAttribute('data-ready')).toBeNull();
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         await flushStart();
         expect(page.screen()).toBe('playing');
     });
@@ -722,12 +757,18 @@ describe('GameShell', () => {
         const start = page.action('start');
         fireEvent.click(start);
         fireEvent.click(start);
+        expect(page.screen()).toBe('mode');
+        expect(page.createGame).not.toHaveBeenCalled();
+        const endless = page.action('start-endless');
+        fireEvent.click(endless);
+        fireEvent.click(endless);
         expect(page.screen()).toBe('loading');
         expect(page.createGame).toHaveBeenCalledOnce();
         expect(page.games[0].start).toHaveBeenCalledOnce();
         expect(page.games[0].options).toMatchObject({
             mountId: 'packet-scene',
             mapVariant: 'demo',
+            mode: 'endless',
         });
         expect(typeof page.games[0].options.onStateChange).toBe('function');
         expect(page.find('[role="status"]').textContent).toBe('Preparing your run…');
@@ -744,11 +785,13 @@ describe('GameShell', () => {
             const pending = pendingStart();
             const page = setup([pending.promise]);
             fireEvent.click(page.action('start'));
+            fireEvent.click(page.action('start-level'));
             const cancelled = page.games[0];
             fireEvent.click(page.action('main-menu'));
             expect(cancelled.destroy).toHaveBeenCalledOnce();
             expect(page.screen()).toBe('title');
             fireEvent.click(page.action('start'));
+            fireEvent.click(page.action('start-level'));
             await flushStart();
             expect(page.screen()).toBe('playing');
 
@@ -766,6 +809,7 @@ describe('GameShell', () => {
         const pending = pendingStart();
         const page = setup([pending.promise]);
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         pending.reject(new Error('WebGL 2 is required.'));
         await flushStart();
         expect(page.screen()).toBe('error');
@@ -781,6 +825,7 @@ describe('GameShell', () => {
     it('keeps submenu navigation paused, restores focus, and resumes only through an explicit action', async () => {
         const page = setup();
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         await flushStart();
         const game = page.games[0];
         game.emit({ paused: true, result: null });
@@ -850,6 +895,7 @@ describe('GameShell', () => {
             throw new Error('Storage blocked');
         });
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         await flushStart();
         page.games[0].emit({ paused: false, result: loss });
         expect(page.screen()).toBe('result');
@@ -867,6 +913,7 @@ describe('GameShell', () => {
     it('requires confirmation before restarting or abandoning an unfinished run', async () => {
         const page = setup();
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         await flushStart();
         const firstGame = page.games[0];
         firstGame.emit({ paused: true, result: null });
@@ -896,6 +943,7 @@ describe('GameShell', () => {
         const page = setup();
         page.store.setNickname('START NAME');
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         await flushStart();
         page.store.setNickname('LATER NAME');
         const game = page.games[0];
@@ -928,6 +976,7 @@ describe('GameShell', () => {
 
     it('starts, replays, and restarts endless without mixing its result with classic records', async () => {
         const page = setup();
+        fireEvent.click(page.action('start'));
         fireEvent.click(page.action('start-endless'));
         await flushStart();
         expect(page.games[0].options.mode).toBe('endless');
@@ -972,6 +1021,7 @@ describe('GameShell', () => {
     it('continues clear checkpoints without saving and confirms before abandoning one', async () => {
         const page = setup();
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         await flushStart();
         const game = page.games[0];
         const levelClear: LevelClearCheckpoint = {
@@ -1063,6 +1113,7 @@ describe('GameShell', () => {
         page.key('Tab');
         expect(page.document.activeElement).toBe(page.action('start'));
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         await flushStart();
         const game = page.games[0];
         game.emit({ paused: true, result: null });
@@ -1088,6 +1139,7 @@ describe('GameShell', () => {
         const pending = pendingStart();
         const page = setup([pending.promise]);
         fireEvent.click(page.action('start'));
+        fireEvent.click(page.action('start-level'));
         page.unmount();
         page.unmount();
         pending.resolve();

@@ -98,7 +98,8 @@ export function GameShell(options: GameShellOptions) {
             if (event.key === 'Escape') {
                 event.preventDefault();
                 if (state.screen === 'paused') resume();
-                else if (['settings', 'help', 'profile', 'confirm'].includes(state.screen)) back();
+                else if (['settings', 'help', 'profile', 'mode', 'confirm'].includes(state.screen))
+                    back();
                 else if (state.screen === 'tutorial-complete') exitTutorial();
                 else if (['loading', 'error', 'result'].includes(state.screen)) {
                     if (state.tutorialLesson) exitTutorial();
