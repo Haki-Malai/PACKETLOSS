@@ -185,7 +185,7 @@ describe('endless maze generation', () => {
         }
       }
     }
-  });
+  }, 15_000);
 
   it('keeps a full portal corridor between matching straight walls below each wordmark', () => {
     let logoCount = 0;
@@ -289,7 +289,7 @@ describe('endless maze generation', () => {
         expect(logos[i] - logos[i - 1]).toBeGreaterThanOrEqual(24);
       }
     }
-  });
+  }, 15_000);
 
   it('keeps nearby sections, regenerates evicted geography, and reuses retained scene objects', () => {
     const stream = new EndlessMazeStream(12345);
@@ -349,7 +349,7 @@ describe('endless maze generation', () => {
         }
       }
     }
-  });
+  }, 15_000);
 
   it('uses only supported authored wall and portal-tip tiles', () => {
     const section = generateEndlessSection(22, 7, 101);

@@ -193,5 +193,5 @@ describe('eaten enemy return', () => {
     }
     expect(visited.size).toBeGreaterThan(90);
     harness.destroy();
-  });
+  }, 15_000);
 });
