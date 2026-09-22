@@ -228,7 +228,6 @@ export function MenuColumns({ children }: { children: ReactNode }) {
 
 /** Shared frame and content slots for every application menu. */
 export function MenuPanel({
-    eyebrow,
     title,
     heading,
     wide,
@@ -242,7 +241,6 @@ export function MenuPanel({
     outcome,
     tutorialPhase,
 }: {
-    eyebrow: string;
     title: string;
     heading?: (_id: string) => ReactNode;
     wide?: boolean;
@@ -372,9 +370,11 @@ export function MenuPanel({
                 onPointerDownCapture={() => setArrowNavigation(false)}
             >
                 <div className="packet-panel-signal" aria-hidden="true" />
-                <header className="flex items-start gap-4">
-                    <div className="flex min-w-0 flex-1 flex-col gap-3">
-                        <p className="packet-eyebrow">{eyebrow}</p>
+                <header
+                    className={`grid items-center gap-4 ${onBack ? (heading ? 'grid-cols-[3rem_minmax(0,1fr)_3rem]' : 'grid-cols-[minmax(0,1fr)_3rem]') : ''}`}
+                >
+                    {onBack && heading && <span aria-hidden="true" />}
+                    <div className={`min-w-0 ${heading ? 'text-center' : 'text-left'}`}>
                         {heading ? (
                             heading(headingId)
                         ) : (

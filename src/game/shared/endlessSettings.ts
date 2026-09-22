@@ -15,8 +15,14 @@ export const ENDLESS_SETTINGS = {
   initialPowerCores: { min: 15, max: 17 },
   sectionPowerCores: { min: 3, max: 4 },
   firstEncounterMs: 5000,
+  speedScoreStep: 1000,
+  speedTenthsPerStep: 1,
+  forwardWaveChance: 0.8,
+  encounterIntervalDropPerSectionMs: 500,
   encounterIntervalMinMs: 5000,
   encounterIntervalMaxMs: 9000,
+  encounterIntervalFloorMinMs: 2000,
+  encounterIntervalFloorMaxMs: 4000,
   waveMinEnemies: 1,
   waveMaxEnemies: 3,
   staggeredEntryMs: 400,
@@ -25,5 +31,23 @@ export const ENDLESS_SETTINGS = {
   spawnSearchDepthTiles: 8,
   spawnMinCorridorSteps: 8,
   retireMarginTiles: 24,
+  retireHorizontalMarginTiles: 6,
   bugExitMarginTiles: 3,
 } as const;
+
+/** Returns Endless simulation speed from whole score milestones without repeated additions. */
+export function endlessSpeedMultiplier(score: number): number {
+  return (10 + Math.floor(score / ENDLESS_SETTINGS.speedScoreStep)
+    * ENDLESS_SETTINGS.speedTenthsPerStep) / 10;
+}
+
+/** Returns the inclusive wave interval bounds after new sections have been entered. */
+export function endlessEncounterInterval(exploredSections: number): { minMs: number; maxMs: number } {
+  const reduction = exploredSections * ENDLESS_SETTINGS.encounterIntervalDropPerSectionMs;
+  return {
+    minMs: Math.max(ENDLESS_SETTINGS.encounterIntervalFloorMinMs,
+      ENDLESS_SETTINGS.encounterIntervalMinMs - reduction),
+    maxMs: Math.max(ENDLESS_SETTINGS.encounterIntervalFloorMaxMs,
+      ENDLESS_SETTINGS.encounterIntervalMaxMs - reduction),
+  };
+}

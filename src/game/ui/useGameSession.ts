@@ -41,7 +41,6 @@ export interface GameShellOptions {
 interface ShellState {
     screen: Screen;
     parentScreen: 'title' | 'paused';
-    returnAction: string;
     confirmation: {
         message: string;
         action: () => void;
@@ -75,7 +74,6 @@ export function useGameSession(options: GameShellOptions) {
     const [state, setState] = useState<ShellState>({
         screen: 'title',
         parentScreen: 'title',
-        returnAction: '',
         confirmation: null,
         hasGame: false,
         ready: false,
@@ -345,24 +343,22 @@ export function useGameSession(options: GameShellOptions) {
      * Opens a submenu while keeping any current game paused.
      *
      * @param screen - Submenu to display.
-     * @param action - Parent button's data-action value, used to restore focus when returning.
      */
-    function submenu(screen: 'settings' | 'help' | 'profile' | 'mode', action: string) {
+    function submenu(screen: 'settings' | 'help' | 'profile' | 'mode') {
         lifetime.current.game?.pause();
-        show(screen, screen === 'mode' ? '[data-action="start-endless"]' : null, {
+        show(screen, null, {
             parentScreen: lifetime.current.game ? 'paused' : 'title',
-            returnAction: action,
         });
     }
 
-    /** Returns from a submenu or cancels a confirmation, restoring the initiating button's focus. */
+    /** Returns from a submenu to its parent panel or cancels a confirmation. */
     function back() {
         const view = current.current;
         if (view.screen === 'confirm' && view.confirmation) {
             show(view.confirmation.parent, `[data-action="${view.confirmation.returnAction}"]`, {
                 confirmation: null,
             });
-        } else show(view.parentScreen, `[data-action="${view.returnAction}"]`);
+        } else show(view.parentScreen);
     }
 
     /**

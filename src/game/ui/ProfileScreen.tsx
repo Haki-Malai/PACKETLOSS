@@ -22,14 +22,14 @@ export function duration(elapsedMs: number): string {
 export function ProfileBody({ session }: { session: GameSession }) {
     const { store, mapVariant } = session;
     const [nickname, setNickname] = useState(() => store.getNickname());
-    const [mode, setMode] = useState<RunMode>('classic');
+    const [mode, setMode] = useState<RunMode>('endless');
     const recordsMap = mode === 'endless' ? 'default' : mapVariant;
     return (
         <>
             <CustomSelect
                 ariaLabel="Records mode"
                 value={mode}
-                options={[{ value: 'classic', label: 'Classic' }, { value: 'endless', label: 'Endless' }]}
+                options={[{ value: 'endless', label: 'Endless' }, { value: 'classic', label: 'Classic' }]}
                 onChange={setMode}
                 control="records-mode"
             />

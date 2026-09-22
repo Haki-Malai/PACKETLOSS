@@ -33,6 +33,7 @@ export class EndlessStreamingSystem {
   /** Recenters the rolling map after the Packet crosses its middle section. */
   update(): void {
     if (!this.world.isMoving || this.world.outcome) return;
+    this.stream.recordPacketSection(this.world.packet.tile.y);
     const firstSafeRow = ENDLESS_SECTION_HEIGHT * Math.floor(ENDLESS_RESIDENT_SECTIONS / 2);
     const lastSafeRow = firstSafeRow + ENDLESS_SECTION_HEIGHT;
     if (this.world.packet.tile.y < firstSafeRow) this.shift('up');

@@ -142,7 +142,7 @@ describe('game startup and development asset route', () => {
         await boot();
         await settle();
         fireEvent.click(screen.getByRole('button', { name: 'Start game' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Level' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Classic' }));
         await settle();
         expect(screen.getByRole('alert').textContent).toBe('The 3D game requires WebGL 2.');
         expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
@@ -174,7 +174,7 @@ describe('game startup and development asset route', () => {
         expect(screen.queryByRole('link')).toBeNull();
         expect(mocks.createPacketGame).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Start game' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Level' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Classic' }));
         await settle();
         expect(mocks.start).toHaveBeenCalledOnce();
         expect(mocks.createPacketGame.mock.calls[0]?.[0]).not.toHaveProperty('onDebugChange');
@@ -202,7 +202,7 @@ describe('game startup and development asset route', () => {
         expect(mocks.importShowcase).not.toHaveBeenCalled();
         expect(mocks.createPacketGame).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Start game' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Level' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Classic' }));
         await settle();
         expect(mocks.createPacketGame).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -270,7 +270,7 @@ describe('game startup and development asset route', () => {
         const mount = await boot();
         await settle();
         fireEvent.click(screen.getByRole('button', { name: 'Start game' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Level' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Classic' }));
         await settle();
         pagehide();
         const replacement = document.createElement('section');

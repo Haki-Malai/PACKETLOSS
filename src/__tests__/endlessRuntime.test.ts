@@ -11,6 +11,7 @@ import { CollisionGrid } from '../game/domain/world/CollisionGrid';
 import { EndlessMazeStream } from '../game/domain/world/EndlessMazeStream';
 import { WorldState } from '../game/domain/world/WorldState';
 import { SeededRandom } from '../game/shared/random/SeededRandom';
+import { endlessEncounterInterval, endlessSpeedMultiplier } from '../game/shared/endlessSettings';
 import { CollectibleSystem } from '../game/systems/CollectibleSystem';
 import { EndlessBonusSystem } from '../game/systems/EndlessBonusSystem';
 import { EndlessEncounterSystem } from '../game/systems/EndlessEncounterSystem';
@@ -20,8 +21,9 @@ import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollision
 import { EntityPresentation } from '../game/systems/EntityPresentation';
 import { MazeHazardSystem } from '../game/systems/MazeHazardSystem';
 import { PacketMovementSystem } from '../game/systems/PacketMovementSystem';
+import { awardScore } from '../game/systems/awardScore';
 import type { RenderSystem } from '../game/systems/RenderSystem';
-import { getGameState, resetGameState } from '../state/gameState';
+import { addScore, getGameState, resetGameState } from '../state/gameState';
 
 /** Creates a real generated domain world without constructing a WebGL renderer. */
 function setup(seed = 77) {
@@ -57,6 +59,33 @@ function setup(seed = 77) {
 beforeEach(() => resetGameState(0, 3));
 
 describe('endless runtime rules', () => {
+  it('uses discrete uncapped speed steps without changing score awards', () => {
+    expect([999, 1000, 2999, 3000, 20_000].map(endlessSpeedMultiplier))
+      .toEqual([1, 1.1, 1.2, 1.3, 3]);
+    const { world } = setup();
+    addScore(1000);
+    awardScore(world, 10);
+    expect(getGameState().score).toBe(1010);
+    expect(world.levelMultiplier).toBe(1);
+  });
+
+  it('counts newly entered sections in both directions and floors wave intervals', () => {
+    const stream = new EndlessMazeStream(77);
+    expect(stream.getExploredSectionCount()).toBe(0);
+    stream.recordPacketSection(60);
+    stream.recordPacketSection(72);
+    expect(stream.getExploredSectionCount()).toBe(1);
+    stream.shift('down');
+    stream.recordPacketSection(48);
+    expect(stream.getExploredSectionCount()).toBe(1);
+    stream.shift('up');
+    stream.recordPacketSection(47);
+    expect(stream.getExploredSectionCount()).toBe(2);
+    expect(endlessEncounterInterval(0)).toEqual({ minMs: 5000, maxMs: 9000 });
+    expect(endlessEncounterInterval(2)).toEqual({ minMs: 4000, maxMs: 8000 });
+    expect(endlessEncounterInterval(20)).toEqual({ minMs: 2000, maxMs: 4000 });
+  });
+
   it('teleports through a logo corridor and keeps only resident links after shifts', () => {
     const seed = Array.from({ length: 20 }, (_, index) => index + 1)
       .find((candidate) => new EndlessMazeStream(candidate).getSections()[2].logoRow !== null);
@@ -98,13 +127,16 @@ describe('endless runtime rules', () => {
       }
     };
     checkLinks();
+    expect(stream.getExploredSectionCount()).toBe(0);
     movement.setEntityTile(world.packet, { x: 12, y: 47 });
     streaming.update();
+    expect(stream.getExploredSectionCount()).toBe(1);
     expect(portals.getTransition({ x: 1, y: row + 24 }, 'left', world.collisionGrid))
       .toEqual({ x: 23, y: row + 24 });
     checkLinks();
     movement.setEntityTile(world.packet, { x: 12, y: 72 });
     streaming.update();
+    expect(stream.getExploredSectionCount()).toBe(1);
     expect(portals.getTransition(from, 'left', world.collisionGrid)).toEqual(to);
     checkLinks();
     for (let shift = 0; shift < 3; shift += 1) {
@@ -112,6 +144,7 @@ describe('endless runtime rules', () => {
       streaming.update();
       checkLinks();
     }
+    expect(stream.getExploredSectionCount()).toBe(3);
     expect(stream.getSections().some((resident) => resident.index === section.index)).toBe(false);
   });
 
@@ -215,7 +248,7 @@ describe('endless runtime rules', () => {
     expect(world.quarantineWalls.map((wall) => wall.tile.x)).toEqual([1]);
   });
 
-  it('enters a staggered wave one original at a time from the same end', () => {
+  it('enters a staggered wave one original at a time beyond the camera', () => {
     const { world, camera, movement, movementSystem, portals } = setup(19);
     let calls = 0;
     const rng = { next: () => 0, int: (_maxExclusive: number) => {
@@ -235,7 +268,110 @@ describe('endless runtime rules', () => {
     const active = world.enemies.filter((enemy) => enemy.active);
     expect(active).toHaveLength(3);
     const bounds = camera.getVisibleGroundBounds();
-    expect(active.every((enemy) => enemy.y < bounds.minY)).toBe(true);
+    expect(active.every((enemy) => enemy.x < bounds.minX || enemy.x > bounds.maxX
+      || enemy.y < bounds.minY || enemy.y > bounds.maxY)).toBe(true);
+  });
+
+  it.each(['up', 'right', 'down', 'left'] as const)(
+    'prefers physically reachable entrances ahead while traveling %s', (direction) => {
+      const { world, camera, movement, movementSystem, portals } = setup(19);
+      camera.setViewport(800, 800);
+      camera.setZoom(10);
+      camera.snapToFollowTarget();
+      world.packet.direction = { current: direction, next: direction };
+      const rng = { next: () => 0, int: () => 0 };
+      const encounters = new EndlessEncounterSystem(world, camera, movement, movementSystem, rng, portals);
+      encounters.update(5000);
+      const active = world.enemies.filter((enemy) => enemy.active);
+      expect(active).toHaveLength(1);
+      const enemy = active[0];
+      const bounds = camera.getVisibleGroundBounds();
+      expect(enemy.x < bounds.minX || enemy.x > bounds.maxX
+        || enemy.y < bounds.minY || enemy.y > bounds.maxY).toBe(true);
+      const displacement = direction === 'up' ? world.packet.y - enemy.y
+        : direction === 'down' ? enemy.y - world.packet.y
+          : direction === 'left' ? world.packet.x - enemy.x : enemy.x - world.packet.x;
+      expect(displacement).toBeGreaterThan(0);
+      const physical = new EnemyNavigationService(world.collisionGrid, 16, portals, 'physical');
+      expect(physical.findPath(world.packet.tile, enemy.tile)?.length).toBeGreaterThanOrEqual(8);
+    },
+  );
+
+  it('uses forward-side top or bottom entries when horizontal camera edges are unavailable', () => {
+    const { world, camera, movement, movementSystem, portals } = setup(19);
+    world.packet.direction = { current: 'right', next: 'right' };
+    const encounters = new EndlessEncounterSystem(world, camera, movement, movementSystem,
+      { next: () => 0, int: () => 0 }, portals);
+    encounters.update(5000);
+    const enemy = world.enemies.find((candidate) => candidate.active);
+    expect(enemy).toBeDefined();
+    const bounds = camera.getVisibleGroundBounds();
+    expect(enemy!.x).toBeGreaterThan(world.packet.x);
+    expect(enemy!.y < bounds.minY || enemy!.y > bounds.maxY).toBe(true);
+  });
+
+  it('retires enemies that have moved far beyond a horizontal camera edge', () => {
+    const { world, camera, movement, movementSystem, portals } = setup(19);
+    camera.setViewport(800, 800);
+    camera.setZoom(10);
+    camera.snapToFollowTarget();
+    const enemy = world.enemies[0];
+    movement.setEntityTile(enemy, { x: 1, y: 60 });
+    enemy.active = true;
+    const encounters = new EndlessEncounterSystem(world, camera, movement, movementSystem,
+      { next: () => 0, int: () => 0 }, portals);
+    encounters.update(1);
+    expect(enemy.active).toBe(false);
+  });
+
+  it('uses explored progress for the next wave, keeps scheduled timing, and reuses retired slots', () => {
+    const { world, camera, movement, movementSystem, portals } = setup(19);
+    let explored = 2;
+    const encounters = new EndlessEncounterSystem(world, camera, movement, movementSystem,
+      { next: () => 0, int: () => 0 }, portals, () => explored);
+    encounters.update(5000);
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(1);
+    explored = 20;
+    encounters.update(3999);
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(1);
+    encounters.update(1);
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(2);
+    encounters.update(1999);
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(2);
+    encounters.update(1);
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(3);
+    const retired = world.enemies.find((enemy) => enemy.active)!;
+    movement.setEntityTile(retired, { x: 12, y: 1 });
+    encounters.update(2000);
+    expect(retired.active).toBe(true);
+    expect(retired.tile.y).not.toBe(1);
+    encounters.onPacketRespawn();
+    const activeAfterRespawn = world.enemies.filter((enemy) => enemy.active).length;
+    encounters.update(4999);
+    expect(world.enemies.filter((enemy) => enemy.active)).toHaveLength(activeAfterRespawn);
+    encounters.update(1);
+    expect(world.enemies.filter((enemy) => enemy.active).length).toBeGreaterThan(activeAfterRespawn);
+  });
+
+  it('reconsiders a staggered forward entry after the Packet reverses', () => {
+    const { world, camera, movement, movementSystem, portals } = setup(19);
+    camera.setViewport(800, 800);
+    camera.setZoom(10);
+    camera.snapToFollowTarget();
+    world.packet.direction = { current: 'up', next: 'up' };
+    let calls = 0;
+    const rng = { next: () => 0, int: () => {
+      calls += 1;
+      return calls === 2 ? 2 : calls === 9 ? 1 : 0;
+    } };
+    const encounters = new EndlessEncounterSystem(world, camera, movement, movementSystem, rng, portals);
+    encounters.update(5000);
+    const first = world.enemies.find((enemy) => enemy.active);
+    expect(first?.y).toBeLessThan(world.packet.y);
+    world.packet.direction = { current: 'down', next: 'down' };
+    encounters.update(400);
+    const second = world.enemies.find((enemy) => enemy.active && enemy !== first);
+    expect(second?.y).toBeGreaterThan(world.packet.y);
   });
 
   it('defers a wave member until an offscreen corridor is available', () => {
