@@ -18,6 +18,7 @@ import { createCollisionTile, createMapFixture } from './fixtures/pointLayoutFix
 
 type EventCallback = (_event?: Event) => void;
 
+/** Creates a stubbed runtime composition with observable simulation timing and lifecycle calls. */
 function createComposedGame() {
   const start = vi.fn();
   const update = vi.fn();
@@ -26,7 +27,7 @@ function createComposedGame() {
   const renderDestroy = vi.fn();
 
   const scheduler = {
-    update: vi.fn(),
+    update: vi.fn<(_deltaMs: number) => void>(),
     setPaused: vi.fn(),
     clear: vi.fn(),
   };
@@ -332,20 +333,22 @@ describe('GameRuntime', () => {
     await runtime.start();
     nextFrame?.(1);
     nextFrame?.(20);
+    expect(spies.scheduler.update.mock.calls.reduce((total, [deltaMs]) => total + deltaMs, 0))
+      .toBeCloseTo(1000 / 60);
     spies.scheduler.update.mockClear();
-    addScore(2000);
+    addScore(30_000);
     nextFrame?.(40);
-    expect(spies.scheduler.update.mock.calls).toHaveLength(2);
-    expect(spies.scheduler.update.mock.calls[0]?.[0]).toBeCloseTo(1000 / 60);
-    expect(spies.scheduler.update.mock.calls[1]?.[0]).toBeCloseTo((1000 / 60) * 0.2);
-    expect(getGameState().score).toBe(2000);
+    expect(spies.scheduler.update.mock.calls.reduce((total, [deltaMs]) => total + deltaMs, 0))
+      .toBeCloseTo((1000 / 60) * 2);
+    expect(getGameState().score).toBe(30_000);
     runtime.pause();
     spies.scheduler.update.mockClear();
     nextFrame?.(1000);
     expect(spies.scheduler.update).not.toHaveBeenCalled();
     runtime.resume();
     nextFrame?.(1020);
-    expect(spies.scheduler.update).toHaveBeenCalled();
+    expect(spies.scheduler.update.mock.calls.reduce((total, [deltaMs]) => total + deltaMs, 0))
+      .toBeCloseTo((1000 / 60) * 2);
     spies.world.outcome = 'lost';
     nextFrame?.(1040);
     expect(onStateChange.mock.lastCall?.[0].result?.elapsedMs).toBe(80);

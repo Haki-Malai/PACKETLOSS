@@ -59,9 +59,21 @@ function setup(seed = 77) {
 beforeEach(() => resetGameState(0, 3));
 
 describe('endless runtime rules', () => {
-  it('uses discrete uncapped speed steps without changing score awards', () => {
-    expect([999, 1000, 2999, 3000, 20_000].map(endlessSpeedMultiplier))
-      .toEqual([1, 1.1, 1.2, 1.3, 3]);
+  it('starts at normal speed and follows an uncapped square-root speed curve', () => {
+    expect([0, 30_000, 80_000].map(endlessSpeedMultiplier))
+      .toEqual([1, 2, 3]);
+  });
+
+  it('increases speed per point across former milestones with diminishing gains', () => {
+    expect(endlessSpeedMultiplier(999)).toBeLessThan(endlessSpeedMultiplier(1000));
+    expect(endlessSpeedMultiplier(1000)).toBeLessThan(endlessSpeedMultiplier(1001));
+    const earlyGain = endlessSpeedMultiplier(1000) - endlessSpeedMultiplier(0);
+    const lateGain = endlessSpeedMultiplier(101_000) - endlessSpeedMultiplier(100_000);
+    expect(lateGain).toBeGreaterThan(0);
+    expect(lateGain).toBeLessThan(earlyGain);
+  });
+
+  it('keeps Endless speed separate from score awards', () => {
     const { world } = setup();
     addScore(1000);
     awardScore(world, 10);
