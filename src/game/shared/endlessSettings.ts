@@ -15,8 +15,8 @@ export const ENDLESS_SETTINGS = {
   initialPowerCores: { min: 15, max: 17 },
   sectionPowerCores: { min: 3, max: 4 },
   firstEncounterMs: 5000,
-  speedScoreStep: 1000,
-  speedTenthsPerStep: 1,
+  speedStartMultiplier: 1,
+  speedScoreScale: 10_000,
   forwardWaveChance: 0.8,
   encounterIntervalDropPerSectionMs: 500,
   encounterIntervalMinMs: 5000,
@@ -35,10 +35,9 @@ export const ENDLESS_SETTINGS = {
   bugExitMarginTiles: 3,
 } as const;
 
-/** Returns Endless simulation speed from whole score milestones without repeated additions. */
+/** Returns uncapped Endless simulation speed with diminishing increases for each score point. */
 export function endlessSpeedMultiplier(score: number): number {
-  return (10 + Math.floor(score / ENDLESS_SETTINGS.speedScoreStep)
-    * ENDLESS_SETTINGS.speedTenthsPerStep) / 10;
+  return Math.sqrt(ENDLESS_SETTINGS.speedStartMultiplier ** 2 + score / ENDLESS_SETTINGS.speedScoreScale);
 }
 
 /** Returns the inclusive wave interval bounds after new sections have been entered. */
