@@ -2,6 +2,9 @@ import {
   ACESFilmicToneMapping, OrthographicCamera, Scene, SRGBColorSpace, WebGLRenderer,
 } from 'three';
 
+const GAMEPLAY_PIXEL_BUDGETS = [3840 * 2160, 2560 * 1440, 1920 * 1080];
+const GAMEPLAY_RESOLUTION_TIER_COUNT = 5;
+
 export interface RendererViewport {
   readonly width: number;
   readonly height: number;
@@ -78,9 +81,8 @@ export class ThreeRendererAdapter implements RendererViewport {
     this.sampleMs += elapsedMs;
     this.sampleFrames += 1;
     if (this.sampleMs < 2000) return;
-    if (this.sampleMs / this.sampleFrames > 20 && this.resolutionTier < 2) {
-      this.resolutionTier += 1;
-      this.updateDrawingBuffer();
+    if (this.sampleMs / this.sampleFrames > 20 && this.resolutionTier < GAMEPLAY_RESOLUTION_TIER_COUNT - 1) {
+      this.lowerResolution();
       this.resetFrameSamples();
     } else {
       this.sampleMs = 0;
@@ -96,14 +98,39 @@ export class ThreeRendererAdapter implements RendererViewport {
     this.wasActive = false;
   }
 
-  /** Keeps gameplay pixels within the 1080p budget while retaining CSS viewport coordinates. */
+  /** Advances to the next tier that reduces the physical buffer on this display. */
+  private lowerResolution(): void {
+    const currentWidth = this.bufferWidth;
+    const currentHeight = this.bufferHeight;
+    while (this.resolutionTier < GAMEPLAY_RESOLUTION_TIER_COUNT - 1) {
+      this.resolutionTier += 1;
+      const pixelRatio = this.gameplayPixelRatio;
+      if (Math.floor(this.viewportWidth * pixelRatio) !== currentWidth
+        || Math.floor(this.viewportHeight * pixelRatio) !== currentHeight) {
+        this.updateDrawingBuffer();
+        return;
+      }
+    }
+  }
+
+  /** Returns native display density constrained by the current gameplay pixel budget. */
+  private get gameplayPixelRatio(): number {
+    const devicePixelRatio = typeof window === 'undefined' ? 1 : window.devicePixelRatio;
+    const nativeRatio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+    const viewportPixels = this.viewportWidth * this.viewportHeight;
+    const baselineRatio = Math.min(nativeRatio, Math.sqrt(GAMEPLAY_PIXEL_BUDGETS[2] / viewportPixels));
+    if (this.resolutionTier < GAMEPLAY_PIXEL_BUDGETS.length) {
+      return Math.min(nativeRatio, Math.sqrt(GAMEPLAY_PIXEL_BUDGETS[this.resolutionTier] / viewportPixels));
+    }
+    return baselineRatio * (this.resolutionTier === 3 ? 5 / 6 : 2 / 3);
+  }
+
+  /** Keeps gameplay pixels within its quality budget while retaining CSS viewport coordinates. */
   private updateDrawingBuffer(): void {
     const devicePixelRatio = typeof window === 'undefined' ? 1 : window.devicePixelRatio;
     const nativeRatio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
-    const budgetRatio = Math.sqrt((1920 * 1080) / (this.viewportWidth * this.viewportHeight));
-    const tiers = [1, 5 / 6, 2 / 3];
     const pixelRatio = this.adaptiveResolution
-      ? Math.min(nativeRatio, 1, budgetRatio) * tiers[this.resolutionTier]
+      ? this.gameplayPixelRatio
       : Math.min(nativeRatio, 2);
     const bufferWidth = Math.floor(this.viewportWidth * pixelRatio);
     const bufferHeight = Math.floor(this.viewportHeight * pixelRatio);

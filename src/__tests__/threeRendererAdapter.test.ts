@@ -63,19 +63,25 @@ describe('ThreeRendererAdapter', () => {
     adapter.dispose();
   });
 
-  it('caps gameplay rendering to a 1080p pixel budget without changing CSS viewport size', () => {
+  it('renders gameplay at native density up to a 4K pixel budget without changing CSS viewport size', () => {
     vi.stubGlobal('window', { devicePixelRatio: 2 });
     const adapter = new ThreeRendererAdapter({} as HTMLCanvasElement, true);
     adapter.resize(1920, 1080);
-    expect(renderer.setDrawingBufferSize).toHaveBeenLastCalledWith(1920, 1080, 1);
+    expect(renderer.setDrawingBufferSize).toHaveBeenLastCalledWith(1920, 1080, 2);
     adapter.resize(1920, 1080);
     expect(renderer.setDrawingBufferSize).toHaveBeenCalledTimes(1);
 
-    adapter.resize(2560, 1440);
-    expect(adapter.width).toBe(2560);
-    expect(adapter.height).toBe(1440);
-    expect(adapter.pixelRatio).toBe(0.75);
-    expect(renderer.setDrawingBufferSize).toHaveBeenLastCalledWith(2560, 1440, 0.75);
+    vi.stubGlobal('window', { devicePixelRatio: 1 });
+    adapter.resize(3840, 2160);
+    expect(adapter.width).toBe(3840);
+    expect(adapter.height).toBe(2160);
+    expect(adapter.pixelRatio).toBe(1);
+    expect(renderer.setDrawingBufferSize).toHaveBeenLastCalledWith(3840, 2160, 1);
+
+    adapter.resize(5120, 2160);
+    const ultrawideRatio = Math.sqrt((3840 * 2160) / (5120 * 2160));
+    expect(adapter.pixelRatio).toBe(ultrawideRatio);
+    expect(renderer.setDrawingBufferSize).toHaveBeenLastCalledWith(5120, 2160, ultrawideRatio);
 
     vi.stubGlobal('window', { devicePixelRatio: 0.8 });
     adapter.resize(1280, 720);
@@ -87,23 +93,37 @@ describe('ThreeRendererAdapter', () => {
   it('downgrades only after sustained slow active frames and stops at the lowest tier', () => {
     vi.stubGlobal('window', { devicePixelRatio: 1 });
     const adapter = new ThreeRendererAdapter({} as HTMLCanvasElement, true);
-    adapter.resize(1920, 1080);
+    adapter.resize(3840, 2160);
+    for (let tier = 0; tier < 4; tier += 1) {
+      adapter.recordFrame(21, true);
+      for (let i = 0; i < 192; i += 1) adapter.recordFrame(21, true);
+      expect(adapter.pixelRatio).toBe([2 / 3, 1 / 2, 5 / 12, 1 / 3][tier]);
+    }
+    expect(renderer.setDrawingBufferSize).toHaveBeenCalledTimes(5);
     adapter.recordFrame(21, true);
-    for (let i = 0; i < 96; i += 1) adapter.recordFrame(21, true);
-    expect(adapter.pixelRatio).toBe(1);
-    for (let i = 0; i < 96; i += 1) adapter.recordFrame(21, true);
-    expect(adapter.pixelRatio).toBe(5 / 6);
-    expect(renderer.setDrawingBufferSize).toHaveBeenCalledTimes(2);
-    for (let i = 0; i < 193; i += 1) adapter.recordFrame(21, true);
-    expect(adapter.pixelRatio).toBe(2 / 3);
-    for (let i = 0; i < 192; i += 1) adapter.recordFrame(21, true);
-    expect(renderer.setDrawingBufferSize).toHaveBeenCalledTimes(3);
+    for (let i = 0; i < 384; i += 1) adapter.recordFrame(21, true);
+    expect(renderer.setDrawingBufferSize).toHaveBeenCalledTimes(5);
     adapter.dispose();
 
     const nextRun = new ThreeRendererAdapter({} as HTMLCanvasElement, true);
-    nextRun.resize(1920, 1080);
+    nextRun.resize(3840, 2160);
     expect(nextRun.pixelRatio).toBe(1);
     nextRun.dispose();
+  });
+
+  it('skips quality tiers that do not reduce the drawing buffer', () => {
+    vi.stubGlobal('window', { devicePixelRatio: 1 });
+    const adapter = new ThreeRendererAdapter({} as HTMLCanvasElement, true);
+    adapter.resize(1920, 1080);
+    adapter.recordFrame(21, true);
+    for (let i = 0; i < 192; i += 1) adapter.recordFrame(21, true);
+    expect(adapter.pixelRatio).toBe(5 / 6);
+    expect(renderer.setDrawingBufferSize).toHaveBeenCalledTimes(2);
+    adapter.recordFrame(21, true);
+    for (let i = 0; i < 192; i += 1) adapter.recordFrame(21, true);
+    expect(adapter.pixelRatio).toBe(2 / 3);
+    expect(renderer.setDrawingBufferSize).toHaveBeenCalledTimes(3);
+    adapter.dispose();
   });
 
   it('ignores isolated spikes and restarts sampling after pause and resize', () => {

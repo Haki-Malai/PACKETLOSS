@@ -130,7 +130,7 @@ describe('CameraSystem', () => {
   it('keeps the same world framing across 16:9 sizes and scales other aspect ratios by height', () => {
     const { system, camera, canvas } = createSystem();
     system.start();
-    for (const [width, height] of [[1280, 720], [1920, 1080], [2560, 1440], [2560, 1080], [720, 1280]]) {
+    for (const [width, height] of [[1280, 720], [1920, 1080], [2560, 1440], [3840, 2160], [2560, 1080], [720, 1280]]) {
       const stubWindow = globalThis.window as unknown as { innerWidth: number; innerHeight: number };
       stubWindow.innerWidth = width;
       stubWindow.innerHeight = height;
@@ -151,7 +151,7 @@ describe('CameraSystem', () => {
     const system = new CameraSystem(world as never, camera, renderer as never, canvas);
     system.start();
     const spans: number[] = [];
-    for (const [width, height] of [[1280, 720], [1920, 1080], [2560, 1440], [2560, 1080], [720, 1280]]) {
+    for (const [width, height] of [[1280, 720], [1920, 1080], [2560, 1440], [3840, 2160], [2560, 1080], [720, 1280]]) {
       const stubWindow = globalThis.window as unknown as { innerWidth: number; innerHeight: number };
       stubWindow.innerWidth = width;
       stubWindow.innerHeight = height;
@@ -170,8 +170,9 @@ describe('CameraSystem', () => {
     }
     expect(spans[1]).toBeCloseTo(spans[0], 5);
     expect(spans[2]).toBeCloseTo(spans[0], 5);
-    expect(spans[3]).toBeGreaterThan(spans[1]);
-    expect(spans[4]).toBeLessThan(spans[1]);
+    expect(spans[3]).toBeCloseTo(spans[0], 5);
+    expect(spans[4]).toBeGreaterThan(spans[1]);
+    expect(spans[5]).toBeLessThan(spans[1]);
     system.destroy();
   });
 
