@@ -59,6 +59,7 @@ describe('HologramPacket', () => {
     const trail = packet.group.getObjectByName('glitch-000') as Mesh<BufferGeometry, MeshBasicMaterial>;
     const pixel = packet.group.getObjectByName('surface-pixel-0') as Mesh<BufferGeometry, MeshBasicMaterial>;
     const surface = packet.group.getObjectByName('surface-binary-0') as Mesh<BufferGeometry, MeshBasicMaterial>;
+    const eye = packet.group.getObjectByName('eye-left') as Mesh;
     packet.setMotion(1, 0, 1);
     packet.setScore(0);
     packet.sample(1.25);
@@ -93,7 +94,7 @@ describe('HologramPacket', () => {
     expect(glow.material.opacity).toBeGreaterThan(signalGlow);
     expect(pixel.material.opacity).toBeGreaterThan(signalPixel);
     expect(glow.material.color.getHexString()).toBe('f065b9');
-    expect(packet.group.getObjectByName('hunter-rig')!.visible).toBe(true);
+    expect(eye.morphTargetInfluences![0]).toBe(1);
 
     packet.setScore(0);
     packet.sample(1.25);
@@ -101,7 +102,7 @@ describe('HologramPacket', () => {
     expect(surface.visible).toBe(false);
     expect(pixel.visible).toBe(false);
     expect(glow.visible).toBe(false);
-    expect(packet.group.getObjectByName('hunter-rig')!.visible).toBe(true);
+    expect(eye.morphTargetInfluences![0]).toBe(1);
     for (const echo of packet.group.getObjectByName('death-effect')!.children) {
       if (echo instanceof Group) expect(echo.getObjectByName('surface-binary-0')!.visible).toBe(false);
     }
@@ -281,36 +282,32 @@ describe('HologramPacket', () => {
 
   it('eases the hunter form in and out without a pose jump when power reverses or the clock pauses', () => {
     const packet = new HologramPacket();
-    const rig = packet.group.getObjectByName('hunter-rig')!;
     const eye = packet.group.getObjectByName('eye-left') as Mesh<BufferGeometry, MeshBasicMaterial>;
     const rim = packet.group.getObjectByName('rim-horizontal-1-1') as Mesh<BufferGeometry, MeshBasicMaterial>;
     const normalEye = eye.geometry;
     const normalRim = rim.material.color.clone();
     packet.setPower(true);
     packet.sample(1);
-    expect(rig.visible).toBe(false);
     expect(eye.morphTargetInfluences![0]).toBe(0);
     expect(rim.material.color.equals(normalRim)).toBe(true);
 
     packet.sample(1.16);
-    expect(rig.visible).toBe(true);
     expect(eye.geometry).toBe(normalEye);
     expect(eye.morphTargetInfluences![0]).toBeCloseTo(0.5);
     const halfColor = rim.material.color.clone();
-    const halfScale = rig.scale.clone();
+    const halfMorph = eye.morphTargetInfluences![0];
     packet.setPower(true);
     packet.sample(1.16);
     expect(rim.material.color.equals(halfColor)).toBe(true);
-    expect(rig.scale.equals(halfScale)).toBe(true);
+    expect(eye.morphTargetInfluences![0]).toBe(halfMorph);
 
     packet.setPower(false);
     packet.sample(1.16);
-    expect(rig.scale.equals(halfScale)).toBe(true);
+    expect(eye.morphTargetInfluences![0]).toBe(halfMorph);
     packet.sample(1.32);
     expect(eye.morphTargetInfluences![0]).toBeGreaterThan(0);
     expect(eye.morphTargetInfluences![0]).toBeLessThan(0.5);
     packet.sample(1.5);
-    expect(rig.visible).toBe(false);
     expect(eye.morphTargetInfluences![0]).toBe(0);
     expect(rim.material.color.equals(normalRim)).toBe(true);
 
@@ -319,13 +316,11 @@ describe('HologramPacket', () => {
     packet.sample(2.34);
     expect(eye.morphTargetInfluences![0]).toBe(1);
     expect(rim.material.color.getHex()).toBe(0xffc34d);
-    expect(rig.scale.toArray()).toEqual([1, 1, 1]);
     packet.dispose();
   });
 
   it('keeps the mouthless hunter form through absorption without moving the body and clears it on death', () => {
     const packet = new HologramPacket();
-    const rig = packet.group.getObjectByName('hunter-rig')!;
     expect(packet.group.getObjectByName('enemy-intake')).toBeUndefined();
     const eye = packet.group.getObjectByName('eye-left') as Mesh<BufferGeometry, MeshBasicMaterial>;
     const rim = packet.group.getObjectByName('rim-horizontal-1-1') as Mesh<BufferGeometry, MeshBasicMaterial>;
@@ -336,11 +331,10 @@ describe('HologramPacket', () => {
     const normalGaze = gaze.position.clone();
     const normalBody = packet.model.position.clone();
     const normalScale = packet.model.scale.clone();
-    expect(rig.visible).toBe(false);
+    expect(eye.morphTargetInfluences![0]).toBe(0);
 
     packet.setPower(true, false, 1);
     packet.sample(1);
-    expect(rig.visible).toBe(true);
     expect(eye.geometry).toBe(normalEye);
     expect(eye.morphTargetInfluences![0]).toBe(1);
     expect(rim.material.color.equals(normalRim)).toBe(false);
@@ -350,23 +344,47 @@ describe('HologramPacket', () => {
     expect(packet.model.scale.equals(normalScale)).toBe(true);
     packet.setEnemyEatProgress(1);
     packet.sample(1);
-    expect(rig.visible).toBe(true);
+    expect(eye.morphTargetInfluences![0]).toBe(1);
     packet.setPower(false);
     packet.setEnemyEatProgress(0.4);
     packet.sample(1);
-    expect(rig.visible).toBe(true);
+    expect(eye.morphTargetInfluences![0]).toBe(1);
 
     packet.setDeathProgress(0.5);
     packet.sample(1);
-    expect(rig.visible).toBe(false);
+    expect(eye.morphTargetInfluences![0]).toBe(0);
     packet.setDeathProgress(null);
     packet.setEnemyEatProgress(null);
     packet.sample(1);
-    expect(rig.visible).toBe(false);
     expect(eye.geometry).toBe(normalEye);
     expect(eye.morphTargetInfluences![0]).toBe(0);
     expect(rim.material.color.equals(normalRim)).toBe(true);
     expect(gaze.position.equals(normalGaze)).toBe(true);
+    packet.dispose();
+  });
+
+  it('keeps the original eye placement and size through the angry morph without adding antennas', () => {
+    const packet = new HologramPacket();
+    const face = ['left', 'right'].flatMap((side) => ['eye', 'eye-edge', 'eye-socket', 'glow-eye']
+      .map((part) => packet.group.getObjectByName(`${part}-${side}`)!));
+    const eye = packet.group.getObjectByName('eye-left') as Mesh;
+    for (const [x, z] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1]]) {
+      packet.setMotion(x, z, 1);
+      packet.setPower(false, false, 0);
+      packet.sample(2);
+      const normal = face.map((part) => ({ position: part.getWorldPosition(new Vector3()), scale: part.scale.clone() }));
+      for (const amount of [0.5, 1]) {
+        packet.setPower(true, false, amount);
+        packet.sample(2);
+        face.forEach((part, index) => {
+          expect(part.getWorldPosition(new Vector3()).distanceTo(normal[index].position)).toBeLessThan(0.000001);
+          expect(part.scale.equals(normal[index].scale)).toBe(true);
+        });
+        expect(eye.morphTargetInfluences![0]).toBe(amount);
+      }
+    }
+    expect(packet.group.getObjectByName('hunter-rig')).toBeUndefined();
+    for (const side of [-1, 1]) expect(packet.group.getObjectByName(`hunter-prong-${side}`)).toBeUndefined();
     packet.dispose();
   });
 });

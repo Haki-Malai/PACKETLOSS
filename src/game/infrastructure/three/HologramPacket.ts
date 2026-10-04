@@ -46,8 +46,6 @@ export class HologramPacket {
   private readonly gaze = new Group();
   private readonly eyes: FloatingPiece[] = [];
   private readonly eyeEdges: Mesh<BufferGeometry, MeshBasicMaterial>[] = [];
-  private readonly eyeSockets: Mesh<BufferGeometry, MeshStandardMaterial>[] = [];
-  private readonly hunterRig = new Group();
   private readonly pickupRims = new Set<MeshBasicMaterial>();
   private readonly digits: FloatingPiece[] = [];
   private readonly pixels: Mesh<BufferGeometry, MeshBasicMaterial>[] = [];
@@ -176,7 +174,6 @@ export class HologramPacket {
       socket.name = `eye-socket-${sideName}`;
       socket.position.set(x, 0.04, 2.13);
       socket.scale.set(1.02, 2.14, 0.2);
-      this.eyeSockets.push(socket);
       const glow = this.glow(`glow-eye-${sideName}`, x, 0.04, 2.24, 1.8, 3.1, 0.35);
       const edge: Mesh<BufferGeometry, MeshBasicMaterial> = this.rect(`eye-edge-${sideName}`, x, 0.04, 2.25, 0.72, 1.83, CYAN, 1);
       edge.geometry = this.hunterEyes[i];
@@ -187,15 +184,6 @@ export class HologramPacket {
       mesh.updateMorphTargets();
       this.gaze.add(socket, glow, edge, mesh);
       this.eyes.push({ mesh, glow, x, y: 0.04, width: 0.56, height: 1.67, phase: 0, period: 1 });
-    }
-
-    this.hunterRig.name = 'hunter-rig';
-    this.hunterRig.visible = false;
-    face.add(this.hunterRig);
-    for (const side of [-1, 1]) {
-      const prong = this.rect(`hunter-prong-${side}`, side * 3, 1.4, 2.22, 0.24, 1.5, GOLD, 1);
-      prong.rotation.z = -side * 0.32;
-      this.hunterRig.add(prong);
     }
 
     const positions = [
@@ -279,7 +267,7 @@ export class HologramPacket {
     this.sample(0);
   }
 
-  /** Samples cosmetic animation in seconds without advancing gameplay or changing identity colors. */
+  /** Samples cosmetic animation in seconds without advancing gameplay or changing identity colors; angry eyes retain their placement and size. */
   sample(timeSeconds: number): void {
     if (this.disposed) return;
     const time = Math.max(0, timeSeconds);
@@ -308,27 +296,22 @@ export class HologramPacket {
     this.glitchActive.value = 0;
     // The upper face's local Y axis points toward negative world Z.
     this.gaze.position.set(this.motion.x * this.trailOpacity * 0.65, -this.motion.z * this.trailOpacity * 0.8, 0);
-    this.gaze.position.y = MathUtils.lerp(this.gaze.position.y, 1.05 - this.motion.z * this.trailOpacity * 0.18, hunter);
     const blinkPhase = time % 5.8;
     const blink = blinkPhase > 5.3 && blinkPhase < 5.56 ? 1 - Math.sin((blinkPhase - 5.3) / 0.26 * Math.PI) : 1;
-    for (const [index, edge] of this.eyeEdges.entries()) {
+    for (const edge of this.eyeEdges) {
       if (edge.morphTargetInfluences) edge.morphTargetInfluences[0] = hunter;
-      edge.scale.set(MathUtils.lerp(0.72, 0.98, hunter), MathUtils.lerp(1.83, 1.18, hunter) * blink, 1);
+      edge.scale.set(0.72, 1.83 * blink, 1);
       edge.material.color.copy(accent);
-      this.eyeSockets[index].scale.y = MathUtils.lerp(2.14, 1.35, hunter);
     }
     for (const eye of this.eyes) {
       if (eye.mesh.morphTargetInfluences) eye.mesh.morphTargetInfluences[0] = hunter;
-      eye.mesh.scale.set(MathUtils.lerp(eye.width, 0.82, hunter), MathUtils.lerp(eye.height, 1, hunter) * blink, 1);
+      eye.mesh.scale.set(eye.width, eye.height * blink, 1);
       eye.mesh.material.opacity = 0.96 + Math.sin(time * 2.8) * 0.04;
       if (eye.glow) {
-        eye.glow.scale.y = MathUtils.lerp(3.1, 1.9, hunter);
         eye.glow.material.color.copy(accent);
         eye.glow.material.opacity = (0.35 + Math.sin(time * 2.8) * 0.04) * blink;
       }
     }
-    this.hunterRig.visible = hunter > 0;
-    this.hunterRig.scale.set(MathUtils.lerp(0.55, 1, hunter), hunter, 1);
     for (const [i, digit] of this.digits.entries()) {
       const enabled = tier === null || (digit.surface ? i - 10 < tier.surfaceDigits : i < tier.floatingDigits);
       const switchTime = time + (this.deathProgress ?? 0) * 8;

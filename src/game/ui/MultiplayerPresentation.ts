@@ -285,6 +285,7 @@ function createThreeStage({
         cleanups.push(() => maze.dispose());
         let stagedMap = battleArenaMapAtStage(map, 0);
         let renderedStage = 0;
+        let hasPresentedArena = false;
         const resources = new Set<{ dispose(): void }>();
         cleanups.push(() => resources.forEach((resource) => resource.dispose()));
         addGameplayLighting(scene);
@@ -344,16 +345,20 @@ function createThreeStage({
                 const race = connection.race;
                 const presentationTick = frame.presentationTick;
                 if (race.shrinkStage !== renderedStage) {
+                    const animateContraction = map.arena && hasPresentedArena && !reducedMotion
+                        && race.shrinkStage > renderedStage;
                     renderedStage = race.shrinkStage;
                     stagedMap = battleArenaMapAtStage(map, renderedStage);
-                    scene.remove(maze.group);
-                    maze.dispose();
+                    const previousMaze = maze;
                     maze = new MazeScene({
                         map: createBattleArenaWorldMap(map, renderedStage),
                         pulsingPerimeter: map.arena ? battleArenaOuterBounds(renderedStage) : undefined,
                         nextMap: map.arena && renderedStage < RACE.maxShrinkStage
                             ? createBattleArenaWorldMap(map, renderedStage + 1) : undefined,
                     });
+                    if (animateContraction) maze.startPerimeterContraction(previousMaze, now);
+                    scene.remove(previousMaze.group);
+                    previousMaze.dispose();
                     scene.add(maze.group);
                     lastPickupKey = '';
                 }
@@ -366,6 +371,7 @@ function createThreeStage({
                         RACE.shrinkEveryTicks * RACE.stepMs,
                         reducedMotion
                     );
+                    maze.syncPerimeterContraction(now, reducedMotion);
                 }
                 const nextFollowedPlayerId = battleRoyaleFollowPlayerId(
                     race,
@@ -436,8 +442,14 @@ function createThreeStage({
                 }
                 renderer.recordFrame(elapsedMs, true);
                 renderer.render(scene, camera.camera);
+                hasPresentedArena = true;
             },
-            suspend: () => renderer.recordFrame(0, false),
+            /** Completes cosmetic contraction before hiding; re-entry displays the current arena directly. */
+            suspend: () => {
+                maze.syncPerimeterContraction(0, true);
+                hasPresentedArena = false;
+                renderer.recordFrame(0, false);
+            },
             dispose: () => {
                 if (disposed) return;
                 disposed = true;

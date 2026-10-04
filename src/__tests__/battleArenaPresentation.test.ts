@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {
-  Box3, BufferGeometry, InstancedMesh, Material, Mesh, MeshBasicMaterial, OrthographicCamera,
+  Box3, BufferGeometry, InstancedMesh, Material, Mesh, MeshBasicMaterial, Object3D, OrthographicCamera,
   Raycaster, Scene, Vector3,
 } from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +32,19 @@ const map = createBattleArenaMap(0x12345678);
 function outlineAt(mesh: InstancedMesh, x: number, z: number): boolean {
   mesh.updateMatrixWorld(true);
   return new Raycaster(new Vector3(x, 30, z), new Vector3(0, -1, 0)).intersectObject(mesh).length > 0;
+}
+
+/** Observes unique GPU resources so completion and interrupted animations cannot leak or dispose twice. */
+function watchDisposal(group: Object3D) {
+  const resources = new Set<{ dispose(): void }>();
+  group.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    const mesh = object as Mesh<BufferGeometry, Material | Material[]>;
+    resources.add(mesh.geometry);
+    (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => resources.add(material));
+    if (object instanceof InstancedMesh) resources.add(object);
+  });
+  return [...resources].map((resource) => vi.spyOn(resource, 'dispose'));
 }
 
 afterEach(() => {
@@ -191,7 +204,64 @@ describe('Battle Royale perimeter presentation', () => {
     maze.dispose();
   });
 
-  it('replaces the maze on authoritative shrink, reuses it between frames, and preserves camera follow', async () => {
+  it('contracts only changing walls, preserves portal openings, and releases the animation after settling', () => {
+    const previous = new MazeScene({ map: createBattleArenaWorldMap(map, 0), pulsingPerimeter: battleArenaOuterBounds(0) });
+    const maze = new MazeScene({ map: createBattleArenaWorldMap(map, 1), pulsingPerimeter: battleArenaOuterBounds(1) });
+    const wall = maze.group.getObjectByName('walls') as Mesh;
+    const finalGeometry = wall.geometry;
+    maze.startPerimeterContraction(previous, 1000);
+    previous.dispose();
+    const transition = maze.group.getObjectByName('battle-arena-transition')!;
+    const disposals = watchDisposal(transition);
+    const steady = transition.getObjectByName('retained-walls')!;
+    const incoming = transition.getObjectByName('arriving-walls')!;
+    const outgoing = transition.getObjectByName('retiring-walls')!;
+    const steadyBounds = new Box3().setFromObject(steady);
+    const incomingBounds = new Box3().setFromObject(incoming);
+    const outgoingBounds = new Box3().setFromObject(outgoing);
+    expect(wall.visible).toBe(false);
+    // The first display frame should accelerate gently instead of jumping into motion.
+    maze.syncPerimeterContraction(1016);
+    expect(outgoing.scale.y).toBeGreaterThan(0.995);
+    maze.syncPerimeterContraction(1040);
+    const riseStart = incoming.scale.y;
+    maze.syncPerimeterContraction(1056);
+    expect(incoming.scale.y - riseStart).toBeLessThan(0.001);
+    maze.syncPerimeterContraction(1200);
+    expect(new Box3().setFromObject(outgoing).max.y).toBeLessThan(outgoingBounds.max.y / 2);
+    expect(new Box3().setFromObject(incoming).max.y).toBeGreaterThan(incomingBounds.max.y);
+    expect(new Box3().setFromObject(steady)).toEqual(steadyBounds);
+    // The new horizontal portal at row 25 must remain open throughout the rise.
+    transition.updateMatrixWorld(true);
+    const portal = new Raycaster(new Vector3(32, 30, 25 * 16 + 8), new Vector3(0, -1, 0));
+    expect(portal.intersectObject(incoming, true)).toHaveLength(0);
+    expect(portal.intersectObject(steady, true)).toHaveLength(0);
+    // The retired seam reaches zero height before removal, without a visible strip popping away.
+    maze.syncPerimeterContraction(1319);
+    expect(outgoing.scale.y).toBeLessThan(0.0001);
+    maze.syncPerimeterContraction(1550);
+    expect(outgoing.visible).toBe(false);
+    expect(incoming.scale.y).toBeGreaterThan(1);
+    expect(incoming.scale.y).toBeLessThan(1.04);
+    transition.traverse((object) => {
+      if (object instanceof Mesh) expect((object.material as Material).opacity).toBe(1);
+    });
+    maze.syncPerimeterWarning(800, 10_000);
+    maze.syncPerimeterContraction(1799);
+    expect(incoming.scale.y).toBeCloseTo(1, 5);
+    const incomingEdges = incoming.children[1] as InstancedMesh;
+    const perimeter = maze.group.getObjectByName('perimeter-wall-edges') as InstancedMesh;
+    expect((incomingEdges.material as Material).opacity).toBeCloseTo((perimeter.material as Material).opacity, 5);
+    maze.syncPerimeterContraction(1800);
+    expect(maze.group.getObjectByName('battle-arena-transition')).toBeUndefined();
+    expect(wall.visible).toBe(true);
+    expect(wall.geometry).toBe(finalGeometry);
+    expect(wall.scale.y).toBe(1);
+    maze.dispose();
+    disposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
+  });
+
+  it('animates authoritative shrinks, disposes interrupted stages, and preserves camera follow', async () => {
     let now = 0;
     let reducedMotion = false;
     let frame: FrameRequestCallback = () => undefined;
@@ -236,6 +306,7 @@ describe('Battle Royale perimeter presentation', () => {
       await session.ready;
       const [scene, camera] = renderer.render.mock.calls[renderer.render.mock.calls.length - 1];
       let maze = scene.getObjectByName('maze')!;
+      expect(scene.getObjectByName('battle-arena-transition')).toBeUndefined();
       const initialMaterial = (maze.getObjectByName('perimeter-wall-edges') as InstancedMesh).material as MeshBasicMaterial;
       const normalColor = initialMaterial.color.clone();
       expect(initialMaterial.opacity).toBe(1);
@@ -247,15 +318,7 @@ describe('Battle Royale perimeter presentation', () => {
       const originalPosition = camera.position.clone();
       const snapCount = snap.mock.calls.length;
       for (const stage of [1, 2, 20]) {
-        const resources = new Set<{ dispose(): void }>();
-        maze.traverse((object) => {
-          if (!(object instanceof Mesh)) return;
-          const mesh = object as Mesh<BufferGeometry, Material | Material[]>;
-          resources.add(mesh.geometry);
-          (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => resources.add(material));
-          if (object instanceof InstancedMesh) resources.add(object);
-        });
-        const disposals = [...resources].map((resource) => vi.spyOn(resource, 'dispose'));
+        const disposals = watchDisposal(maze);
         const race = structuredClone(connection.race!);
         race.tick = stage * RACE.shrinkEveryTicks;
         race.playTicks = race.tick;
@@ -269,7 +332,8 @@ describe('Battle Royale perimeter presentation', () => {
         disposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
         maze = scene.getObjectByName('maze')!;
         expect(scene.children.filter((child) => child.name === 'maze')).toHaveLength(1);
-        expect(scene.getObjectByName('battle-arena-transition')).toBeUndefined();
+        const transition = scene.getObjectByName('battle-arena-transition')!;
+        expect(transition).toBeDefined();
         expect(camera.position.distanceTo(originalPosition)).toBeLessThan(0.001);
         expect(snap).toHaveBeenCalledTimes(snapCount);
         expect(bounds).toHaveBeenCalledOnce();
@@ -286,6 +350,7 @@ describe('Battle Royale perimeter presentation', () => {
         const opacity = material.opacity;
         frame(now += 16);
         expect(scene.getObjectByName('maze')).toBe(maze);
+        expect(scene.getObjectByName('battle-arena-transition')).toBe(transition);
         expect(perimeter.geometry).toBe(geometry);
         if (stage < RACE.maxShrinkStage) {
           expect(material.opacity).not.toBe(opacity);
@@ -295,8 +360,11 @@ describe('Battle Royale perimeter presentation', () => {
           expect(material.color.equals(normalColor)).toBe(true);
         }
       }
+      const reducedDisposals = watchDisposal(scene.getObjectByName('battle-arena-transition')!);
       reducedMotion = true;
       frame(now += 16);
+      expect(scene.getObjectByName('battle-arena-transition')).toBeUndefined();
+      reducedDisposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
       const finalPerimeter = maze.getObjectByName('perimeter-wall-edges') as InstancedMesh;
       expect((finalPerimeter.material as MeshBasicMaterial).opacity).toBe(1);
       finalPerimeter.geometry.addEventListener('dispose', finalDispose);

@@ -4,7 +4,7 @@ import { PacketLabels } from '../game/infrastructure/three/PacketLabels';
 
 /** Supplies a narrow canvas boundary while testing real Three.js resources without a renderer. */
 function canvasFactory() {
-  const contexts: Array<{ fillText: ReturnType<typeof vi.fn>; fillStyle: string }> = [];
+  const contexts: Array<{ fillText: ReturnType<typeof vi.fn>; fillRect: ReturnType<typeof vi.fn>; fillStyle: string }> = [];
   const create = vi.fn(() => {
     const canvas = { width: 0, height: 0 } as HTMLCanvasElement;
     const context = {
@@ -30,6 +30,8 @@ describe('PacketLabels', () => {
     expect(contexts[1].fillText).toHaveBeenLastCalledWith('12345', 256, 48, 480);
     expect(contexts[0].fillStyle).toBe('#ffffff');
     expect(contexts[1].fillStyle).toBe('#ff80a5');
+    contexts.forEach((context) => expect(context.fillRect).not.toHaveBeenCalled());
+    meshes.forEach((mesh) => expect(mesh.material.transparent).toBe(true));
     const versions = textures.map((texture) => texture.version);
     labels.setIdentity('PLAYER', 12345);
     expect(textures.map((texture) => texture.version)).toEqual(versions);

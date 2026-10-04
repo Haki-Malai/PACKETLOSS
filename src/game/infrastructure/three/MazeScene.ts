@@ -1,6 +1,6 @@
 import {
   BoxGeometry, BufferGeometry, Color, EdgesGeometry, Float32BufferAttribute, Group, InstancedMesh,
-  Material, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, Plane, PlaneGeometry, Vector3,
+  Material, MathUtils, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, Plane, PlaneGeometry, Vector3,
 } from 'three';
 import type { WorldMapData, WorldTile } from '../../domain/world/WorldState';
 import type { QuarantineWall } from '../../domain/world/WorldState';
@@ -21,6 +21,8 @@ import { createMazeFloorMaterial } from './ScenePresentation';
 const PEN_SHEET_HEIGHT = 0.2;
 const PULSING_WALL_COLOR = '#b846ff';
 const WALL_PULSE_RADIANS_PER_MS = 0.012;
+const PERIMETER_CONTRACTION_MS = 800;
+const CONTRACTION_SEAM_COLOR = new Color('#8cf6ff');
 
 /** Inclusive tile bounds of a wall ring surrounding playable corridors. */
 interface MazePerimeterBounds {
@@ -73,6 +75,7 @@ export class MazeScene {
   private pulsingEdges: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
   private wallTopologyKey = '';
   private readonly clipPlanes?: [Plane, Plane];
+  private contraction?: { group: Group; retiring: Group; arriving: Group; startedAtMs: number };
 
   /** Builds joined walls and assigns the outer ring and disappearing segments to the shared warning pulse. */
   constructor(
@@ -174,7 +177,85 @@ export class MazeScene {
     this.syncWallPulse(phase / WALL_PULSE_RADIANS_PER_MS, reducedMotion);
   }
 
+  /** Starts a wall-only contraction from the displayed stage; all temporary geometry belongs to this maze. */
+  startPerimeterContraction(previous: MazeScene, nowMs: number): void {
+    this.finishPerimeterContraction();
+    const current = this.wallFootprint;
+    const before = previous.wallFootprint;
+    const retained = { ...current, solid: current.solid.map((pixel, index) => pixel && before.solid[index] ? 1 : 0) };
+    const arriving = { ...current, solid: current.solid.map((pixel, index) => pixel && !before.solid[index] ? 1 : 0) };
+    const retiring = { ...before, solid: before.solid.map((pixel, index) => pixel && !current.solid[index] ? 1 : 0) };
+    const edges = buildMazeWallEdgeGeometry(current);
+    const split = splitMazeWallEdgesByOwnership(edges, retained);
+    edges.dispose();
+    const oldEdges = buildMazeWallEdgeGeometry(before);
+    const oldSplit = splitMazeWallEdgesByOwnership(oldEdges, retained);
+    oldEdges.dispose();
+    oldSplit.authored.dispose();
+    const group = new Group();
+    group.name = 'battle-arena-transition';
+    const steady = this.createContractionWalls(retained, split.authored, this.wallEdges.material.color, 'retained-walls');
+    const outgoing = this.createContractionWalls(retiring, oldSplit.temporary, new Color(PULSING_WALL_COLOR), 'retiring-walls');
+    const incoming = this.createContractionWalls(arriving, split.temporary, new Color(PULSING_WALL_COLOR), 'arriving-walls');
+    (incoming.children[1] as InstancedMesh<BoxGeometry, MeshBasicMaterial>).material.transparent = true;
+    group.add(steady, outgoing, incoming);
+    this.group.add(group);
+    this.walls.visible = this.wallEdges.visible = this.pulsingEdges.visible = false;
+    this.contraction = { group, retiring: outgoing, arriving: incoming, startedAtMs: nowMs };
+    this.syncPerimeterContraction(nowMs);
+  }
+
+  /** Eases wall compression and rise from rest, settles a small overshoot, and blends back into the live countdown. */
+  syncPerimeterContraction(nowMs: number, reducedMotion = false): void {
+    const transition = this.contraction;
+    if (!transition) return;
+    const elapsed = Math.max(0, nowMs - transition.startedAtMs);
+    if (reducedMotion || elapsed >= PERIMETER_CONTRACTION_MS) {
+      this.finishPerimeterContraction();
+      return;
+    }
+    const collapse = MathUtils.smootherstep(elapsed, 0, 320);
+    transition.retiring.scale.y = 1 - collapse;
+    transition.retiring.visible = collapse < 1;
+    const rise = MathUtils.smootherstep(elapsed, 40, 760);
+    const offset = rise - 1;
+    transition.arriving.scale.y = 0.02 + 0.98 * (1 + 1.9 * offset ** 3 + 0.9 * offset ** 2);
+    const retiringEdges = transition.retiring.children[1] as InstancedMesh<BoxGeometry, MeshBasicMaterial>;
+    retiringEdges.material.color.set(PULSING_WALL_COLOR).lerp(CONTRACTION_SEAM_COLOR, collapse);
+    const arrivingEdges = transition.arriving.children[1] as InstancedMesh<BoxGeometry, MeshBasicMaterial>;
+    arrivingEdges.material.color.copy(CONTRACTION_SEAM_COLOR).lerp(this.pulsingEdges.material.color, rise);
+    arrivingEdges.material.opacity = MathUtils.lerp(1, this.pulsingEdges.material.opacity,
+      MathUtils.smootherstep(elapsed, 600, PERIMETER_CONTRACTION_MS));
+  }
+
+  /** Builds an independent transient wall batch while preserving the actual exposed edges and portal openings. */
+  private createContractionWalls(footprint: MazeFootprint, edges: BufferGeometry, color: Color, name: string): Group {
+    const group = new Group();
+    group.name = name;
+    group.add(new Mesh(this.own(buildMazeWallGeometryFromFootprint(footprint)), this.createWallMaterial('#1e0d20')),
+      this.createOutlineStrips(edges, color));
+    return group;
+  }
+
+  /** Releases transient batches on completion, replacement, reduced motion, or scene disposal. */
+  private finishPerimeterContraction(): void {
+    if (!this.contraction) return;
+    this.contraction.group.traverse((object) => {
+      if (!(object instanceof Mesh)) return;
+      const mesh = object as Mesh<BufferGeometry, Material>;
+      const resources: Array<BufferGeometry | Material | InstancedMesh> = [mesh.geometry, mesh.material];
+      if (object instanceof InstancedMesh) resources.push(object);
+      resources.forEach((resource) => { this.resources.delete(resource); resource.dispose(); });
+    });
+    this.group.remove(this.contraction.group);
+    this.contraction.group.clear();
+    this.contraction = undefined;
+    this.walls.visible = this.wallEdges.visible = this.pulsingEdges.visible = true;
+  }
+
+  /** Releases permanent and in-flight wall geometry exactly once. */
   dispose(): void {
+    this.finishPerimeterContraction();
     this.resources.forEach((resource) => resource.dispose());
     this.resources.clear();
     this.group.clear();

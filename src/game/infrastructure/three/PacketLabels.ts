@@ -81,7 +81,7 @@ export class PacketLabels {
     this.group.removeFromParent();
   }
 
-  /** Redraws a compact dark plate and its text into the existing texture only when the text changes. */
+  /** Redraws text on a transparent canvas into the existing texture only when the text changes. */
   private draw(label: Label, text: string): void {
     if (label.text === text) return;
     label.text = text;
@@ -92,9 +92,6 @@ export class PacketLabels {
     context.font = '600 48px ui-monospace, SFMono-Regular, Menlo, monospace';
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    const plateWidth = Math.min(width, context.measureText(text).width + 32);
-    context.fillStyle = 'rgba(2, 8, 18, 0.88)';
-    context.fillRect((width - plateWidth) / 2, 8, plateWidth, height - 16);
     context.fillStyle = label.color;
     context.fillText(text, width / 2, height / 2, width - 32);
     label.texture.needsUpdate = true;
