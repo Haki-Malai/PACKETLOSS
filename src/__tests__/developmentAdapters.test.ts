@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DevelopmentAdapters } from '../../server/DevelopmentAdapters';
@@ -40,6 +40,24 @@ function body(request: Mock<typeof fetch>, index: number): Record<string, unknow
 }
 
 describe('local development multiplayer boundary', () => {
+    it('keeps development solo matches out of the result API and disk outbox', async () => {
+        const { adapter, request, directory } = await fixture();
+        const race = new DataRace(
+            dataRaceFixture(),
+            'solo-match',
+            [{ id: 'alice', name: 'Alice' }],
+            1,
+            0,
+            true
+        );
+        await adapter.start(race.snapshot(), 'ABC234');
+        race.abort('manual_exit');
+        await adapter.save(race.snapshot());
+
+        expect(request).not.toHaveBeenCalled();
+        expect(await readdir(directory)).toEqual([]);
+    });
+
     it('registers its process generation and refuses a rejected startup', async () => {
         const { adapter, request } = await fixture();
         request.mockResolvedValueOnce(new Response(null, { status: 204 }));

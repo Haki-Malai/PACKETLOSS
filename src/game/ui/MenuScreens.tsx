@@ -79,7 +79,7 @@ const titles: Record<
     multiplayer: 'MULTIPLAYER',
     'multiplayer-start': 'START SERVER',
     'multiplayer-room': 'PRIVATE ROOM',
-    'multiplayer-result': 'DATA RACE RESULTS',
+    'multiplayer-result': 'BATTLE ROYALE RESULTS',
     'multiplayer-reconnect': 'CONNECTION LOST',
     mode: 'PACKETLOSS',
     paused: 'PAUSED',
@@ -265,7 +265,7 @@ export function MenuScreens({
             body = (
                 <div className="flex flex-col gap-4">
                     <p className="packet-copy">
-                        Create a private Data Race or enter a six-character invite code.
+                        Create a private Battle Royale or enter a six-character invite code.
                     </p>
                     <label className={fieldLayout}>
                         Invite code
@@ -436,17 +436,23 @@ export function MenuScreens({
             body = saving ? (
                 <p className="packet-copy" role="status">Saving results…</p>
             ) : race ? (
-                <ol className="m-0 flex list-none flex-col gap-2 p-0">
-                    {race.rankings.map((ranking) => (
-                        <li key={ranking.playerId} className="flex justify-between gap-4 text-sm">
-                            <span>#{ranking.rank} · {ranking.name}</span>
-                            <span>{score(ranking.score)}</span>
-                        </li>
-                    ))}
-                    {race.phase === 'aborted' && (
-                        <li className="packet-note">Match interrupted · {race.abortReason}</li>
+                <div className="flex flex-col gap-3">
+                    {race.phase === 'finished'
+                        && race.players.every((player) => player.eliminatedAtTick !== null) && (
+                        <p className="packet-eyebrow">No survivors</p>
                     )}
-                </ol>
+                    <ol className="m-0 flex list-none flex-col gap-2 p-0">
+                        {race.rankings.map((ranking) => (
+                            <li key={ranking.playerId} className="flex justify-between gap-4 text-sm">
+                                <span>#{ranking.rank} · {ranking.name}</span>
+                                <span>{score(ranking.score)}</span>
+                            </li>
+                        ))}
+                        {race.phase === 'aborted' && (
+                            <li className="packet-note">Match interrupted · {race.abortReason}</li>
+                        )}
+                    </ol>
+                </div>
             ) : null;
             actions = (
                 <>

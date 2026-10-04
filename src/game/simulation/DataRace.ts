@@ -1,22 +1,30 @@
-import { createMovement, move, position } from './movement';
+import { battleArenaBounds, battleArenaMapAtStage, isBattleArenaCellActive } from './BattleArenaMap';
+import { createMovement, move, movementEdge, position } from './movement';
 import { cloneSnapshot } from './cloneSnapshot';
 import { DIRECTIONS, RACE, type PlayerIdentity, type RaceMap, type RacePlayer, type RaceSnapshot } from './types';
 import { COLLECTIBLE_CONFIG, PACKET_PORTAL_BLINK, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { isBodyOverlap } from '../domain/valueObjects/CollisionBody';
 
-/** Owns all mutable state for one deterministic authoritative Data Race match. */
+/** Owns all mutable state for one deterministic authoritative Battle Royale match. */
 export class DataRace {
   private state: RaceSnapshot;
+  private activeMap: RaceMap;
+  private readonly soloDevelopment: boolean;
 
   /** Starts play immediately with seeded spawn/pickup ordering and authoritative participant colors. */
-  constructor(readonly map: RaceMap, matchId: string, identities: readonly PlayerIdentity[], seed: number, slotRotation = 0) {
-    if (identities.length < 2 || identities.length > 4 || new Set(identities.map((player) => player.id)).size !== identities.length) {
-      throw new Error('A match requires 2–4 distinct players.');
+  constructor(readonly map: RaceMap, matchId: string, identities: readonly PlayerIdentity[], seed: number,
+    slotRotation = 0, soloDevelopment = false) {
+    const minimumPlayers = soloDevelopment ? 1 : 2;
+    if (identities.length < minimumPlayers || identities.length > 4
+      || new Set(identities.map((player) => player.id)).size !== identities.length) {
+      throw new Error(`A match requires ${minimumPlayers}–4 distinct players.`);
     }
+    this.soloDevelopment = soloDevelopment && identities.length === 1;
     if (map.spawns.length !== 4 || map.pickups.length === 0) throw new Error('Map requires four spawns and pickups.');
+    this.activeMap = battleArenaMapAtStage(map, 0);
     this.state = { matchId, mapId: map.id, tick: 0, playTicks: 0, phase: 'playing',
       players: [], enemies: [], pickups: map.pickups.map((point) => ({ ...point })), refill: 0,
-      randomState: seed >>> 0, rankings: [], abortReason: null };
+      randomState: seed >>> 0, shrinkStage: 0, rankings: [], abortReason: null };
     const participants = [...identities].sort((a, b) => a.id.localeCompare(b.id));
     for (let index = participants.length - 1; index > 0; index -= 1) {
       const other = Math.floor(this.random() * (index + 1));
@@ -26,7 +34,8 @@ export class DataRace {
       const slot = (index + slotRotation) % participants.length;
       return { ...identity, slot, color: identity.color ?? RACE.colors[slot],
       score: 0, connected: true, movement: createMovement(map.spawns[slot]), huntMs: 0,
-      protectionMs: RACE.protectionMs, portalBlinkMs: 0, deathMs: 0, chain: 0, acknowledgedInput: 0 };
+      protectionMs: RACE.protectionMs, portalBlinkMs: 0, deathMs: 0, eliminatedAtTick: null,
+      chain: 0, acknowledgedInput: 0 };
     }).sort((a, b) => a.slot - b.slot);
   }
 
@@ -44,12 +53,15 @@ export class DataRace {
   restore(snapshot: RaceSnapshot): void {
     if (snapshot.matchId !== this.state.matchId || snapshot.mapId !== this.map.id) throw new Error('Snapshot belongs to another session.');
     this.state = cloneSnapshot({ ...snapshot, enemies: [] });
+    this.activeMap = battleArenaMapAtStage(this.map, this.state.shrinkStage);
   }
 
   /** Applies a validated direction once; sequence numbers never grant extra simulation time. */
   input(playerId: string, sequence: number, direction: typeof DIRECTIONS[number]): boolean {
     const player = this.state.players.find((candidate) => candidate.id === playerId);
-    if (!player?.connected || sequence <= player.acknowledgedInput || !Number.isSafeInteger(sequence)
+    if (!player?.connected || player.eliminatedAtTick !== null
+      || this.outcomeLocked()
+      || sequence <= player.acknowledgedInput || !Number.isSafeInteger(sequence)
       || !DIRECTIONS.includes(direction) || !['countdown', 'playing'].includes(this.state.phase)) return false;
     player.acknowledgedInput = sequence;
     player.movement.queued = direction;
@@ -62,12 +74,21 @@ export class DataRace {
     if (player) player.connected = false;
   }
 
-  /** Restores a reserved participant at their assigned spawn with fresh protection. */
+  /** Restores a reserved participant at their exact authoritative position or spectator state. */
   reconnect(playerId: string): void {
     const player = this.state.players.find((candidate) => candidate.id === playerId);
     if (!player) throw new Error('Unknown reserved participant.');
     player.connected = true;
-    this.respawn(player);
+  }
+
+  /** Eliminates one active participant without evaluating the winner until the next fixed step. */
+  eliminate(playerId: string): void {
+    if (!['countdown', 'playing'].includes(this.state.phase)) return;
+    const player = this.state.players.find((candidate) => candidate.id === playerId);
+    if (player) {
+      player.connected = false;
+      this.eliminatePlayer(player);
+    }
   }
 
   /** Stops an unhealthy server's match without recording competitive rankings. */
@@ -87,25 +108,27 @@ export class DataRace {
       return;
     }
     this.state.playTicks += 1;
+    const outcomeLocked = this.outcomeLocked();
     for (const player of this.state.players) {
-      if (!player.connected) continue;
+      if (player.eliminatedAtTick !== null) {
+        player.deathMs = Math.max(0, player.deathMs - RACE.stepMs);
+        continue;
+      }
       player.huntMs = Math.max(0, player.huntMs - RACE.stepMs);
       player.protectionMs = Math.max(0, player.protectionMs - RACE.stepMs);
       player.portalBlinkMs = Math.max(0, (player.portalBlinkMs ?? 0) - RACE.stepMs);
       if (player.huntMs < 1e-6) { player.huntMs = 0; player.chain = 0; }
-      if (player.deathMs > 0) {
-        player.deathMs = Math.max(0, player.deathMs - RACE.stepMs);
-        if (player.deathMs < 1e-6) this.respawn(player);
-      } else move(this.map, player.movement, RACE.playerSpeed * RACE.stepMs / 1000, true, undefined,
+      if (!player.connected || outcomeLocked) continue;
+      move(this.activeMap, player.movement, RACE.playerSpeed * RACE.stepMs / 1000, true, undefined,
         () => { player.portalBlinkMs = PACKET_PORTAL_BLINK.durationMs; });
     }
-    this.collect();
-    if (this.state.playTicks >= RACE.matchTicks) {
-      this.state.phase = 'finished';
-      const sorted = [...this.state.players].sort((a, b) => b.score - a.score || a.slot - b.slot);
-      this.state.rankings = sorted.map((player) => ({ playerId: player.id, name: player.name, score: player.score,
-        rank: 1 + sorted.filter((candidate) => candidate.score > player.score).length }));
+    if (outcomeLocked) {
+      if (this.state.playTicks >= RACE.matchTicks || this.terminalPresentationComplete()) this.finish();
+      return;
     }
+    this.shrinkIfDue();
+    this.collect();
+    if (this.state.playTicks >= RACE.matchTicks) this.finish();
   }
 
   /** Produces session-local seeded randomness; snapshots include its complete state. */
@@ -121,11 +144,12 @@ export class DataRace {
   private collect(): void {
     const remaining = [];
     for (const pickup of this.state.pickups) {
-      const cell = this.map.cells[pickup.cell];
+      if (!isBattleArenaCellActive(this.map, pickup.cell, this.state.shrinkStage)) continue;
+      const cell = this.activeMap.cells[pickup.cell];
       const config = COLLECTIBLE_CONFIG[pickup.kind === 'core' ? 1 : 0];
       const collector = this.state.players.find((player) => {
-        if (!player.connected || player.deathMs > 0) return false;
-        const current = position(this.map, player.movement);
+        if (!player.connected || player.eliminatedAtTick !== null) return false;
+        const current = position(this.activeMap, player.movement);
         return isBodyOverlap({ ...current, radius: SPRITE_SIZE.packet / 2 / TILE_SIZE },
           { x: cell.x, y: cell.y, radius: config.size / 2 / TILE_SIZE });
       });
@@ -134,16 +158,100 @@ export class DataRace {
       if (pickup.kind === 'core') { collector.huntMs = RACE.huntingMs; collector.chain = 0; }
     }
     if (remaining.length === 0) {
-      this.state.refill += 1;
-      this.state.pickups = this.map.pickups.map((point) => ({ ...point }));
+      const refill = this.map.pickups.filter((pickup) =>
+        isBattleArenaCellActive(this.map, pickup.cell, this.state.shrinkStage));
+      if (refill.length > 0) this.state.refill += 1;
+      this.state.pickups = refill.map((point) => ({ ...point }));
     } else this.state.pickups = remaining;
   }
 
-  /** Respawns only one player; shared pickups and accumulated score survive. */
-  private respawn(player: RacePlayer): void {
-    player.movement = createMovement(this.map.spawns[player.slot]);
-    player.deathMs = 0; player.huntMs = 0; player.chain = 0;
-    player.protectionMs = RACE.protectionMs;
+  /** Applies one due contraction after movement, using pre-contraction positions for all survivors. */
+  private shrinkIfDue(): void {
+    if (!this.map.arena || this.state.shrinkStage >= RACE.maxShrinkStage
+      || this.state.playTicks % RACE.shrinkEveryTicks !== 0) return;
+    const previousMap = this.activeMap;
+    const nextStage = this.state.shrinkStage + 1;
+    const nextMap = battleArenaMapAtStage(this.map, nextStage);
+    const bounds = battleArenaBounds(nextStage);
+    const samples = new Map<RacePlayer, { x: number; y: number }>();
+    for (const player of this.state.players) {
+      if (player.eliminatedAtTick === null) samples.set(player, position(previousMap, player.movement));
+    }
+    this.state.shrinkStage = nextStage;
+    this.activeMap = nextMap;
+    for (const [player, point] of samples) {
+      if (point.x <= bounds.minX - 0.5 || point.x >= bounds.maxX + 0.5
+        || point.y <= bounds.minY - 0.5 || point.y >= bounds.maxY + 0.5) {
+        this.eliminatePlayer(player, previousMap, point);
+        continue;
+      }
+      if (player.movement.to === null || movementEdge(nextMap, player.movement)) continue;
+      const endpoints = [player.movement.cell, player.movement.to].filter((cell) =>
+        isBattleArenaCellActive(this.map, cell, nextStage));
+      const retained = endpoints.map((cell) => {
+        const endpoint = this.map.cells[cell];
+        return { cell, distance: Math.hypot(point.x - endpoint.x, point.y - endpoint.y) };
+      }).sort((a, b) => a.distance - b.distance)[0];
+      if (!retained || retained.distance >= 0.5) {
+        this.eliminatePlayer(player, previousMap, point);
+        continue;
+      }
+      player.movement = { cell: retained.cell, to: null, progress: 0,
+        direction: player.movement.direction, queued: player.movement.queued };
+    }
+    this.state.pickups = this.state.pickups.filter((pickup) =>
+      isBattleArenaCellActive(this.map, pickup.cell, nextStage));
+  }
+
+  /** Starts the terminal death effect once while preserving the caught authoritative position. */
+  private eliminatePlayer(
+    player: RacePlayer,
+    map = this.activeMap,
+    sampled = position(map, player.movement),
+  ): void {
+    if (player.eliminatedAtTick !== null) return;
+    if (player.movement.to !== null) {
+      const nearest = [player.movement.cell, player.movement.to].map((cell) => {
+        const endpoint = map.cells[cell];
+        return { cell, distance: Math.hypot(sampled.x - endpoint.x, sampled.y - endpoint.y) };
+      }).sort((left, right) => left.distance - right.distance)[0];
+      player.movement = { cell: nearest.cell, to: null, progress: 0,
+        direction: player.movement.direction, queued: player.movement.queued };
+    }
+    player.eliminatedAtTick = this.state.playTicks;
+    player.deathMs = RACE.deathMs;
+    player.huntMs = 0;
+    player.protectionMs = 0;
     player.portalBlinkMs = 0;
+    player.chain = 0;
+  }
+
+  /** Holds the terminal scene long enough to show death, closure, and survivor follow effects. */
+  private terminalPresentationComplete(): boolean {
+    const latestElimination = Math.max(...this.state.players.flatMap((player) =>
+      player.eliminatedAtTick === null ? [] : [player.eliminatedAtTick]));
+    const presentationTicks = Math.ceil(RACE.deathMs / RACE.stepMs) + RACE.shrinkTransitionTicks;
+    return Number.isFinite(latestElimination)
+      && this.state.playTicks - latestElimination >= presentationTicks;
+  }
+
+  /** Keeps an explicit solo development match active until its only participant is eliminated. */
+  private outcomeLocked(): boolean {
+    const survivors = this.state.players.filter((player) => player.eliminatedAtTick === null).length;
+    return survivors <= (this.soloDevelopment ? 0 : 1);
+  }
+
+  /** Freezes play and assigns competition ranks across survivors and elimination cohorts. */
+  private finish(): void {
+    this.state.phase = 'finished';
+    const survivors = this.state.players.filter((player) => player.eliminatedAtTick === null)
+      .sort((a, b) => b.score - a.score || a.slot - b.slot);
+    const eliminated = this.state.players.filter((player) => player.eliminatedAtTick !== null)
+      .sort((a, b) => b.eliminatedAtTick! - a.eliminatedAtTick! || a.slot - b.slot);
+    this.state.rankings = [...survivors.map((player) => ({ playerId: player.id, name: player.name, score: player.score,
+      rank: 1 + survivors.filter((candidate) => candidate.score > player.score).length })),
+    ...eliminated.map((player) => ({ playerId: player.id, name: player.name, score: player.score,
+      rank: 1 + survivors.length
+        + eliminated.filter((candidate) => candidate.eliminatedAtTick! > player.eliminatedAtTick!).length }))];
   }
 }

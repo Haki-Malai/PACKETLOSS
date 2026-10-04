@@ -31,6 +31,9 @@ export interface LocalMovementSample {
 }
 // Covers 200 ms RTT plus snapshot spacing/jitter while still bounding disconnected prediction.
 const MAX_PREDICTION_TICKS = 24;
+// One 20 Hz snapshot interval is timing noise, not a change in local movement speed.
+const CLOCK_JITTER_TICKS = 3;
+const CLOCK_CORRECTION_RATE = 0.02;
 const POSITION_EPSILON = 1e-9;
 
 /** Maps elapsed presentation time to the bounded local simulation tick used for prediction. */
@@ -51,7 +54,7 @@ export class RacePresentationClock {
   /** Drops stale timing on visibility, connection, and match transitions. */
   reset(): void { this.frameMs = null; }
 
-  /** Advances continuously; local input may lead by one RTT to include its trip to the server. */
+  /** Runs at real-time speed through arrival jitter, gently correcting sustained clock drift. */
   sample(race: RaceSnapshot, receivedAtMs: number | null, nowMs: number, leadMs = 0): number {
     const target = localPredictionTick(race.tick, receivedAtMs, nowMs + Math.max(0, leadMs));
     const elapsed = this.frameMs === null ? 0 : Math.max(0, nowMs - this.frameMs);
@@ -62,8 +65,13 @@ export class RacePresentationClock {
     } else {
       const advance = elapsed / RACE.stepMs;
       const error = target - (this.tick + advance);
+      // Local input may lead by one RTT to include its trip to the server. Neither
+      // individual packet delays nor small ping changes should pulse that timeline.
+      const drift = Math.sign(error) * Math.max(0, Math.abs(error) - CLOCK_JITTER_TICKS);
+      const correction = Math.max(-advance * CLOCK_CORRECTION_RATE,
+        Math.min(advance * CLOCK_CORRECTION_RATE, drift));
       this.tick = Math.max(this.tick, Math.min(race.tick + MAX_PREDICTION_TICKS,
-        this.tick + advance + Math.max(-advance * 0.1, Math.min(advance * 0.1, error))));
+        this.tick + advance + correction));
     }
     this.matchId = race.matchId;
     this.phase = race.phase;
@@ -92,7 +100,7 @@ function projectMovement(map: RaceMap, player: RacePlayer, authoritativeTick: nu
   const target = Math.max(authoritativeTick, Math.min(predictedTick, cappedTick));
   const complete = predictedTick >= authoritativeTick - POSITION_EPSILON
     && predictedTick <= cappedTick + POSITION_EPSILON;
-  if (!player.connected || player.deathMs > 0) {
+  if (!player.connected || player.eliminatedAtTick !== null || player.deathMs > 0) {
     return { movement, point: position(map, movement), complete };
   }
 
@@ -184,14 +192,17 @@ export class LocalMovementPresentation {
       discontinuity ||= previous.race.matchId !== race.matchId
         || previous.race.mapId !== race.mapId || race.tick < previous.race.tick
         || previous.player.id !== player.id || previous.race.phase !== race.phase
+        || previous.race.shrinkStage !== race.shrinkStage
         || player.connected !== previous.player.connected
+        || player.eliminatedAtTick !== previous.player.eliminatedAtTick
         || (player.deathMs > 0) !== (previous.player.deathMs > 0)
         || player.protectionMs > previous.player.protectionMs || nowMs - previous.nowMs > 250
         || nowMs < previous.nowMs
         || Math.hypot(point.x - previous.projection.point.x,
           point.y - previous.projection.point.y) > 2;
     }
-    if (!previous || discontinuity || !player.connected || player.deathMs > 0) {
+    if (!previous || discontinuity || !player.connected
+      || player.eliminatedAtTick !== null || player.deathMs > 0) {
       this.offset = { x: 0, y: 0 };
     }
     else {
@@ -222,7 +233,13 @@ export class LocalMovementPresentation {
           this.offset.y += correction.y;
         } else {
           this.offset = { x: 0, y: 0 };
-          if (correctionSize > POSITION_EPSILON) discontinuity = true;
+          // A small corner correction must stay on the corridor, but should not
+          // discard the camera's follow lag and jerk the entire maze into place.
+          const portalCorrection = movementEdge(map, oldProjection.movement)?.portal
+            || movementEdge(map, newProjection.movement)?.portal;
+          if (correctionSize > 1 || portalCorrection && correctionSize > POSITION_EPSILON) {
+            discontinuity = true;
+          }
         }
         if (Math.hypot(this.offset.x, this.offset.y) > 1) {
           this.offset = { x: 0, y: 0 };
@@ -257,6 +274,7 @@ export function interpolateRemotePosition(history: readonly RaceSnapshot[], targ
   const firstMovement = getMovement(before), secondMovement = getMovement(after);
   if (!firstMovement || !secondMovement) return null;
   const first = position(map, firstMovement), second = position(map, secondMovement);
+  if (before.shrinkStage !== after.shrinkStage) return second;
   if (Math.hypot(second.x - first.x, second.y - first.y) > 2) return second;
   const alpha = before.tick === after.tick ? 1
     : Math.min(1, Math.max(0, (targetTick - before.tick) / (after.tick - before.tick)));

@@ -72,8 +72,7 @@ function runLatencyScenario(roundTripMs: number): number {
       latestReceivedAt = clientTick;
       lastDeliveryAt = clientTick;
       const player = latest.players.find((candidate) => candidate.id === localId)!;
-      expect(player.protectionMs).toBe(RACE.protectionMs);
-      expect(player.movement.cell).toBe(map.spawns[player.slot]);
+      expect(player.connected).toBe(true);
     }
     if (clientTick % 3 === 0 && clientTick < 204 || clientTick % 3 === 0 && clientTick > 216) {
       const delay = Math.max(1, oneWayTicks + jitter[(clientTick / 3) % jitter.length]);
@@ -132,6 +131,42 @@ function runStraightPresentation(frameRate: number, deliveryDelayMs: number): St
 }
 
 describe('multiplayer prediction under network delay', () => {
+  it.each([60, 120, 144])('keeps a steady %i Hz clock through snapshot and latency jitter', (frameRate) => {
+    const race = new DataRace(dataRaceFixture(), 'clock-speed',
+      [{ id: 'alice', name: 'Alice' }, { id: 'bob', name: 'Bob' }], 11).snapshot();
+    race.phase = 'playing';
+    const arrivals = [0, 50, 135, 150, 210, 250, 335, 350, 400, 455, 530];
+    const clock = new RacePresentationClock();
+    let delivery = 0;
+    const start = clock.sample(race, 0, 0, 100);
+    for (let frame = 1; frame * 1000 / frameRate <= 500; frame += 1) {
+      const now = frame * 1000 / frameRate;
+      while (arrivals[delivery + 1] <= now) delivery += 1;
+      const snapshot = { ...race, tick: delivery * 3 };
+      const tick = clock.sample(snapshot, arrivals[delivery], now, delivery % 2 ? 90 : 110);
+      expect(tick - start).toBeCloseTo(now / RACE.stepMs, 10);
+    }
+  });
+
+  it.each([0, 200])('gradually resynchronizes a lasting latency change to %i ms', (leadMs) => {
+    const race = new DataRace(dataRaceFixture(), 'clock-drift',
+      [{ id: 'alice', name: 'Alice' }, { id: 'bob', name: 'Bob' }], 11).snapshot();
+    race.phase = 'playing';
+    const clock = new RacePresentationClock();
+    let previous = clock.sample(race, 0, 0, 100);
+    let target = previous;
+    for (let frame = 1; frame <= 600; frame += 1) {
+      const now = frame * RACE.stepMs;
+      const snapshot = { ...race, tick: Math.floor(frame / 3) * 3 };
+      const tick = clock.sample(snapshot, snapshot.tick * RACE.stepMs, now, leadMs);
+      expect(tick - previous).toBeGreaterThanOrEqual(0.98 - 1e-9);
+      expect(tick - previous).toBeLessThanOrEqual(1.02 + 1e-9);
+      target = frame + leadMs / RACE.stepMs;
+      previous = tick;
+    }
+    expect(Math.abs(previous - target)).toBeLessThanOrEqual(3 + 1e-9);
+  });
+
   it.each(STRAIGHT_PRESENTATION_CASES)(
     'preserves straight-line speed at %i Hz with %i ms snapshot delivery', (frameRate, delay) => {
     const samples = runStraightPresentation(frameRate, delay);
@@ -170,8 +205,7 @@ describe('multiplayer prediction under network delay', () => {
       const tick = clock.sample(latest.snapshot, latest.at, now, roundTripMs);
       const point = presenter.sample(map, latest.snapshot, player, tick, [], now).point;
       if (now >= 100) {
-        expect(point.x - previous).toBeGreaterThanOrEqual(RACE.playerSpeed / 144 * 0.9 - 1e-9);
-        expect(point.x - previous).toBeLessThanOrEqual(RACE.playerSpeed / 144 * 1.1 + 1e-9);
+        expect(point.x - previous).toBeCloseTo(RACE.playerSpeed / 144, 10);
       }
       expect(point.y).toBe(0);
       previous = point.x;
@@ -353,6 +387,28 @@ describe('multiplayer prediction under network delay', () => {
     expect(corner.point.x).toBe(4);
     expect(corner.point.y).toBeCloseTo(0.0625);
     expect(corner.discontinuity).toBe(false);
+  });
+
+  it('corrects a small corner disagreement without snapping the following camera', () => {
+    const map = dataRaceFixture();
+    const first = new DataRace(map, 'corner-camera',
+      [{ id: 'alice', name: 'Alice' }, { id: 'bob', name: 'Bob' }], 11).snapshot();
+    first.phase = 'playing'; first.tick = 100;
+    first.players[0].movement = {
+      cell: 3, to: 4, progress: 0.95, direction: 'right', queued: 'down',
+    };
+    const presenter = new LocalMovementPresentation();
+    presenter.sample(map, first, first.players[0], 100, [], 0);
+    const corrected = structuredClone(first);
+    corrected.tick = 101;
+    corrected.players[0].movement.progress = 0.99;
+    const arrival = presenter.sample(map, corrected, corrected.players[0], 101, [], RACE.stepMs);
+    expect(arrival.point).toEqual({ x: 3.99, y: 0 });
+    expect(arrival.discontinuity).toBe(false);
+    const turned = presenter.sample(map, corrected, corrected.players[0], 102, [], 2 * RACE.stepMs);
+    expect(turned.point.x).toBe(4);
+    expect(turned.point.y).toBeCloseTo(0.0525);
+    expect(turned.discontinuity).toBe(false);
   });
 
   it('drops correction offsets when predicted travel crosses a portal', () => {

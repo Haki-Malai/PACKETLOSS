@@ -189,6 +189,7 @@ export class MultiplayerSocketClient {
                         }
                         const history =
                             this.state.race?.matchId === snapshot.matchId
+                                && this.state.race.shrinkStage === snapshot.shrinkStage
                                 ? [...this.state.raceHistory, snapshot].slice(-8)
                                 : [snapshot];
                     this.publish({
@@ -248,7 +249,11 @@ export class MultiplayerSocketClient {
 
     sendDirection(direction: 'up' | 'right' | 'down' | 'left'): number {
         const matchId = this.state.race?.matchId;
-        if (!matchId || this.state.race?.phase === 'finished') return this.inputSequence;
+        const localPlayer = this.state.race?.players.find(
+            (player) => player.id === this.state.playerId
+        );
+        if (!matchId || this.state.race?.phase === 'finished'
+            || localPlayer?.eliminatedAtTick !== null) return this.inputSequence;
         this.inputSequence += 1;
         this.send({ type: 'input', matchId, sequence: this.inputSequence, direction });
         return this.inputSequence;
@@ -342,6 +347,7 @@ function sameRaceUi(current: RaceSnapshot | null, next: RaceSnapshot | null): bo
         current.matchId !== next.matchId ||
         current.mapId !== next.mapId ||
         current.phase !== next.phase ||
+        current.shrinkStage !== next.shrinkStage ||
         displayedSecond(current) !== displayedSecond(next) ||
         current.abortReason !== next.abortReason ||
         current.players.length !== next.players.length ||
@@ -357,6 +363,8 @@ function sameRaceUi(current: RaceSnapshot | null, next: RaceSnapshot | null): bo
             player.color === candidate.color &&
             player.slot === candidate.slot &&
             player.connected === candidate.connected &&
+            player.eliminatedAtTick === candidate.eliminatedAtTick &&
+            (player.deathMs > 0) === (candidate.deathMs > 0) &&
             player.score === candidate.score
         );
     });

@@ -17,5 +17,5 @@ export const MODE_RULES: Readonly<Record<SimulationMode, Readonly<ModeRules>>> =
   tutorial: { allowsPause: true, power: 'shared-enemy-scared', lives: 3, pickupCompletion: 'none',
     scoring: 'base', speed: 'constant', durationMs: null },
   'data-race': { allowsPause: false, power: 'personal-hunting', lives: null, pickupCompletion: 'refill',
-    scoring: 'base', speed: 'constant', durationMs: 180000 },
+    scoring: 'base', speed: 'constant', durationMs: 240000 },
 };

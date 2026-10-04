@@ -124,8 +124,9 @@ export class DevelopmentAdapters implements TicketConsumer, ResultStore {
         return identitySchema.parse(await response.json());
     }
 
-    /** Persists the immutable participant roster before a countdown can be announced. */
+    /** Persists multiplayer rosters while keeping one-player development practice ephemeral. */
     async start(snapshot: RaceSnapshot, roomId: string): Promise<void> {
+        if (snapshot.players.length === 1) return;
         const record: OutboxRecord = {
             start: {
                 matchId: snapshot.matchId,
@@ -141,8 +142,9 @@ export class DevelopmentAdapters implements TicketConsumer, ResultStore {
         await this.putStart(record.start);
     }
 
-    /** Writes a terminal result to the disk outbox before publishing it to the local API. */
+    /** Writes multiplayer results to the outbox while skipping one-player development practice. */
     async save(snapshot: RaceSnapshot): Promise<void> {
+        if (snapshot.players.length === 1) return;
         const record = await this.read(snapshot.matchId);
         record.result ??= this.result(record, snapshot);
         await this.write(record);

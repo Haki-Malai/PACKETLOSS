@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MultiplayerSocketClient } from '../game/infrastructure/adapters/MultiplayerSocketClient';
 import { encodeRaceSnapshot, parseClientMessage, PROTOCOL_VERSION } from '../game/protocol/messages';
-import type { RaceMap, RaceSnapshot } from '../game/simulation/types';
+import { RACE, type RaceMap, type RaceSnapshot } from '../game/simulation/types';
 
 class FakeSocket {
     readyState = 1;
@@ -54,6 +54,7 @@ const snapshot: RaceSnapshot = {
     mapId: map.id,
     tick: 181,
     playTicks: 1,
+    shrinkStage: 0,
     phase: 'playing',
     players: [
         {
@@ -67,6 +68,7 @@ const snapshot: RaceSnapshot = {
             huntMs: 0,
             protectionMs: 0,
             deathMs: 0,
+            eliminatedAtTick: null,
             chain: 0,
             acknowledgedInput: 0,
         },
@@ -81,6 +83,7 @@ const snapshot: RaceSnapshot = {
             huntMs: 0,
             protectionMs: 0,
             deathMs: 0,
+            eliminatedAtTick: null,
             chain: 0,
             acknowledgedInput: 0,
         },
@@ -278,6 +281,37 @@ describe('MultiplayerSocketClient', () => {
         });
         expect(uiListener).toHaveBeenCalledOnce();
         expect(client.getUiSnapshot().race?.players[0].score).toBe(100);
+
+        uiListener.mockClear();
+        const contracted = structuredClone(scored);
+        contracted.tick += 1;
+        contracted.playTicks += 1;
+        contracted.shrinkStage = 1;
+        socket.message({
+            type: 'snapshot',
+            snapshot: encodeRaceSnapshot(map, contracted),
+            serverTimeMs: 2_034,
+            instanceRunId: 'run-1',
+            processGeneration: 'generation-1',
+        });
+        expect(uiListener).toHaveBeenCalledOnce();
+        expect(client.getSnapshot().raceHistory).toHaveLength(1);
+
+        uiListener.mockClear();
+        const eliminated = structuredClone(contracted);
+        eliminated.tick += 1;
+        eliminated.playTicks += 1;
+        eliminated.players[0].eliminatedAtTick = eliminated.playTicks;
+        eliminated.players[0].deathMs = RACE.deathMs;
+        socket.message({
+            type: 'snapshot',
+            snapshot: encodeRaceSnapshot(map, eliminated),
+            serverTimeMs: 2_051,
+            instanceRunId: 'run-1',
+            processGeneration: 'generation-1',
+        });
+        expect(uiListener).toHaveBeenCalledOnce();
+        expect(client.sendDirection('up')).toBe(0);
         client.disconnect();
     });
 

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { MultiplayerConnectionSnapshot } from '../game/infrastructure/adapters/MultiplayerSocketClient';
 import { DataRace } from '../game/simulation/DataRace';
+import { RACE } from '../game/simulation/types';
 import {
+    battleRoyaleFollowPlayerId,
     MultiplayerPresentationSession,
     resizeMultiplayerViewport,
     type MultiplayerPresentationDependencies,
@@ -50,7 +52,10 @@ function connection(tick = 10): MultiplayerConnectionSnapshot {
     };
 }
 
-function createHarness(prepare: () => Promise<void> = () => Promise.resolve()) {
+function createHarness(
+    prepare: () => Promise<void> = () => Promise.resolve(),
+    isReducedMotion: () => boolean = () => false
+) {
     let latest = connection();
     let now = 100;
     let hidden = false;
@@ -113,6 +118,7 @@ function createHarness(prepare: () => Promise<void> = () => Promise.resolve()) {
             root,
             map: activeMap,
             getConnectionSnapshot: () => latest,
+            isReducedMotion,
             onError,
         },
         dependencies
@@ -148,6 +154,27 @@ function createHarness(prepare: () => Promise<void> = () => Promise.resolve()) {
 }
 
 describe('multiplayer presentation lifecycle', () => {
+    it('passes the current app motion preference into every scene sample', async () => {
+        const harness = createHarness(() => Promise.resolve(), () => true);
+        await harness.session.ready;
+        const calls = harness.stage.sync.mock.calls;
+        expect(calls[calls.length - 1]?.[6]).toBe(true);
+        harness.session.dispose();
+    });
+
+    it('shows the local death effect before following the lowest-slot survivor', () => {
+        const state = connection().race!;
+        const local = state.players[0];
+        const survivor = state.players[1];
+        local.eliminatedAtTick = state.playTicks;
+        local.deathMs = RACE.deathMs;
+        expect(battleRoyaleFollowPlayerId(state, local.id)).toBe(local.id);
+        local.deathMs = 0;
+        expect(battleRoyaleFollowPlayerId(state, local.id)).toBe(survivor.id);
+        survivor.eliminatedAtTick = state.playTicks;
+        expect(battleRoyaleFollowPlayerId(state, local.id)).toBeNull();
+    });
+
     it('syncs the actor before preparing, then samples the latest state before the first frame', async () => {
         const preparation = deferred<void>();
         const harness = createHarness(() => preparation.promise);

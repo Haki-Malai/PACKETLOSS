@@ -7,6 +7,7 @@ import type { MultiplayerConnectionSnapshot } from '../infrastructure/adapters/M
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { TiledMapRepository } from '../infrastructure/map/TiledMapRepository';
 import { HologramPacket } from '../infrastructure/three/HologramPacket';
+import { BattleArenaPresentation } from '../infrastructure/three/BattleArenaPresentation';
 import { MazeScene } from '../infrastructure/three/MazeScene';
 import { MULTIPLAYER_PACKET_APPEARANCES } from '../infrastructure/three/PacketAppearances';
 import { PacketLabels } from '../infrastructure/three/PacketLabels';
@@ -18,6 +19,10 @@ import {
 import { addGameplayLighting } from '../infrastructure/three/ScenePresentation';
 import { resolveMapPathsForVariant } from '../app/mapRuntimeConfig';
 import { position } from '../simulation/movement';
+import {
+    battleArenaMapAtStage,
+    createBattleArenaWorldMap,
+} from '../simulation/BattleArenaMap';
 import { sampleBlinkCadence } from '../shared/blinkCadence';
 import {
     interpolateRemotePosition,
@@ -49,7 +54,8 @@ export interface MultiplayerPresentationStage {
         _presentationTick: number,
         _localPresentation: LocalMovementPresentation,
         _now: number,
-        _pendingInputs: readonly PredictedInput[]
+        _pendingInputs: readonly PredictedInput[],
+        _reducedMotion: boolean
     ): { acknowledgedInput?: number; discontinuity: boolean };
     snapCamera(): void;
     prepare(): Promise<void>;
@@ -59,7 +65,7 @@ export interface MultiplayerPresentationStage {
 }
 
 export interface MultiplayerPresentationDependencies {
-    loadMap(_signal: AbortSignal): Promise<WorldMapData>;
+    loadMap(_map: RaceMap, _signal: AbortSignal): Promise<WorldMapData>;
     createStage(_options: {
         canvas: HTMLCanvasElement;
         map: RaceMap;
@@ -74,11 +80,26 @@ export interface MultiplayerPresentationDependencies {
     observeElementResize(_element: HTMLElement, _callback: () => void): () => void;
 }
 
+/** Keeps the local death effect in view, then follows the lowest-slot survivor. */
+export function battleRoyaleFollowPlayerId(
+    race: RaceSnapshot,
+    localPlayerId: string | null
+): string | null {
+    const localPlayer = race.players.find((player) => player.id === localPlayerId);
+    if (localPlayer && (localPlayer.eliminatedAtTick === null || localPlayer.deathMs > 0)) {
+        return localPlayer.id;
+    }
+    return [...race.players]
+        .filter((player) => player.eliminatedAtTick === null)
+        .sort((left, right) => left.slot - right.slot)[0]?.id ?? null;
+}
+
 export interface MultiplayerPresentationOptions {
     canvas: HTMLCanvasElement;
     root: HTMLElement;
     map: RaceMap;
     getConnectionSnapshot(): MultiplayerConnectionSnapshot;
+    isReducedMotion?(): boolean;
     onError?(_error: unknown): void;
 }
 
@@ -115,6 +136,8 @@ export class MultiplayerPresentationSession {
         const connection = this.options.getConnectionSnapshot();
         const race = connection.race;
         if (!race || !['countdown', 'playing'].includes(race.phase)) return;
+        const localPlayer = race.players.find((player) => player.id === connection.playerId);
+        if (!localPlayer || localPlayer.eliminatedAtTick !== null) return;
         this.pending.push({
             sequence,
             tick: this.localClock.sample(
@@ -155,7 +178,7 @@ export class MultiplayerPresentationSession {
     private async initialize(): Promise<void> {
         this.cleanups.push(this.dependencies.observeVisibility(this.handleVisibilityChange));
         this.cleanups.push(this.dependencies.observeWindowResize(this.handleResize));
-        const sourceMap = await this.dependencies.loadMap(this.abort.signal);
+        const sourceMap = await this.dependencies.loadMap(this.options.map, this.abort.signal);
         this.throwIfDisposed();
 
         const stage = this.dependencies.createStage({
@@ -201,7 +224,10 @@ export class MultiplayerPresentationSession {
             this.remoteClock.sample(race, connection.receivedAtMs, now),
             this.localPresentation,
             now,
-            this.pending
+            this.pending,
+            this.options.isReducedMotion?.()
+                ?? globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+                ?? false
         );
         if (result.acknowledgedInput !== undefined) {
             this.pending = this.pending.filter(
@@ -304,12 +330,17 @@ function createThreeStage({
         const camera = new Camera3D();
         const scene = new Scene();
         cleanups.push(() => scene.clear());
-        const maze = new MazeScene({ map: sourceMap });
+        let maze = new MazeScene({ map: sourceMap });
         cleanups.push(() => maze.dispose());
+        let stagedMap = battleArenaMapAtStage(map, 0);
+        let renderedStage = 0;
+        const arena = map.arena ? new BattleArenaPresentation() : null;
+        if (arena) cleanups.push(() => arena.dispose());
         const resources = new Set<{ dispose(): void }>();
         cleanups.push(() => resources.forEach((resource) => resource.dispose()));
         addGameplayLighting(scene);
         scene.add(maze.group);
+        if (arena) scene.add(arena.group);
 
         const players = MULTIPLAYER_PACKET_APPEARANCES.map((appearance, slot) => {
             const { color } = appearance;
@@ -346,6 +377,7 @@ function createThreeStage({
         camera.setBounds(sourceMap.widthInPixels, sourceMap.heightInPixels);
         camera.startFollow(cameraTarget, CAMERA.followLerp.x, CAMERA.followLerp.y);
         let lastPickupKey = '';
+        let followedPlayerId: string | null = null;
         const activeCores: Pickup[] = [];
         const instance = new Matrix4();
 
@@ -358,16 +390,49 @@ function createThreeStage({
                 presentationTick,
                 localPresentation,
                 now,
-                pendingInputs
+                pendingInputs,
+                reducedMotion
             ) => {
                 if (connection.map?.id !== map.id || !connection.race) {
                     return { discontinuity: false };
                 }
-                const discontinuity = syncActors(
+                const race = connection.race;
+                if (race.shrinkStage !== renderedStage) {
+                    renderedStage = race.shrinkStage;
+                    stagedMap = battleArenaMapAtStage(map, renderedStage);
+                    scene.remove(maze.group);
+                    maze.dispose();
+                    maze = new MazeScene({ map: createBattleArenaWorldMap(map, renderedStage, false) });
+                    scene.add(maze.group);
+                    const ring = renderedStage;
+                    const origin = ring * TILE_SIZE;
+                    const size = (49 - ring * 2) * TILE_SIZE;
+                    camera.setBounds(size, size, origin, origin);
+                    lastPickupKey = '';
+                }
+                const arenaTick = race.shrinkStage < RACE.maxShrinkStage
+                    ? Math.min(
+                        presentationTick,
+                        (race.shrinkStage + 1) * RACE.shrinkEveryTicks - 0.001
+                    )
+                    : presentationTick;
+                arena?.sync(
+                    race.shrinkStage,
+                    arenaTick,
+                    reducedMotion
+                );
+                const nextFollowedPlayerId = battleRoyaleFollowPlayerId(
+                    race,
+                    connection.playerId
+                );
+                let discontinuity = nextFollowedPlayerId !== followedPlayerId;
+                followedPlayerId = nextFollowedPlayerId;
+                discontinuity ||= syncActors(
                     connection.race,
                     connection.raceHistory,
-                    map,
+                    stagedMap,
                     connection.playerId,
+                    followedPlayerId,
                     predictedTick,
                     presentationTick,
                     localPresentation,
@@ -379,7 +444,7 @@ function createThreeStage({
                 const acknowledgedInput = connection.race.players.find(
                     (player) => player.id === connection.playerId
                 )?.acknowledgedInput;
-                const pickupKey = `${connection.race.matchId}:${connection.race.refill}:${connection.race.pickups.length}`;
+                const pickupKey = `${connection.race.matchId}:${connection.race.shrinkStage}:${connection.race.refill}:${connection.race.pickups.length}`;
                 if (pickupKey !== lastPickupKey) {
                     lastPickupKey = pickupKey;
                     bits.count = 0;
@@ -389,7 +454,7 @@ function createThreeStage({
                             activeCores.push(pickup);
                             continue;
                         }
-                        const cell = map.cells[pickup.cell];
+                        const cell = stagedMap.cells[pickup.cell];
                         setPointTransform(
                             instance,
                             'base',
@@ -403,7 +468,7 @@ function createThreeStage({
                     bits.computeBoundingSphere();
                 }
                 activeCores.forEach((pickup, index) => {
-                    const cell = map.cells[pickup.cell];
+                    const cell = stagedMap.cells[pickup.cell];
                     setPointTransform(
                         instance,
                         'power',
@@ -458,6 +523,7 @@ function syncActors(
     history: readonly RaceSnapshot[],
     map: RaceMap,
     localId: string | null,
+    followedPlayerId: string | null,
     predictedTick: number,
     presentationTick: number,
     localPresentation: LocalMovementPresentation,
@@ -477,7 +543,7 @@ function syncActors(
         if (!model) return;
         const { packet } = model;
         const local =
-            player.id === localId
+            player.id === localId && player.eliminatedAtTick === null
                 ? localPresentation.sample(map, race, player, predictedTick, pendingInputs, now)
                 : null;
         const movement = local?.movement ?? player.movement;
@@ -486,7 +552,7 @@ function syncActors(
             : interpolateRemotePosition(history, interpolationTick, player.id, false, map) ??
               position(map, movement);
         packet.group.position.set((point.x + 0.5) * TILE_SIZE, 0, (point.y + 0.5) * TILE_SIZE);
-        packet.group.visible = player.connected;
+        packet.group.visible = player.eliminatedAtTick === null || player.deathMs > 0;
         model.labels.setIdentity(player.name, player.score);
         packet.setScore(player.score);
         const portalVisible = (player.portalBlinkMs ?? 0) <= 0
@@ -505,10 +571,10 @@ function syncActors(
             movement.to !== null && player.deathMs <= 0 ? 1 : 0
         );
         packet.sample(now / 1000);
-        if (player.id === localId) {
+        if (player.id === followedPlayerId) {
             cameraTarget.x = packet.group.position.x;
             cameraTarget.y = packet.group.position.z;
-            discontinuity = local?.discontinuity ?? false;
+            discontinuity ||= local?.discontinuity ?? false;
         }
     });
     return discontinuity;
@@ -545,8 +611,9 @@ function abortError(signal: AbortSignal): Error {
 }
 
 const browserDependencies: MultiplayerPresentationDependencies = {
-    loadMap: (signal) =>
-        new TiledMapRepository().loadMap(
+    loadMap: (map, signal) => map.arena
+        ? Promise.resolve(createBattleArenaWorldMap(map, 0, false))
+        : new TiledMapRepository().loadMap(
             resolveMapPathsForVariant('default').mapJsonPath,
             signal
         ),

@@ -3,6 +3,19 @@ import { CAMERA } from '../config/constants';
 import { Camera2D } from '../engine/camera';
 
 describe('Camera2D', () => {
+  it('clamps a retained subregion at its world-space origin', () => {
+    const camera = new Camera2D();
+    camera.setViewport(100, 100);
+    camera.setZoom(1);
+    camera.setBounds(200, 200, 300, 400);
+    camera.startFollow({ x: 0, y: 0 }, 1, 1);
+    camera.snapToFollowTarget();
+    expect(camera.getRenderPosition()).toEqual({ x: 300, y: 400 });
+    camera.startFollow({ x: 1_000, y: 1_000 }, 1, 1);
+    camera.snapToFollowTarget();
+    expect(camera.getRenderPosition()).toEqual({ x: 400, y: 500 });
+  });
+
   it('snaps to follow target immediately on startup and clamps to bounds', () => {
     const camera = new Camera2D();
     const target = { x: 80, y: 80 };

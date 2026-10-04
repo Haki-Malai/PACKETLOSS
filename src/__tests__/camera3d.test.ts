@@ -166,7 +166,7 @@ describe('Camera3D', () => {
   });
 
   it('centers a world smaller than the tilted viewport on both axes', () => {
-    const camera = createCamera({ x: 0, y: 0 });
+    const camera = createCamera({ x: 400, y: 400 });
     camera.setBounds(100, 80);
     camera.snapToFollowTarget();
     camera.present();
@@ -176,6 +176,17 @@ describe('Camera3D', () => {
     expect(center.y).toBeCloseTo(40);
     expect(project(camera, 50, 40).x).toBeCloseTo(400);
     expect(project(camera, 50, 40).y).toBeCloseTo(300);
+  });
+
+  it('keeps a centered retained arena inside its world-space origin', () => {
+    const camera = createCamera({ x: 400, y: 400 });
+    camera.setBounds(160, 160, 320, 320);
+    camera.snapToFollowTarget();
+    camera.present();
+
+    const center = camera.screenToWorld(400, 300);
+    expect(center.x).toBeCloseTo(400);
+    expect(Math.abs(center.y - 400)).toBeLessThanOrEqual(0.5);
   });
 
   it('resizes its projection and applies bounds independently on each axis', () => {

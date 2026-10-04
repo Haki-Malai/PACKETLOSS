@@ -35,7 +35,7 @@ async function fixture(count = 2) {
     const results = new MemoryResultStore(),
         tickets = new MemoryTickets(() => Date.now());
     const rooms = new RoomService({
-        map: dataRaceFixture(),
+        createMap: () => dataRaceFixture(),
         results,
         now: () => now,
         instanceRunId: 'run',

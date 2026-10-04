@@ -6,7 +6,7 @@ import type { GameSession } from './useGameSession';
 import { BrowserInputAdapter } from '../infrastructure/adapters/BrowserInputAdapter';
 import { DirectionalInput } from '../infrastructure/adapters/DirectionalInput';
 
-/** Renders the authoritative Data Race while predicting only the local player's movement. */
+/** Renders the authoritative Battle Royale while predicting only the local survivor's movement. */
 export function MultiplayerViewport({ session }: { session: GameSession }) {
     const { connection } = session.multiplayer;
     const raceMap = connection.map;
@@ -23,6 +23,8 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
         const latest = multiplayer.getConnectionSnapshot();
         const race = latest.race;
         if (!race || !['countdown', 'playing'].includes(race.phase)) return;
+        const localPlayer = race.players.find((player) => player.id === latest.playerId);
+        if (!localPlayer || localPlayer.eliminatedAtTick !== null) return;
         const sequence = multiplayer.sendDirection(direction);
         presentation.current?.recordInput(sequence, direction);
     };
@@ -78,6 +80,11 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
             root: targetRoot,
             map: raceMap,
             getConnectionSnapshot: session.multiplayer.getConnectionSnapshot,
+            isReducedMotion: () => {
+                const motion = sessionRef.current.store.getMotion();
+                return motion === 'reduced' || motion === 'system'
+                    && (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
+            },
             onError: (error) => {
                 if (active) setPresentationError(formatPresentationError(error));
             },
@@ -99,12 +106,21 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
     const race = connection.race;
     const remainingTicks = race ? Math.max(0, RACE.matchTicks - race.playTicks) : 0;
     const remainingSeconds = Math.ceil(remainingTicks / 60);
+    const shrinkTicks = race && race.shrinkStage < RACE.maxShrinkStage
+        ? Math.max(1, RACE.shrinkEveryTicks - race.playTicks % RACE.shrinkEveryTicks)
+        : 0;
+    const shrinkSeconds = Math.ceil(shrinkTicks / 60);
+    const shrinkProgress = shrinkTicks > 0
+        ? 1 - shrinkTicks / RACE.shrinkEveryTicks
+        : 1;
+    const arenaSize = race ? 49 - race.shrinkStage * 2 : 49;
+    const localPlayer = race?.players.find((player) => player.id === connection.playerId);
 
     return (
         <section
             ref={root}
             className="packet-multiplayer absolute inset-0 touch-none"
-            aria-label="Data Race"
+            aria-label="Battle Royale"
         >
             <canvas ref={canvas} className="block h-full w-full" tabIndex={-1} />
             {presentationError && (
@@ -119,6 +135,7 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
                         : connection.phase.toUpperCase()}
                 </span>
                 <strong>{formatClock(remainingSeconds)}</strong>
+                <span>{arenaSize} × {arenaSize}</span>
                 {connection.latencyMs !== null && (
                     <span>{Math.round(connection.latencyMs)} MS</span>
                 )}
@@ -130,11 +147,30 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
                             <i style={{ backgroundColor: player.color }} />
                             {player.name}
                             {!player.connected && ' · disconnected'}
+                            {player.eliminatedAtTick !== null && ' · eliminated'}
                         </span>
                         <strong>{player.score.toLocaleString()}</strong>
                     </li>
                 ))}
             </ol>
+            {shrinkTicks > 0 && race?.phase === 'playing' && (
+                <p
+                    className="packet-arena-warning"
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                        animationDuration: `${2 - shrinkProgress * 1.6}s`,
+                        borderColor: `hsl(${38 - shrinkProgress * 34} 92% 62%)`,
+                        color: `hsl(${38 - shrinkProgress * 34} 92% 72%)`,
+                    }}
+                >
+                    WALL CLOSURE · {shrinkSeconds}s
+                </p>
+            )}
+            {localPlayer && localPlayer.eliminatedAtTick !== null && localPlayer.deathMs <= 0
+                && race?.phase === 'playing' && (
+                <p className="packet-spectating" role="status">SPECTATING</p>
+            )}
             {connection.warning && (
                 <p className="packet-race-warning" role="alert">
                     Server {connection.warning.reason} in{' '}

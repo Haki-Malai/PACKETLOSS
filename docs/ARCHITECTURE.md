@@ -1,24 +1,29 @@
 # Architecture
 
 ## Purpose
+
 This document explains the post-migration architecture of the game runtime and the reasoning behind the current module boundaries.
 
 The project moved from a single large runtime file to a layered OOP structure focused on:
+
 - behavior parity and deterministic gameplay
 - strict dependency direction
 - easier feature extension (especially gameplay mechanics like portals)
 - testability of domain logic independent of browser rendering
 
 ## High-Level Summary
+
 The runtime is now composed from small, explicit systems operating on a shared `WorldState`.
 
 Entrypoint flow:
+
 1. `src/main.tsx` mounts one React root inside `EnvironmentProvider`. `App` selects the development-only `/dev/assets` gallery relative to the configured base URL; otherwise it preloads both maps, shared character assets, and menu/runtime modules before rendering `GameShell` and its title screen.
 2. Starting a run calls `createPacketGame`, which builds a `GameRuntime` with `GameCompositionRoot`.
 3. `GameCompositionRoot` wires an authored Classic map or a generated Endless stream with adapters, domain services, and systems.
 4. `GameRuntime` drives ordered updates and rendering via fixed-step loop.
 
 ## Directory Layout
+
 ```text
 src/game/
   app/
@@ -70,13 +75,16 @@ scripts/
 ## Layer Responsibilities
 
 ### `app`
+
 Composition and lifecycle orchestration.
+
 - `createPacketGame.ts`: public API factory (`start`, `pause`, `resume`, `continueLevel`, `destroy`).
 - `GameRuntime.ts`: fixed-step runtime loop and system execution. Concurrent `start()` calls share initialization; destruction cancels pending startup before it can mount a scene or reset shared game state. Composition checks cancellation after map loading, mounts only after scene construction, and removes only its owned canvas. A failed system startup releases the partial composition and listeners before allowing a retry.
 - `GameCompositionRoot.ts`: composition root; consumes first-visit prepared enemy models and, for Classic, the authored map when available. It builds an `EndlessMazeStream` instead of loading a map for Endless. Cancellation and construction failures release loaded assets and any created adapters.
 - `contracts.ts`: runtime and system interfaces.
 
 ### `ui`
+
 `GameShell` and its `useGameSession` hook own title, loading/error, pause, level-clear checkpoint, terminal result, settings, help, and profile/record screens outside the renderer-owned mount. The hook controls the public game lifecycle, consumes runtime state notifications, continues the same runtime after a clear, and destroys/recreates the runtime for a fresh run. Returning to the title cancels pending startup and destroys the current runtime. Generation guards ignore repeated actions and late callbacks from obsolete runs.
 
 `MenuPanel` and `MenuButton` provide shared React components and header, body, actions, and footer slots. Enter on a panel activates its enabled primary action, while focused interactive controls keep native keyboard behavior. All menus use the same frame and spacing with compact (480-pixel maximum, used by the mode submenu), standard (640-pixel maximum), and wide (1,040-pixel maximum) variants; help and profile share the responsive `MenuColumns` component. Shared text headers are left-aligned and own the labelled Back control in the same row; custom wordmark headings remain centered in a balanced row. The shell owns parent navigation, returning submenu focus to the parent panel so no action gains a return-time outline; confirmation cancellation still restores its initiating action. `GameShell` mounts ambient decoration once beside a dedicated scrollable `.packet-menu-viewport`; screen changes replace only the panel. This keeps background CSS animation continuous across menu navigation without recreating decorative nodes or gameplay timers. Shell disposal removes both, and reduced-motion rules still apply to the persistent background.
@@ -96,7 +104,9 @@ The HUD is a React sibling of the dedicated `packet-scene` canvas mount. It subs
 React effects own preview loading, listeners, observers, and disposal. Lazy menu preview imports are shared across concurrent effect setups; each active setup still owns its own resources. The root runs in Strict Mode, and pagehide/HMR unmount it. Persisted pageshow reloads a previously disposed page. Startup render/import errors have a readable React fallback.
 
 ### `domain`
+
 Gameplay model and pure logic.
+
 - `entities`: `PacketEntity`, `EnemyEntity`.
 - `valueObjects`: `Direction`, `TilePosition`, `MovementProgress`.
 - `world`: `WorldState`, `CollisionGrid`, map/world data types, `EndlessMazeGenerator`, and `EndlessMazeStream`.
@@ -109,7 +119,9 @@ Gameplay model and pure logic.
 Endless generation uses 23 corridor columns and two non-traversable side rails inside each 25 × 24 section. The initial section zero reserves a wordmark on row 11 and its full portal corridor on row 12; composition starts the Packet at its center in rolling-map coordinates `(12,60)`. If section zero regenerates after eviction, that logo position is used only when it still satisfies spacing against resident neighbors. Other non-wordmark sections sometimes reserve another full row or a shorter long run, independently of topology retries. A requested five-tile wordmark is fixed at columns 10–14; its row and the complete horizontal corridor immediately below are reserved before topology retries. Matching nine-tile upper and lower wall spans frame that corridor at columns 8–16, with vertical openings at columns 7 and 17. The corridor ends in a paired portal at columns 1 and 23, with ID-23 visual tips interrupting the otherwise continuous ID-0 rails. The generator also protects a long Firewall loop, then biases wall removal toward parallel rails, offset ladders, nested bends, and rectangular loops. Connection changes keep the physical graph connected with at least two exits per corridor tile, including open section seams, and reject articulation points that would leave an area with only one physical way out. Vertical passages end within four consecutive tiles, including across section seams, and horizontal walls break within ten corridor columns. Staggered vertical cuts use a phase shared across sections, while separated seam crossings match in either generation direction. A local corner rule closes at least one passage around every 2 × 2 group without closing protected corridor edges; rare trapped candidates are retried with a deterministic seed. The five-section rolling map is 25 × 120 tiles and increments `topologyRevision` on a shift. It rebases resident portal pairs with the tiles; streaming replaces the live portal links before invalidating navigation, and hazard reachability refreshes against the new map. Evicted sections lose their geometry and pickup state, while retained section objects remain unchanged. `shared/endlessSettings.ts` contains its initial numeric defaults.
 
 ### `systems`
+
 Frame-by-frame behavior execution.
+
 - `InputSystem`
 - `EnemyAbilitySystem`
 - `MazeHazardSystem`
@@ -143,7 +155,9 @@ Movement code resolves per-archetype speed and the non-stacking Lag slowdown. An
 `PacketMovementSystem` records physically occupied tiles after actual movement in `WorldState.visitedPacketTiles`. Trojan chooses a reachable tile from that history using the live collectible inventory, excluding the surrounding eight tiles of every real collectible. It stores the destination on the enemy; `EnemyDecisionService` routes it there through normal movement. `MazeHazardSystem` rechecks the tile on arrival, then starts the in-place disguise or retries if it is occupied. Its disguise expires after ten seconds if the Packet has not approached. Disguise and reveal timers stay on the existing enemy entity; movement and contact ignore it while disguised or within its reveal grace window. `TrojanDisguise` borrows the normal data-bit geometry/material from `ArcadeAssets`; no fake entry is added to the collectible system. `QuarantineWalls` owns a fixed pool of short source beams; `MazeScene` owns the joined body and purple outline. The Asset Lab samples these same visual helpers for reversible ability previews.
 
 ### `infrastructure`
+
 Browser/engine integration and data loading.
+
 - map parser/repository (`TiledParser`, `TiledMapRepository`)
 - `TiledMapTopology` handles portal inference and void-boundary guards after tile trimming.
 - adapters for renderer/input/timer
@@ -161,7 +175,9 @@ Browser/engine integration and data loading.
 - `RenderSystem` also participates in fixed updates, advancing an animation clock only while active. It derives trail direction from captured player displacement, preserving immediate turns while interpolating trail intensity and fading it over 120 ms at rest. Tile-object replacement clears the trail on portals and Classic respawns. It snapshots and interpolates the animation clock alongside entity presentation, then samples mixers and digit opacity at the same absolute time. Pause freezes animation and trail fading. Multiplier models share the power-core rotation sampler. Data bits covered by available multipliers are omitted from the instance batch without removing domain collectibles. Data-bit transforms refresh when collectible content or available multipliers change. Remaining power-core positions are cached; only their instance transforms and bounds refresh from the shared presentation clock for rotation and hover. The gallery samples the same six-second animation directly for pause and arbitrary seeking. Collision markings render in the 3D scene; `DebugOverlaySystem` publishes data for React debug panels.
 
 ### `shared`
+
 Cross-cutting utilities.
+
 - `RandomSource` and `SeededRandom` for deterministic behavior
 - generic event bus used by state/UI integration
 - `blinkCadence` shares the next-toggle calculation for death recovery and scared-enemy warnings; systems retain their own state transitions.
@@ -185,7 +201,9 @@ The gallery owns one renderer for static catalog thumbnails and the selected ass
 A pure playback timeline supplies absolute preview time for play/pause, replay, seeking, and speed changes. State sampling handles directional motion, scared warnings, portal/recovery blinking, and the 900 ms death plus 1,200 ms recovery sequence without changing gameplay state. The inspector supports the game camera and an orbit camera. Gallery teardown releases its scenes, controls, renderer, listeners, and owned assets, and cancels pending loading work.
 
 ## Dependency Direction
+
 Allowed direction:
+
 1. `ui` -> public `app` API, local persistence, and shared infrastructure/engine presentation for the title wordmark and enemy portraits; gameplay systems do not depend on the menu shell
 2. `app` -> `systems`, `domain`, `infrastructure`, `shared`, `engine`
 3. `systems` -> `domain`, `shared`, and infrastructure adapters/3D presentation
@@ -196,9 +214,11 @@ Allowed direction:
 Keep these boundaries intact when adding imports or moving code.
 
 ## Runtime Update and Render Order
+
 Before each active fixed update, render systems capture presentation history before the scheduler and gameplay systems run. `EntityPresentation` reuses previous-position records; tile-object replacement marks portal and position-reset discontinuities.
 
 Update order (fixed):
+
 1. `InputSystem`
 2. `EnemyAbilitySystem`
 3. `PacketMovementSystem`
@@ -215,12 +235,14 @@ Update order (fixed):
 14. `DebugOverlaySystem` (development only)
 
 Render order:
+
 1. `RenderSystem` presents the camera and interpolated entity positions, then synchronizes collectibles, effects, and collision markings.
 2. `ThreeRendererAdapter` renders the complete scene with depth testing.
 3. `DebugOverlaySystem` publishes diagnostic snapshots in development.
 4. React renders the HUD, diagnostics, and menu shell; no pause overlay system runs inside the simulation.
 
 ## Camera Behavior Contract
+
 - `CameraSystem.start()` configures bounds, zoom, follow target, and viewport, then calls a one-time snap so the first gameplay frame is centered on Packet instead of animating in from `(0, 0)`.
 - After startup, camera movement remains lerp-based via `CAMERA.followLerp` and updates each frame in `CameraSystem.update()`.
 - `Camera3D` wraps the existing `Camera2D` follow tracker and presents an orthographic camera with a fixed 20-degree forward tilt and 5-degree lean from the right, with north as its up reference. Projection correction cancels the side lean's ground-plane shear and horizontal compression, keeping maze rows and columns aligned with the screen at the original scale while height reveals wall sides. Bounds, zoom, and viewport changes rebuild this correction and the inverse projection used for ground-plane ray picking.
@@ -233,7 +255,9 @@ Render order:
 - Regression coverage includes `src/__tests__/camera2d.test.ts`, `src/__tests__/camera3d.test.ts`, and `src/__tests__/cameraSystem.test.ts`.
 
 ## Core Runtime Contracts
+
 Public runtime contract:
+
 - `start(): Promise<void>`
 - `pause(): void`
 - `resume(): void`
@@ -254,19 +278,21 @@ Tutorial composition always loads the existing demo map without editing its asse
 
 ## Shared simulation and multiplayer boundaries
 
-`src/game/simulation` is the browser-independent entry point. A simulation receives explicit mode configuration, map data, seed, and players, then exposes validated input, fixed-step advancement, snapshots, events, and disposal. `GameStateStore` instances own score, lives, and bonus state per session. `LocalSimulation` supplies fixed-step ordering to the existing Classic, Endless, and Tutorial composition through injected systems; browser input, rendering, persistence, and clocks stay outside it. `DataRace` is the complete server-authoritative multiplayer state machine and owns players, pickups, personal effects, seeded ordering, deadlines, and restorable movement state without React, Three.js, Express, or AWS imports.
+`src/game/simulation` is the browser-independent entry point. A simulation receives explicit mode configuration, map data, seed, and players, then exposes validated input, fixed-step advancement, snapshots, events, and disposal. `GameStateStore` instances own score, lives, and bonus state per session. `LocalSimulation` supplies fixed-step ordering to the existing Classic, Endless, and Tutorial composition through injected systems; browser input, rendering, persistence, and clocks stay outside it. `MazeGraphCarver` owns the directional fields, wall-density pass, grouped safe closures, open-corner cleanup and repair, and straight-run limits shared by Endless and Battle Royale; `MazeWallPatterns` supplies their seeded rail, ladder, bend, and loop preferences. `BattleArenaMap` gives the shared carver horizontally mirrored edge groups and validates every closure against its 21 nested topology stages without changing cell IDs. `DataRace` remains the internal name of the complete server-authoritative Battle Royale state machine and owns players, pickups, personal effects, shrink stages, eliminations, seeded ordering, deadlines, and restorable movement state without React, Three.js, Express, or AWS imports.
 
-`src/game/protocol` contains shared TypeScript types and strict Zod runtime schemas. A map is sent once when a socket authenticates. Subsequent snapshots identify either remaining or removed pickup IDs, whichever is smaller, and the browser reconstructs the authoritative pickup set against that map. Inputs carry only a sequence number and direction intent. Process generation, EC2 run identity, match/tick identity, and input acknowledgements fence stale messages and prediction replay.
+`src/game/protocol` contains shared TypeScript types and strict Zod runtime schemas. A match-owned generated map is sent before its first snapshot and again before a reconnect snapshot. Subsequent snapshots identify either remaining or removed pickup IDs, whichever is smaller, and the browser reconstructs the authoritative pickup set against that map. Snapshots carry the authoritative shrink stage and player elimination ticks; the seed and generator version on the map reproduce the matching code-native wall geometry. Inputs carry only a sequence number and direction intent. Process generation, EC2 run identity, match/tick identity, and input acknowledgements fence stale messages and prediction replay.
 
-Protocol version 2 includes committed inward portal direction and authoritative portal blink state. Browser, game process, control API, and release manifest import one version constant; incompatible peers are rejected before gameplay.
+Protocol version 5 identifies arena generator version 3 and admits one-player snapshots only for the explicit local solo-practice path. Browser, game process, control API, and release manifest import one version constant; incompatible peers are rejected before gameplay.
 
 The game server and control API share ticket consumption, match-start identity checks, and immutable result persistence in `backend/multiplayer-repository.ts`. The server retains its process ownership and fsynced outbox. Claiming a replacement process publishes the shared protocol version while preserving the instance run and uptime deadline.
 
-The Node application under `server` runs Data Race at 60 Hz and broadcasts at a configurable lower rate. `RoomService` owns private rooms, readiness, reservations, creator transfer, result finalization, and draining. Express exposes health/readiness plus loopback-only administrative diagnostics; `ws` handles authenticated gameplay after consuming a short-lived ticket. DynamoDB adapters atomically consume ticket hashes, publish fenced readiness, persist match starts and terminal summaries, and retain a disk outbox until failed result writes succeed. The browser interpolates remote actors and predicts only local movement from the shared movement rules. Local reconciliation compares the previous and current authoritative bases at one presentation tick, then eases only small corrections that shared movement can apply along the same physical corridor. Turns discard residual correction; portals, respawns, reconnects, and exhausted prediction history snap both the Packet and camera.
+The Node application under `server` runs Battle Royale at 60 Hz and broadcasts at a configurable lower rate. `RoomService` owns private rooms, per-match maps, readiness, reservations, creator transfer, result finalization, and draining. Express exposes health/readiness plus loopback-only administrative diagnostics; `ws` handles authenticated gameplay after consuming a short-lived ticket. DynamoDB adapters atomically consume ticket hashes, publish fenced readiness, persist match starts and terminal summaries, and retain a disk outbox until failed result writes succeed. The browser interpolates remote actors and predicts only local movement from the shared movement rules. A topology change replaces the maze presentation, resets unsafe interpolation history, updates centered camera bounds, and reconstructs its one-second transition from authoritative ticks. Small corrections within one topology stage still ease along the same physical corridor.
 
 `MultiplayerSocketClient` retains the complete latest snapshot for the animation-frame presentation while publishing a separate cached React snapshot only when visible menu or HUD data changes. `MultiplayerPresentationSession` owns prediction clocks, pending input replay, the Three.js scene, shader preparation, resize policy, animation-frame scheduling, visibility suspension, and idempotent partial cleanup. It synchronizes the local actor before the first camera snap, samples the raw socket state again after shader preparation, and uses the same 1080p reference framing as local gameplay. Cancelling multiplayer admission invalidates pending HTTP and socket work; room events navigate only while the shell still has multiplayer intent.
 
 The Node.js account Lambda remains the account/profile/single-player record boundary. A separate multiplayer-control handler reports regional status and capabilities, authorizes owner startup, issues bound tickets, and returns participant-authorized results. EC2 lifecycle, DNS, TLS, release installation, and regional exclusivity are infrastructure concerns and do not enter the simulation or browser bundle.
+
+The shared local/remote presentation clock runs at wall-clock speed within a 50 ms timing deadband, absorbing ordinary snapshot and RTT jitter. Drift outside that window converges at up to 2% speed adjustment; prediction remains capped during a network stall. Small corrections across a corner discard unsafe position offsets while preserving camera follow, so a normal acknowledgement does not re-center the whole maze. Actual discontinuities still snap.
 
 ### Full local development composition
 
@@ -274,7 +300,7 @@ The Node.js account Lambda remains the account/profile/single-player record boun
 
 Polling watchers run inside the backend containers, including detached launches: nodemon rebuilds/restarts the game for server/shared gameplay/map edits and restarts the gateway for its source edits; nodemon rebuilds and restarts the Lambda runtime emulators for backend TypeScript edits. Each replacement game process registers a new generation through the authenticated local API before outbox recovery and readiness. Registration preserves the run identity and uptime deadline, fences old tickets/heartbeats, and never resets accounts or records. A brief startup retry covers simultaneous Lambda reloads. Game reloads interrupt active local matches; presentation-only edits remain Vite updates. Dependencies and container/environment configuration require a launcher rebuild.
 
-`server/dev.ts` also starts `DevelopmentPlayers` (two by default, `--bots 0–3`). Its only in-process access is a detached public room view for discovering human lobbies. Every bot authenticates as a guest over HTTP, consumes an ordinary room ticket over a real WebSocket, readies through the protocol, and chooses direction inputs from received maps/snapshots. Bots retain reserved human slots, reconnect with fresh tickets, yield lobby/results ownership to connected humans, and leave when no humans remain. Empty rooms are removed once any result finalization completes. No bot routes, identity privileges, or simulation shortcuts are added to production.
+`server/dev.ts` also starts `DevelopmentPlayers` (two by default, `--bots 0–3`). Its only in-process access is a detached public room view for discovering human lobbies. Every bot authenticates as a guest over HTTP, consumes an ordinary room ticket over a real WebSocket, readies through the protocol, and chooses direction inputs from received maps/snapshots. Bots retain reserved human slots, reconnect with fresh tickets, yield lobby/results ownership to connected humans, and leave when no humans remain. Empty rooms are removed once any result finalization completes. The explicit `--solo` launcher option forces zero bots and enables a local-only room policy that readies and starts its sole creator immediately; the simulation keeps running until elimination or timeout, while the development result adapter deliberately skips its start and result writes. Production room admission and persistence remain two-to-four-player only.
 
 The Node bootstrap creates production-shaped profile, control, ticket, and result tables plus a development identity table. It imports the former SQLite database once, seeds missing test accounts, and starts the local `eu` lifecycle automatically. Bootstrap runs before the Lambda services; Lambda cold starts never reset ownership or data. The DynamoDB volume survives container replacement. Auth signing material and the fsynced game result outbox persist under `.packetloss-dev/data`.
 
@@ -285,6 +311,7 @@ The development handler invokes the shared account/control routes using API Gate
 This exercises DynamoDB and Lambda runtime behavior locally. API Gateway itself, Cognito, IAM/SSM, EC2, DNS, TLS, physical regions, and cloud capacity remain outside the emulator. See README for launch, stop, reset, migration, and logs.
 
 ## State and Data Flow
+
 - `TiledMapRepository` loads and parses maze JSON into `WorldMapData`.
 - `CollisionGrid` exposes safe tile/collision reads.
 - `WorldState` stores local-runtime mutable state (entities, debug flags, tick, jail state, animation state, level multiplier, and run outcome); `GameRuntime` tracks wall-clock run duration, cumulative level counts, clear checkpoints, and the terminal loss snapshot. Each composition receives an independent `GameStateStore`.
@@ -292,13 +319,17 @@ This exercises DynamoDB and Lambda runtime behavior locally. API Gateway itself,
 - Presentation maps gameplay `(x, y)` to Three.js `(x, height, z)` with gameplay `y` becoming `z`; map parsing and movement remain two-dimensional.
 
 ## Determinism and Randomness
+
 All game randomness is routed through `RandomSource`.
+
 - production can use `Math.random`
 - tests use `SeededRandom` for deterministic simulations
 - Endless uses separate seeded streams for section geometry/signs, point placement, bonus placement, enemy behavior, and wave encounters. Encounter activity cannot change future section geometry or pickups.
 
 ## Portals
+
 Portal behavior is encapsulated in `PortalService`:
+
 - requires explicit direction and outward endpoint direction match
 - allows outward bootstrap movement from centered portal endpoints via systems
 - teleports when outward movement offset reaches at least half a tile (`>= tileSize / 2`)
@@ -309,7 +340,9 @@ Portal behavior is encapsulated in `PortalService`:
 Covered by `src/__tests__/portalService.test.ts`.
 
 ## Validation
+
 Required checks:
+
 - `pnpm run typecheck`
 - `pnpm run lint`
 - `pnpm run test`
@@ -319,7 +352,9 @@ Required checks:
 Nested checkouts under `.codex/worktrees/` are excluded from lint and test discovery.
 
 ## Migration Notes
+
 Legacy files removed:
+
 - `src/game/startGameApp.ts`
 - `src/types.ts`
 - `src/movement.ts`
@@ -330,7 +365,9 @@ Legacy files removed:
 Equivalent behavior now exists in domain services/systems/infrastructure adapters.
 
 ## Troubleshooting
+
 If you see a blank page after changes:
+
 1. run `pnpm run typecheck`
 2. run `pnpm run build`
 3. check browser console for module import errors

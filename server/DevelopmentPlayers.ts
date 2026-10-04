@@ -15,6 +15,7 @@ import {
     type RaceSnapshot,
 } from '../src/game/simulation/types';
 import { movementEdge } from '../src/game/simulation/movement';
+import { battleArenaMapAtStage } from '../src/game/simulation/BattleArenaMap';
 
 interface Options {
     count: number;
@@ -308,7 +309,12 @@ export class DevelopmentPlayers {
                 RACE.matchTicks * RACE.stepMs - 250
         )
             return;
-        const direction = pickupDirection(player.map, snapshot, player.id ?? '', Math.random);
+        const direction = pickupDirection(
+            battleArenaMapAtStage(player.map, snapshot.shrinkStage),
+            snapshot,
+            player.id ?? '',
+            Math.random
+        );
         player.nextInput = now + randomInt(120, 241);
         if (direction)
             this.send(player, {
@@ -360,7 +366,7 @@ export function pickupDirection(
     random: () => number
 ): Direction | null {
     const player = snapshot.players.find((entry) => entry.id === id);
-    if (!player?.connected || player.deathMs > 0) return null;
+    if (!player?.connected || player.eliminatedAtTick !== null || player.deathMs > 0) return null;
     const movement = player.movement;
     const occupied = movementEdge(map, movement);
     const returningFromPortal = occupied?.portal && occupied.direction !== movement.direction;

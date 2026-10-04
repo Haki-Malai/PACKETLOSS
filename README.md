@@ -18,7 +18,7 @@ Recover data bits, avoid enemies, and use power cores to turn the chase around. 
 - Navigate menus with Tab and Enter/Space; Escape returns from a submenu. Restarting or leaving an unfinished run requires confirmation.
 - Leaving the window pauses an active game; returning resumes only a focus-caused pause with no explicit menu interaction.
 
-Settings include menu motion and fullscreen where supported. Sound is a disabled placeholder for future support. Profile & records stores an optional nickname, top scores, and recent completed runs on this device. Configured deployments and the full local development stack also provide accounts, profile synchronization, retained single-player records, and private Data Race rooms. There is no public leaderboard or saved unfinished single-player run.
+Settings include menu motion and fullscreen where supported. Sound is a disabled placeholder for future support. Profile & records stores an optional nickname, top scores, and recent completed runs on this device. Configured deployments and the full local development stack also provide accounts, profile synchronization, retained single-player records, and private Battle Royale rooms. There is no public leaderboard or saved unfinished single-player run.
 
 ## Development
 
@@ -47,10 +47,13 @@ Guests have independent identities and persistent scores. Reusing a name never t
 
 Create a multiplayer room and two randomly named **BOT** players automatically join and ready up, leaving one spare seat for a friend. Ready yourself and press Start. Bots run in the local Node service and use guest authentication, single-use tickets, real WebSockets, and directional inputs to collect pickups; the server applies the normal scoring, collision, and respawn rules. They ready again after Rematch and leave when no human participants or reconnect reservations remain. Bots never create rooms or start matches. Use `--bots 0` for manual multi-browser tests, or `--bots 3` for a full four-player solo test; `PACKETLOSS_DEV_BOTS` also accepts 0–3. Production has no automated players.
 
+Use `--solo` for a development-only one-player Battle Royale. It disables bots and starts play immediately after **Create room**, while retaining movement, shrinking walls, elimination, and reconnect behavior. Solo practice results are not saved, and deployed rooms still require two to four players.
+
 For account testing, seeded emails are `owner@packetloss.local` and `friend1@packetloss.local` through `friend3@packetloss.local`, all with password `packetloss-dev`. New local passwords may be any non-empty string up to 128 characters. Confirmation and recovery use `000000`; no email is sent. Production policies are unchanged.
 
 ```sh
 pnpm dev:full -- --detach  # Keep containers running in the background
+pnpm dev:full -- --solo    # Start a one-player Battle Royale from Create room
 pnpm dev:full -- --bots 0  # Disable automatic players for games with friends
 pnpm dev:full -- --stop    # Stop; preserve database and outbox
 pnpm dev:full -- --reset   # Explicitly erase local data and start fresh
@@ -123,7 +126,7 @@ publishing and must be present on both deployment branches before migration.
 - `src/main.tsx` mounts the React title/menu shell; starting a run initializes the game.
 - `src/engine/` contains the loop, camera, input, timers, and tweens.
 - `src/game/` contains gameplay logic, runtime wiring, map loading, Three.js presentation, and UI integration.
-- `server/` contains the authoritative Data Race service plus production and local persistence adapters.
+- `server/` contains the authoritative Battle Royale service plus production and local persistence adapters.
 - `backend/` contains the account and multiplayer Lambda applications and their development-only local composition.
 - `scripts/dev-full.mjs` supervises the complete loopback development stack.
 - `public/assets/` contains fonts and maze data.

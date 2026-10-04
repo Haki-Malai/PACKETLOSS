@@ -143,6 +143,7 @@ services:
       PACKETLOSS_DEV_CONTAINER: "1"
       PACKETLOSS_DEV_MAXIMUM_UPTIME_MS: "604800000"
       PACKETLOSS_DEV_BOTS: ${PACKETLOSS_DEV_BOTS:-2}
+      PACKETLOSS_DEV_SOLO: ${PACKETLOSS_DEV_SOLO:-0}
     volumes:
       - ./.packetloss-dev/data:/data
       - ./server:/app/server:ro

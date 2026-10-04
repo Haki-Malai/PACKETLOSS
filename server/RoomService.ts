@@ -1,4 +1,5 @@
 import { DataRace } from '../src/game/simulation/DataRace';
+import { createBattleArenaMap } from '../src/game/simulation/BattleArenaMap';
 import { RACE, type RaceMap, type RaceSnapshot } from '../src/game/simulation/types';
 import { encodeRaceSnapshot, type ClientMessage, type RoomState, type ServerMessage } from '../src/game/protocol/messages';
 
@@ -20,6 +21,7 @@ interface Room {
   code: string;
   ownerId: string;
   members: Map<string, Member>;
+  map: RaceMap | null;
   race: DataRace | null;
   lastStep: number;
   emptySince: number | null;
@@ -28,12 +30,13 @@ interface Room {
   touchedAt: number;
   starting: boolean;
   seed: number;
+  mapSeed: number;
   rotation: number;
   pendingResult: RaceSnapshot | null;
   nextSnapshotTick: number;
 }
 export interface RoomServiceOptions {
-  map: RaceMap;
+  createMap?: (seed: number) => RaceMap;
   results: ResultStore;
   now: () => number;
   epochNow: () => number;
@@ -44,6 +47,7 @@ export interface RoomServiceOptions {
   snapshotHz?: number;
   instanceRunId?: string;
   processGeneration?: string;
+  soloDevelopment?: boolean;
 }
 export interface RoomStatus {
   ready: boolean;
@@ -143,14 +147,18 @@ export class RoomService {
           return;
         case 'leave':
           this.remove(room, identity.playerId); send({ type: 'left' }); break;
-        case 'rematch':
+        case 'rematch': {
           if (this.draining) throw new Error('The server is draining.');
           if (!room.race || !['finished', 'aborted'].includes(room.race.phase)) throw new Error('The match has not ended.');
           if (room.saveState === 'pending' || room.saveState === 'failed') throw new Error('Results are still being saved.');
-          room.race = null; room.saveState = 'none';
+          room.race = null; room.map = null; room.saveState = 'none';
+          const nextMapSeed = this.options.randomSeed() >>> 0;
+          room.mapSeed = nextMapSeed === room.mapSeed ? (nextMapSeed + 1) >>> 0 : nextMapSeed;
           room.rotation += 1; room.touchedAt = this.options.now();
           room.members.forEach((entry) => { entry.ready = false; });
+          this.autoStartSolo(room);
           break;
+        }
         default: throw new Error('Authentication is already complete.');
       }
       this.publishRoom(room);
@@ -163,12 +171,13 @@ export class RoomService {
   disconnect(peerId: string, playerId: string): void {
     const room = this.memberships.get(playerId), member = room?.members.get(playerId);
     if (!room || !member || member.peerId !== peerId) return;
-    member.peerId = null; member.send = null; member.ready = false;
+    member.peerId = null; member.send = null;
+    if (!room.starting) member.ready = false;
     member.reservedUntil = this.options.now() + 30000;
     room.race?.disconnect(playerId);
     if (room.race?.phase === 'countdown') {
       room.race.abort('countdown_cancelled'); this.persist(room);
-      room.race = null; room.members.forEach((entry) => { entry.ready = false; });
+      room.race = null; room.map = null; room.members.forEach((entry) => { entry.ready = false; });
     }
     this.transferOwner(room);
     this.lastActivity = this.options.now();
@@ -183,9 +192,6 @@ export class RoomService {
         if (member.reservedUntil !== null && member.reservedUntil <= now) this.remove(room, id);
       }
       const connected = [...room.members.values()].some((member) => member.peerId);
-      if (room.race?.phase === 'playing' && room.members.size === 0) {
-        room.race.abort('room_empty'); this.publishSnapshot(room); this.persist(room);
-      }
       if (connected) { room.emptySince = null; this.lastActivity = now; }
       else room.emptySince ??= now;
       if (room.race && ['countdown', 'playing'].includes(room.race.phase)) {
@@ -227,12 +233,14 @@ export class RoomService {
     if (this.rooms.size >= (this.options.maxRooms ?? 1)) throw new Error('The private server is full.');
     let code = this.options.randomCode();
     while (this.rooms.has(code)) code = this.options.randomCode();
-    const room: Room = { code, ownerId: identity.playerId, members: new Map(), race: null,
+    const seed = this.options.randomSeed() >>> 0;
+    const room: Room = { code, ownerId: identity.playerId, members: new Map(), map: null, race: null,
       lastStep: this.options.now(), emptySince: null, saveState: 'none', nextSave: 0,
-      touchedAt: this.options.now(), starting: false, seed: this.options.randomSeed(), rotation: 0, pendingResult: null,
+      touchedAt: this.options.now(), starting: false, seed, mapSeed: seed, rotation: 0, pendingResult: null,
       nextSnapshotTick: 60 / (this.options.snapshotHz ?? 20) };
     this.rooms.set(code, room);
     this.attach(room, peerId, identity, send);
+    this.autoStartSolo(room);
   }
 
   /** Allows fresh lobby admission or a reserved reconnect, never active-match replacement. */
@@ -247,36 +255,43 @@ export class RoomService {
     const reserved = existing?.reservedUntil !== null && existing?.reservedUntil !== undefined
       && existing.reservedUntil > this.options.now();
     if (identity.operation !== (reserved ? 'reconnect' : 'join')) throw new Error('Ticket does not authorize this operation.');
-    if (room.race && !reserved) throw new Error('Only reserved players can rejoin this match.');
+    if ((room.race || room.starting) && !reserved) throw new Error('Only reserved players can rejoin this match.');
     if (!reserved && !this.status().ready) throw new Error('The server is draining or unavailable.');
     if (!existing && room.members.size >= 4) throw new Error('The room is full.');
     this.attach(room, peerId, identity, send);
     if (room.race) { room.race.reconnect(identity.playerId); this.publishSnapshot(room); }
   }
 
-  /** Binds a peer, preserving reserved appearance or assigning an unused random color, then sends the map. */
+  /** Binds a peer, preserving reserved appearance or assigning an unused random color. */
   private attach(room: Room, peerId: string, identity: AuthenticatedPlayer, send: SendMessage): void {
     const existing = room.members.get(identity.playerId);
     const available = RACE.colors.filter((color) => ![...room.members.values()].some((member) => member.color === color));
     const color = existing?.color ?? available[(this.options.randomSeed() >>> 0) % available.length];
-    room.members.set(identity.playerId, { identity, color, peerId, send, ready: false, reservedUntil: null });
+    room.members.set(identity.playerId, { identity, color, peerId, send,
+      ready: room.starting && existing?.ready === true, reservedUntil: null });
     this.memberships.set(identity.playerId, room);
     room.emptySince = null;
     room.touchedAt = this.options.now();
     this.transferOwner(room);
-    send({ type: 'map', map: this.options.map });
+    if (room.map) send({ type: 'map', map: room.map });
     this.publishRoom(room);
   }
 
   /** Starts play after persisting a connected roster that unanimously readied. */
   private start(room: Room, playerId: string): void {
     if (room.ownerId !== playerId) throw new Error('Only the room creator can start.');
-    if (!this.status().ready || room.race || room.starting || room.saveState === 'pending' || room.saveState === 'failed' || room.members.size < 2
-      || [...room.members.values()].some((member) => !member.peerId || !member.ready)) throw new Error('Wait until 2–4 connected players are ready.');
+    const minimumPlayers = this.options.soloDevelopment ? 1 : 2;
+    if (!this.status().ready || room.race || room.starting || room.saveState === 'pending' || room.saveState === 'failed'
+      || room.members.size < minimumPlayers
+      || [...room.members.values()].some((member) => !member.peerId || !member.ready)) {
+      throw new Error(`Wait until ${minimumPlayers}–4 connected players are ready.`);
+    }
     const participants = [...room.members.values()].map((member) => (
       { id: member.identity.playerId, name: member.identity.name, color: member.color }));
     const participantIds = new Set(participants.map((participant) => participant.id));
-    const race = new DataRace(this.options.map, this.options.randomId(), participants, room.seed, room.rotation);
+    const map = (this.options.createMap ?? createBattleArenaMap)(room.mapSeed);
+    const race = new DataRace(map, this.options.randomId(), participants, room.seed, room.rotation,
+      this.options.soloDevelopment === true);
     room.starting = true;
     void this.options.results.start(race.snapshot(), room.code).then(() => {
       room.starting = false;
@@ -290,8 +305,9 @@ export class RoomService {
           message: this.draining ? 'The server is preparing to stop.' : 'A player left before the match started.' });
         return;
       }
-      room.race = race; room.saveState = 'none'; room.lastStep = this.options.now(); room.touchedAt = this.options.now();
+      room.map = map; room.race = race; room.saveState = 'none'; room.lastStep = this.options.now(); room.touchedAt = this.options.now();
       room.nextSnapshotTick = 60 / (this.options.snapshotHz ?? 20);
+      this.broadcast(room, { type: 'map', map });
       this.publishSnapshot(room); this.publishRoom(room);
     }, () => {
       room.starting = false;
@@ -301,11 +317,11 @@ export class RoomService {
 
   /** Removes room membership without removing an active match's score from final rankings. */
   private remove(room: Room, playerId: string): void {
-    room.race?.disconnect(playerId);
     if (room.race?.phase === 'countdown') {
+      room.race.disconnect(playerId);
       room.race.abort('countdown_cancelled'); this.persist(room);
-      room.race = null; room.members.forEach((entry) => { entry.ready = false; });
-    }
+      room.race = null; room.map = null; room.members.forEach((entry) => { entry.ready = false; });
+    } else room.race?.eliminate(playerId);
     room.members.delete(playerId); this.memberships.delete(playerId);
     room.touchedAt = this.options.now();
     this.transferOwner(room);
@@ -318,6 +334,15 @@ export class RoomService {
     room.ownerId = [...room.members.values()].find((member) => member.peerId)?.identity.playerId ?? room.ownerId;
   }
 
+  /** Auto-readies and starts the sole owner only in the explicit local solo configuration. */
+  private autoStartSolo(room: Room): void {
+    if (!this.options.soloDevelopment || room.members.size !== 1 || room.starting || room.race) return;
+    const owner = room.members.get(room.ownerId);
+    if (!owner?.peerId) return;
+    owner.ready = true;
+    this.start(room, room.ownerId);
+  }
+
   /** Publishes the public lobby state to its connected participants. */
   private publishRoom(room: Room): void {
     this.broadcast(room, { type: 'room', room: this.roomState(room) });
@@ -327,10 +352,12 @@ export class RoomService {
   private roomState(room: Room): RoomState {
     const actualPhase = room.race?.phase;
     const phase = actualPhase === 'finished' && room.saveState !== 'saved' ? 'saving' : actualPhase;
+    const minimumPlayers = this.options.soloDevelopment ? 1 : 2;
     return { code: room.code, ownerId: room.ownerId,
       phase: phase === 'playing' || phase === 'countdown' || phase === 'saving' ? phase : phase ? 'results' : 'lobby',
       matchId: room.race?.matchId ?? null,
-      canStart: !room.race && !room.starting && room.saveState !== 'pending' && room.saveState !== 'failed' && !this.draining && room.members.size >= 2
+      canStart: !room.race && !room.starting && room.saveState !== 'pending' && room.saveState !== 'failed' && !this.draining
+        && room.members.size >= minimumPlayers
         && [...room.members.values()].every((member) => member.peerId && member.ready),
       players: [...room.members.values()].map((member) => ({ id: member.identity.playerId,
         name: member.identity.name, color: member.color, ready: member.ready, connected: !!member.peerId,
@@ -340,10 +367,10 @@ export class RoomService {
 
   /** Broadcasts one authoritative snapshot and reports phase changes through the room message. */
   private publishSnapshot(room: Room): void {
-    if (!room.race) return;
+    if (!room.race || !room.map) return;
     const snapshot = room.race.snapshot();
     if (snapshot.phase === 'finished' && room.saveState !== 'saved') return;
-    this.broadcast(room, { type: 'snapshot', snapshot: encodeRaceSnapshot(this.options.map, snapshot), serverTimeMs: this.options.epochNow(),
+    this.broadcast(room, { type: 'snapshot', snapshot: encodeRaceSnapshot(room.map, snapshot), serverTimeMs: this.options.epochNow(),
       instanceRunId: this.options.instanceRunId ?? 'local-run', processGeneration: this.options.processGeneration ?? 'local-process' });
     if (snapshot.phase !== 'playing') this.publishRoom(room);
   }

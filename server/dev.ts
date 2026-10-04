@@ -1,9 +1,5 @@
-import { readFile } from 'node:fs/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import { parseTiledMap, type TiledMap } from '../src/game/infrastructure/map/TiledParser';
-import { raceMapSchema } from '../src/game/protocol/messages';
-import { createClassicRaceMap } from '../src/game/simulation/classicMap';
 import { DevelopmentAdapters } from './DevelopmentAdapters';
 import { DevelopmentPlayers } from './DevelopmentPlayers';
 import { createGameServer } from './httpServer';
@@ -19,12 +15,9 @@ export async function main(): Promise<void> {
     const internalToken = required('PACKETLOSS_DEV_INTERNAL_TOKEN');
     const siteOrigin = required('PACKETLOSS_DEV_SITE_ORIGIN');
     const apiOrigin = required('PACKETLOSS_DEV_API_URL');
-    const botCount = numberSetting('PACKETLOSS_DEV_BOTS', 2, 0, 3);
+    const soloDevelopment = booleanSetting('PACKETLOSS_DEV_SOLO', false);
+    const botCount = soloDevelopment ? 0 : numberSetting('PACKETLOSS_DEV_BOTS', 2, 0, 3);
     const gamePort = numberSetting('PACKETLOSS_DEV_GAME_PORT', 8080, 1, 65535);
-    const raw = JSON.parse(
-        await readFile('public/assets/mazes/default/maze.json', 'utf8')
-    ) as TiledMap;
-    const map = raceMapSchema.parse(createClassicRaceMap(parseTiledMap(raw)));
     const adapters = new DevelopmentAdapters({
         apiOrigin,
         internalToken,
@@ -35,13 +28,13 @@ export async function main(): Promise<void> {
     await adapters.register();
     await adapters.recover();
     const rooms = new RoomService({
-        map,
         results: adapters,
         now: () => performance.now(),
         epochNow: () => Date.now(),
         snapshotHz: numberSetting('PACKETLOSS_DEV_SNAPSHOT_HZ', 20, 1, 30),
         instanceRunId,
         processGeneration,
+        soloDevelopment,
         randomId: randomUUID,
         randomSeed: () => randomBytes(4).readUInt32LE(),
         randomCode: () => {
@@ -146,6 +139,15 @@ function numberSetting(name: string, fallback: number, minimum: number, maximum:
         throw new Error(`${name} must be an integer from ${minimum} through ${maximum}.`);
     }
     return value;
+}
+
+/** Reads a strict zero-or-one development flag without accepting ambiguous values. */
+function booleanSetting(name: string, fallback: boolean): boolean {
+    const value = process.env[name];
+    if (value === undefined) return fallback;
+    if (value === '0') return false;
+    if (value === '1') return true;
+    throw new Error(`${name} must be 0 or 1.`);
 }
 
 /** Resolves only after a loopback listener is bound. */

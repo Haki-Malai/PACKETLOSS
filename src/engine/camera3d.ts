@@ -20,12 +20,17 @@ export class Camera3D {
   private viewportHeight = 1;
   private worldWidth = 1;
   private worldHeight = 1;
+  private worldMinX = 0;
+  private worldMinY = 0;
   private distance = 1000;
 
-  setBounds(width: number, height: number): void {
+  /** Sets the projected world rectangle, including an optional origin for retained subregions. */
+  setBounds(width: number, height: number, minX = 0, minY = 0): void {
     this.worldWidth = Math.max(1, width);
     this.worldHeight = Math.max(1, height);
-    this.tracker.setBounds(width, height);
+    this.worldMinX = minX;
+    this.worldMinY = minY;
+    this.tracker.setBounds(width, height, minX, minY);
     this.distance = Math.max(1000, Math.hypot(width, height) * 2);
     this.camera.far = this.distance * 4;
     this.updateProjection();
@@ -88,8 +93,12 @@ export class Camera3D {
     // Match the renderer's integer drawing-buffer dimensions, including fractional DPR.
     const pixelsPerX = Math.max(1, Math.floor(this.viewportWidth * pixelRatio)) / groundWidth;
     const pixelsPerZ = Math.max(1, Math.floor(this.viewportHeight * pixelRatio)) / groundHeight;
-    const focusX = this.alignToPixel(position.x, pixelsPerX, this.worldWidth, groundWidth) + groundWidth / 2;
-    const focusZ = this.alignToPixel(position.y, pixelsPerZ, this.worldHeight, groundHeight) + groundHeight / 2;
+    const focusX = this.alignToPixel(
+      position.x, pixelsPerX, this.worldWidth, groundWidth, this.worldMinX,
+    ) + groundWidth / 2;
+    const focusZ = this.alignToPixel(
+      position.y, pixelsPerZ, this.worldHeight, groundHeight, this.worldMinY,
+    ) + groundHeight / 2;
 
     this.camera.up.set(0, 0, -1);
     this.camera.position.set(
@@ -101,9 +110,15 @@ export class Camera3D {
     this.camera.updateMatrixWorld();
   }
 
-  private alignToPixel(value: number, pixelsPerUnit: number, worldSize: number, visibleSize: number): number {
-    const min = visibleSize >= worldSize ? (worldSize - visibleSize) / 2 : 0;
-    const max = Math.max(min, worldSize - visibleSize);
+  private alignToPixel(
+    value: number,
+    pixelsPerUnit: number,
+    worldSize: number,
+    visibleSize: number,
+    origin: number,
+  ): number {
+    const min = origin + (visibleSize >= worldSize ? (worldSize - visibleSize) / 2 : 0);
+    const max = Math.max(min, origin + worldSize - visibleSize);
     // Preserve exact boundary stops and small-world centering.
     if (value <= min || value >= max) return clamp(value, min, max);
     return clamp(Math.round(value * pixelsPerUnit) / pixelsPerUnit, min, max);

@@ -17,6 +17,8 @@ export class Camera2D {
   private viewportHeight = 1;
   private worldWidth = 1;
   private worldHeight = 1;
+  private worldMinX = 0;
+  private worldMinY = 0;
 
   private followTarget?: CameraFollowTarget;
   private followLerpX = 1;
@@ -29,9 +31,12 @@ export class Camera2D {
     this.syncPreviousPosition();
   }
 
-  setBounds(width: number, height: number): void {
+  /** Sets the clamped world rectangle, including an optional origin for retained subregions. */
+  setBounds(width: number, height: number, minX = 0, minY = 0): void {
     this.worldWidth = Math.max(1, width);
     this.worldHeight = Math.max(1, height);
+    this.worldMinX = minX;
+    this.worldMinY = minY;
     this.clampToBounds();
     this.syncPreviousPosition();
   }
@@ -123,10 +128,14 @@ export class Camera2D {
   private clampToBounds(): void {
     const viewportWorldWidth = this.viewportWidth / this.zoom;
     const viewportWorldHeight = this.viewportHeight / this.zoom;
-    const minX = viewportWorldWidth >= this.worldWidth ? (this.worldWidth - viewportWorldWidth) / 2 : 0;
-    const maxX = viewportWorldWidth >= this.worldWidth ? minX : this.worldWidth - viewportWorldWidth;
-    const minY = viewportWorldHeight >= this.worldHeight ? (this.worldHeight - viewportWorldHeight) / 2 : 0;
-    const maxY = viewportWorldHeight >= this.worldHeight ? minY : this.worldHeight - viewportWorldHeight;
+    const minX = this.worldMinX + (viewportWorldWidth >= this.worldWidth
+      ? (this.worldWidth - viewportWorldWidth) / 2 : 0);
+    const maxX = viewportWorldWidth >= this.worldWidth
+      ? minX : this.worldMinX + this.worldWidth - viewportWorldWidth;
+    const minY = this.worldMinY + (viewportWorldHeight >= this.worldHeight
+      ? (this.worldHeight - viewportWorldHeight) / 2 : 0);
+    const maxY = viewportWorldHeight >= this.worldHeight
+      ? minY : this.worldMinY + this.worldHeight - viewportWorldHeight;
 
     this.x = clamp(this.x, minX, maxX);
     this.y = clamp(this.y, minY, maxY);

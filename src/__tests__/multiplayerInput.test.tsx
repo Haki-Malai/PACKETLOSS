@@ -22,7 +22,8 @@ afterEach(cleanup);
 function mount() {
   const map = dataRaceFixture();
   const race = new DataRace(map, 'input', [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], 4).snapshot();
-  const connection = { map, race, phase: 'connected', latencyMs: null, warning: null };
+  const connection = { map, race, playerId: race.players[0].id,
+    phase: 'connected', latencyMs: null, warning: null };
   const sendDirection = vi.fn<(_direction: Direction) => number>(() => 1);
   const session = { multiplayer: { connection, sendDirection, getConnectionSnapshot: () => connection },
     leaveMultiplayer: vi.fn() } as unknown as GameSession;

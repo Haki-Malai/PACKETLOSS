@@ -1,5 +1,7 @@
 import type { CollisionTile } from './CollisionGrid';
+import { carveMazeGraph, createNoArticulationValidator, orderedMazeEdge } from './MazeGraphCarver';
 import type { WorldMapData, WorldTile } from './WorldState';
+import { buildMazeWallPatterns } from './MazeWallPatterns';
 import { SeededRandom } from '../../shared/random/SeededRandom';
 import { ENDLESS_SETTINGS } from '../../shared/endlessSettings';
 
@@ -256,311 +258,65 @@ function generateSectionCandidate(
       || ay >= height || by >= height || logoCells.has(at(ax, ay)) || logoCells.has(at(bx, by))) return;
     preferredClosed.add(key(at(ax, ay), at(bx, by)));
   };
-  for (let motif = 0; motif < 6; motif += 1) {
-    const x = 2 + rng.int(width - 12);
-    const y = 2 + rng.int(height - 12);
-    const length = 4 + rng.int(5);
-    const horizontal = rng.int(2) === 0;
-    const kind = motif % 3;
-    if (kind === 0) {
-      // Parallel rails leave irregular crossings between their ends.
-      for (let step = 0; step < length; step += 1) {
-        if (horizontal) {
-          preferWall(x + step, y, x + step, y + 1);
-          preferWall(x + step + 1, y + 4, x + step + 1, y + 5);
-        } else {
-          preferWall(x, y + step, x + 1, y + step);
-          preferWall(x + 4, y + step + 1, x + 5, y + step + 1);
-        }
-      }
-    } else if (kind === 1) {
-      // Staggered short rungs make offset ladders instead of a full grid.
-      for (let rung = 0; rung < 3; rung += 1) {
-        for (let step = 0; step < 3; step += 1) {
-          if (horizontal) preferWall(x + step + (rung % 2) * 2, y + rung * 3,
-            x + step + (rung % 2) * 2, y + rung * 3 + 1);
-          else preferWall(x + rung * 3, y + step + (rung % 2) * 2,
-            x + rung * 3 + 1, y + step + (rung % 2) * 2);
-        }
-      }
-    } else {
-      // Two shifted L-shaped rails form nested turns.
-      for (let offset = 0; offset < 2; offset += 1) {
-        for (let step = 0; step < length - offset; step += 1) {
-          preferWall(x + step, y + offset * 2, x + step, y + offset * 2 + 1);
-          preferWall(x + length - offset, y + step, x + length - offset + 1, y + step);
-        }
-      }
-    }
-  }
-  for (let loop = 0; loop < 2; loop += 1) {
-    const x = 2 + rng.int(width - 10);
-    const y = 2 + rng.int(height - 9);
-    const spanX = 3 + rng.int(5);
-    const spanY = 2 + rng.int(2);
-    const edges: string[] = [];
-    for (let step = 0; step < spanX; step += 1) {
-      edges.push(key(at(x + step, y), at(x + step + 1, y)));
-      edges.push(key(at(x + step, y + spanY), at(x + step + 1, y + spanY)));
-    }
-    for (let step = 0; step < spanY; step += 1) {
-      edges.push(key(at(x, y + step), at(x, y + step + 1)));
-      edges.push(key(at(x + spanX, y + step), at(x + spanX, y + step + 1)));
-    }
-    const cells = Array.from({ length: spanY + 1 }, (_, row) =>
-      Array.from({ length: spanX + 1 }, (_, column) => at(x + column, y + row))).flat();
+  const wallPatterns = buildMazeWallPatterns(width, height, rng, 6, 2);
+  wallPatterns.preferredClosed.forEach(({ from, to }) =>
+    preferWall(from.x, from.y, to.x, to.y));
+  for (const loop of wallPatterns.openLoops) {
+    const edges = loop.edges.map(({ from, to }) => key(at(from.x, from.y), at(to.x, to.y)));
+    const cells = loop.cells.map(({ x, y }) => at(x, y));
     if (cells.some((cell) => logoCells.has(cell)) || edges.some((edge) => fixedClosed.has(edge))) continue;
     edges.forEach((edge) => fixedOpen.add(edge));
   }
 
-  const horizontalWallRuns = new Uint8Array(height - 1);
-  const seamTopCuts = new Int8Array(width).fill(-1);
-  const seamBottomCuts = new Int8Array(width).fill(-1);
-  /** Reserves short vertical lanes while staggering wall breaks across columns. */
-  const reserveVerticalBreaks = (x: number): boolean => {
-    const closed = new Array<boolean>(height - 1).fill(false);
-    const impossible = new Set<string>();
+  const active = new Uint8Array(tileCount);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      if (!logoCells.has(at(x, y))) active[at(x, y)] = 1;
+    }
+  }
+  const forcedCutsByX = Array.from({ length: width }, () => [] as number[]);
+  for (let x = 1; x < width - 1; x += 1) {
     const phase = seamPhases[x];
+    if (phase < 0) continue;
     const nominalBottom = phase + height - 4;
-    const topCut = phase >= 0 && fixedOpen.has(key(at(x, phase), at(x, phase + 1))) ? 0
+    const topCut = fixedOpen.has(key(at(x, phase), at(x, phase + 1))) ? 0
       : phase === (logoRow ?? -1) - 1 && (x === logoX - 1 || x === logoX + 5)
         ? phase - 1 : phase;
-    const bottomCut = phase >= 0 && fixedOpen.has(key(at(x, nominalBottom), at(x, nominalBottom + 1)))
+    const bottomCut = fixedOpen.has(key(at(x, nominalBottom), at(x, nominalBottom + 1)))
       ? height - 2 : nominalBottom;
-    /** Finds a legal continuation of this column's north/south connections. */
-    const choose = (y: number, run: number): boolean => {
-      if (y === height - 1) return true;
-      const state = `${y}:${run}`;
-      if (impossible.has(state)) return false;
-      const edge = key(at(x, y), at(x, y + 1));
-      const mustClose = fixedClosed.has(edge) || logoCells.has(at(x, y)) || logoCells.has(at(x, y + 1))
-        || (phase >= 0 && (y === topCut || y === bottomCut));
-      const mustOpen = fixedOpen.has(edge);
-      if (mustClose && mustOpen) return false;
-      const options = mustClose ? [true] : mustOpen ? [false]
-        : (phase >= 0 && y % 4 === phase) || rng.next() < 0.15 ? [true, false] : [false, true];
-      for (const close of options) {
-        if (close && run === 1 && (x === 1 || x === width - 2
-          || (y === logoRow && (x === logoX - 1 || x === logoX + 5)))) continue;
-        if (close && horizontalWallRuns[y] >= ENDLESS_SETTINGS.maxHorizontalWallTiles) continue;
-        const nextRun = close ? 1 : run + 1;
-        if (nextRun > ENDLESS_SETTINGS.maxVerticalStraightTiles) continue;
-        closed[y] = close;
-        if (choose(y + 1, nextRun)) return true;
-      }
-      impossible.add(state);
-      return false;
-    };
-    if (!choose(0, 1)) return false;
-    seamTopCuts[x] = topCut;
-    seamBottomCuts[x] = bottomCut;
-    for (let y = 0; y < height - 1; y += 1) {
-      horizontalWallRuns[y] = closed[y] ? horizontalWallRuns[y] + 1 : 0;
-      if (closed[y]) fixedClosed.add(key(at(x, y), at(x, y + 1)));
-    }
-    return true;
-  };
-  for (let x = 1; x < width - 1; x += 1) {
-    if (!reserveVerticalBreaks(x)) return null;
+    forcedCutsByX[x].push(topCut, bottomCut);
   }
-
-  const graph: Array<Set<number>> = Array.from({ length: tileCount }, () => new Set<number>());
-  /** Counts an open streaming seam as an exit from its boundary tile. */
-  const exitCount = (cell: number): number => {
-    const x = cell % width;
-    const y = Math.floor(cell / width);
-    return graph[cell].size + (y === 0 && top[x] ? 1 : 0)
-      + (y === height - 1 && bottom[x] ? 1 : 0);
-  };
-  const fields = Array.from({ length: 20 }, () => rng.int(2));
-  const candidates: Array<{ a: number; b: number; priority: number }> = [];
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const a = at(x, y);
-      if (x === 0 || x === width - 1 || logoCells.has(a)) continue;
-      for (const { dx, dy } of [{ dx: 1, dy: 0 }, { dx: 0, dy: 1 }]) {
-        const nextX = x + dx;
-        const nextY = y + dy;
-        if (nextX >= width - 1 || nextY >= height) continue;
-        const b = at(nextX, nextY);
-        if (logoCells.has(b) || fixedClosed.has(key(a, b))) continue;
-        graph[a].add(b);
-        graph[b].add(a);
-        const orientation = fields[Math.floor(y / 6) * 5 + Math.floor(x / 5)];
-        // Closing more north/south edges favors lateral lanes over long vertical climbs.
-        candidates.push({ a, b, priority: rng.next() + (orientation === (dx ? 0 : 1) ? 0.8 : 0)
-          + (dy ? 0.35 : 0)
-          + (preferredClosed.has(key(a, b)) ? 1.5 : 0) });
-      }
-    }
-  }
-  candidates.sort((a, b) => b.priority - a.priority);
-  const priorityByEdge = new Map(candidates.map(({ a, b, priority }) => [key(a, b), priority]));
-  let remainingEdges = candidates.length;
-  const targetEdges = Math.ceil((corridorCount - logoCells.size) * 1.08);
-  const visited = new Int32Array(tileCount);
-  const order = new Int32Array(tileCount);
-  const low = new Int32Array(tileCount);
-  let traversal = 0;
-
-  /** Rejects a section if removing one tile would strand a corridor pocket. */
-  const hasTwoEscapes = (): boolean => {
-    traversal += 1;
-    let time = 0;
-    let reached = 0;
-    let articulation = false;
-    /** Finds cut vertices in the physical passage graph. */
-    const visit = (cell: number, parent: number): void => {
-      visited[cell] = traversal;
-      order[cell] = low[cell] = ++time;
-      reached += 1;
-      let children = 0;
-      for (const neighbor of graph[cell]) {
-        if (visited[neighbor] !== traversal) {
-          children += 1;
-          visit(neighbor, cell);
-          low[cell] = Math.min(low[cell], low[neighbor]);
-          if (parent !== -1 && low[neighbor] >= order[cell]) articulation = true;
-        } else if (neighbor !== parent) {
-          low[cell] = Math.min(low[cell], order[neighbor]);
-        }
-      }
-      if (parent === -1 && children > 1) articulation = true;
-    };
-    visit(at(1, 0), -1);
-    return !articulation && reached === corridorCount - logoCells.size;
-  };
-  if (!hasTwoEscapes()) return null;
-
-  /** Reads a physical north/south passage before tile conversion. */
-  const edgeIsOpen = (x: number, y: number): boolean => graph[at(x, y)].has(at(x, y + 1));
-  /** Counts one continuous horizontal wall after a north/south passage closes. */
-  const horizontalWallLength = (x: number, y: number): number => {
-    let length = 1;
-    for (let left = x - 1; left > 0 && !edgeIsOpen(left, y); left -= 1) length += 1;
-    for (let right = x + 1; right < width - 1 && !edgeIsOpen(right, y); right += 1) length += 1;
-    return length;
-  };
-
-  /** Closes a wall only when both endpoints keep two exits and no pocket gets one entrance. */
-  const tryClose = (a: number, b: number): boolean => {
-    if (!graph[a].has(b) || fixedOpen.has(key(a, b)) || exitCount(a) <= 2 || exitCount(b) <= 2) return false;
-    graph[a].delete(b);
-    graph[b].delete(a);
-    const wallFits = Math.abs(a - b) !== width
-      || horizontalWallLength(a % width, Math.floor(Math.min(a, b) / width))
-        <= ENDLESS_SETTINGS.maxHorizontalWallTiles;
-    if (wallFits && hasTwoEscapes()) {
-      remainingEdges -= 1;
-      return true;
-    }
-    graph[a].add(b);
-    graph[b].add(a);
-    return false;
-  };
-
-  // The authored maze never leaves all four passages around a tile corner open.
-  // Such crossings isolate the return pixels of IDs 7, 10, and 14 as tiny dots.
-  const squares: Array<{ x: number; y: number }> = [];
-  for (let y = 0; y < height - 1; y += 1) {
-    for (let x = 1; x < width - 2; x += 1) squares.push({ x, y });
-  }
-  for (let i = squares.length - 1; i > 0; i -= 1) {
-    const j = rng.int(i + 1);
-    [squares[i], squares[j]] = [squares[j], squares[i]];
-  }
-  /** Returns the four edges around one possible free-floating wall corner. */
-  const squareEdges = (x: number, y: number): number[][] => {
-    const a = at(x, y);
-    const b = at(x + 1, y);
-    const c = at(x, y + 1);
-    const d = at(x + 1, y + 1);
-    return [[a, b], [b, d], [c, d], [a, c]];
-  };
-  /** Checks whether all four passages around a tile corner are open. */
-  const squareIsOpen = (x: number, y: number): boolean =>
-    x >= 1 && x < width - 2 && y >= 0 && y < height - 1
-    && squareEdges(x, y).every(([from, to]) => graph[from].has(to));
-  for (const { x, y } of squares) {
-    if (!squareIsOpen(x, y)) continue;
-    const square = squareEdges(x, y);
-    square.sort(([a, b], [c, d]) =>
-      (priorityByEdge.get(key(c, d)) ?? 0) - (priorityByEdge.get(key(a, b)) ?? 0));
-    square.some(([from, to]) => tryClose(from, to));
-  }
-
-  for (const { a, b } of candidates) {
-    if (remainingEdges <= targetEdges) break;
-    tryClose(a, b);
-  }
-
-  /** Reopens an adjacent passage only if it cannot create a new open corner. */
-  const canOpenWithoutSquare = (from: number, to: number): boolean => {
-    graph[from].add(to);
-    graph[to].add(from);
-    const x = Math.min(from % width, to % width);
-    const y = Math.min(Math.floor(from / width), Math.floor(to / width));
-    const createsSquare = from % width === to % width
-      ? squareIsOpen(x - 1, y) || squareIsOpen(x, y)
-      : squareIsOpen(x, y - 1) || squareIsOpen(x, y);
-    graph[from].delete(to);
-    graph[to].delete(from);
-    return !createsSquare;
-  };
-  for (const { x, y } of squares) {
-    if (!squareIsOpen(x, y)) continue;
-    const options = squareEdges(x, y).filter(([from, to]) => !fixedOpen.has(key(from, to)));
-    for (let i = options.length - 1; i > 0; i -= 1) {
-      const j = rng.int(i + 1);
-      [options[i], options[j]] = [options[j], options[i]];
-    }
-    for (const [from, to] of options) {
-      const opened: number[][] = [];
-      for (const endpoint of [from, to]) {
-        if (exitCount(endpoint) > 2) continue;
-        const ex = endpoint % width;
-        const ey = Math.floor(endpoint / width);
-        const neighbors = DIRECTIONS.map(({ dx, dy }) => ({ x: ex + dx, y: ey + dy }))
-          .filter((neighbor) => neighbor.x > 0 && neighbor.x < width - 1
-            && neighbor.y >= 0 && neighbor.y < height);
-        for (let i = neighbors.length - 1; i > 0; i -= 1) {
-          const j = rng.int(i + 1);
-          [neighbors[i], neighbors[j]] = [neighbors[j], neighbors[i]];
-        }
-        const neighbor = neighbors.find(({ x: nx, y: ny }) => {
-          const other = at(nx, ny);
-          return !logoCells.has(other) && !graph[endpoint].has(other)
-            && !fixedClosed.has(key(endpoint, other)) && canOpenWithoutSquare(endpoint, other);
-        });
-        if (!neighbor) break;
-        const other = at(neighbor.x, neighbor.y);
-        graph[endpoint].add(other);
-        graph[other].add(endpoint);
-        opened.push([endpoint, other]);
-      }
-      if (tryClose(from, to)) break;
-      for (const [a, b] of opened) {
-        graph[a].delete(b);
-        graph[b].delete(a);
-      }
-    }
-  }
-  if (squares.some(({ x, y }) => squareIsOpen(x, y)) || !hasTwoEscapes()) return null;
-  for (let x = 1; x < width - 1; x += 1) {
-    let run = 1;
-    for (let y = 0; y < height - 1; y += 1) {
-      run = edgeIsOpen(x, y) ? run + 1 : 1;
-      if (run > ENDLESS_SETTINGS.maxVerticalStraightTiles) return null;
-    }
-    if (seamPhases[x] >= 0 && (edgeIsOpen(x, seamTopCuts[x])
-      || edgeIsOpen(x, seamBottomCuts[x]))) return null;
-  }
-  for (let y = 0; y < height - 1; y += 1) {
-    for (let x = 1, wallRun = 0; x < width - 1; x += 1) {
-      wallRun = edgeIsOpen(x, y) ? 0 : wallRun + 1;
-      if (wallRun > ENDLESS_SETTINGS.maxHorizontalWallTiles) return null;
-    }
-  }
+  const hasTwoEscapes = createNoArticulationValidator(active, at(1, 0));
+  const graph = carveMazeGraph({
+    width,
+    height,
+    bounds: { minX: 1, maxX: width - 2, minY: 0, maxY: height - 1 },
+    random: rng,
+    active,
+    fixedOpen,
+    fixedClosed,
+    preferredClosed,
+    verticalBreaks: {
+      columns: Array.from({ length: width - 2 }, (_, column) => column + 1),
+      phaseByX: seamPhases,
+      forcedCutsByX,
+      rejectClose: (x, y, run) => run === 1 && (x === 1 || x === width - 2
+        || (y === logoRow && (x === logoX - 1 || x === logoX + 5))),
+    },
+    targetEdges: Math.ceil((corridorCount - logoCells.size) * 1.08),
+    maxVerticalStraightTiles: ENDLESS_SETTINGS.maxVerticalStraightTiles,
+    maxHorizontalWallTiles: ENDLESS_SETTINGS.maxHorizontalWallTiles,
+    groupForEdge: (from, to) => [orderedMazeEdge(from, to)],
+    isCanonicalEdge: () => true,
+    isCanonicalSquare: () => true,
+    externalExitCount: (cell) => {
+      const x = cell % width;
+      const y = Math.floor(cell / width);
+      return (y === 0 && top[x] ? 1 : 0) + (y === height - 1 && bottom[x] ? 1 : 0);
+    },
+    acceptGraph: (candidate) => hasTwoEscapes(candidate),
+  });
+  if (!graph) return null;
 
   const tiles: WorldTile[][] = [];
   for (let y = 0; y < height; y += 1) {

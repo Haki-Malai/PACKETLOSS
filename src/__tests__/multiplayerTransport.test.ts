@@ -13,7 +13,7 @@ afterEach(() => { disposers.splice(0).forEach((dispose) => dispose()); });
 /** Starts only an ephemeral loopback transport for protocol integration tests. */
 async function fixture(allowedOrigins = ['https://game.example']) {
   const tickets = new MemoryTickets(() => Date.now());
-  const rooms = new RoomService({ map: dataRaceFixture(), results: new MemoryResultStore(), now: () => performance.now(),
+  const rooms = new RoomService({ createMap: () => dataRaceFixture(), results: new MemoryResultStore(), now: () => performance.now(),
     epochNow: () => Date.now(), randomId: () => 'match', randomCode: () => 'ABC234', randomSeed: () => 1 });
   const game = createGameServer({ rooms, tickets, allowedOrigins, adminToken: 'x'.repeat(32),
     instanceRunId: 'run', processGeneration: 'process' });

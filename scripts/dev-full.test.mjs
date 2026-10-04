@@ -24,6 +24,7 @@ describe('complete development launcher options', () => {
         expect(parseOptions([])).toEqual({
             ports: { web: 5173, api: 8787, game: 8080, admin: 8081 },
             bots: 2,
+            solo: false,
             reset: false,
             help: false,
             detached: false,
@@ -46,6 +47,7 @@ describe('complete development launcher options', () => {
         ).toEqual({
             ports: { web: 6001, api: 6002, game: 6003, admin: 6004 },
             bots: 2,
+            solo: false,
             reset: true,
             help: false,
             detached: false,
@@ -66,6 +68,7 @@ describe('complete development launcher options', () => {
         expect(helpText()).toContain('--api-port');
         expect(helpText()).toContain('--game-port');
         expect(helpText()).toContain('--admin-port');
+        expect(helpText()).toContain('--solo');
         expect(helpText()).toContain('--reset');
     });
 
@@ -82,5 +85,11 @@ describe('complete development launcher options', () => {
         expect(() => parseOptions(['--bots', '4'])).toThrow('0 through 3');
         expect(() => parseOptions(['--bots', '-1'])).toThrow('0 through 3');
         expect(() => parseOptions(['--bots'])).toThrow('0 through 3');
+    });
+
+    it('forces bots off for instant solo rooms regardless of option order', () => {
+        expect(parseOptions(['--solo'])).toMatchObject({ solo: true, bots: 0 });
+        expect(parseOptions(['--bots=3', '--solo'])).toMatchObject({ solo: true, bots: 0 });
+        expect(parseOptions(['--solo', '--bots=3'])).toMatchObject({ solo: true, bots: 0 });
     });
 });

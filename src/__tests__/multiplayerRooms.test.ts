@@ -1,19 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryResultStore, MemoryTickets, RoomService, type AuthenticatedPlayer } from '../../server/RoomService';
 import type { ClientMessage, ServerMessage } from '../game/protocol/messages';
-import { RACE } from '../game/simulation/types';
+import { RACE, type RaceMap } from '../game/simulation/types';
 import { dataRaceFixture } from './fixtures/dataRaceFixture';
+
+const TERMINAL_PRESENTATION_TICKS = Math.ceil(RACE.deathMs / RACE.stepMs)
+  + RACE.shrinkTransitionTicks;
 
 function last<T>(items: readonly T[]): T {
   return items[items.length - 1];
 }
 
 /** Builds a room service with explicit virtual time, randomness, and a captured public transport. */
-function fixture(seed = 4) {
+function fixture(seed = 4,
+  createMap: (mapSeed: number) => RaceMap = () => dataRaceFixture(),
+  soloDevelopment = false) {
   let now = 0, counter = 0;
   const messages: ServerMessage[] = [], results = new MemoryResultStore();
-  const rooms = new RoomService({ map: dataRaceFixture(), results, now: () => now, epochNow: () => now,
-    randomId: () => `match-${++counter}`, randomCode: () => 'ABC234', randomSeed: () => seed });
+  const rooms = new RoomService({ createMap, results, now: () => now, epochNow: () => now,
+    randomId: () => `match-${++counter}`, randomCode: () => 'ABC234', randomSeed: () => seed,
+    soloDevelopment });
   const alice: AuthenticatedPlayer = { playerId: 'alice', name: 'Alice', operation: 'create' };
   const bob: AuthenticatedPlayer = { playerId: 'bob', name: 'Bob', operation: 'join', roomCode: 'ABC234' };
   /** Delivers one validated operation through the same identity binding as WebSockets. */
@@ -37,6 +43,59 @@ function playerColors(players: readonly { id: string; color: string }[]): Record
 }
 
 describe('authoritative private rooms', () => {
+  it('auto-starts only explicit development solo rooms and locks their async roster', async () => {
+    const regular = fixture();
+    regular.send(regular.alice, { type: 'create' });
+    regular.send(regular.alice, { type: 'ready', ready: true });
+    regular.send(regular.alice, { type: 'start' });
+    expect(regular.rooms.roomStates()[0]).toMatchObject({ phase: 'lobby', canStart: false });
+    expect(last(regular.messages)).toMatchObject({ type: 'error', message: 'Wait until 2–4 connected players are ready.' });
+    expect(regular.results.starts.size).toBe(0);
+
+    const solo = fixture(4, () => dataRaceFixture(), true);
+    let persistStart!: () => void;
+    vi.spyOn(solo.results, 'start').mockImplementation(() => new Promise<void>((resolve) => {
+      persistStart = resolve;
+    }));
+    solo.send(solo.alice, { type: 'create' });
+    expect(solo.rooms.roomStates()[0]).toMatchObject({ phase: 'lobby', canStart: false,
+      players: [{ id: 'alice', ready: true, connected: true }] });
+    solo.send(solo.bob, { type: 'join', code: 'ABC234' });
+    expect(solo.rooms.roomStates()[0].players.map((player) => player.id)).toEqual(['alice']);
+    expect(last(solo.messages)).toMatchObject({ type: 'error', message: 'Only reserved players can rejoin this match.' });
+
+    solo.rooms.disconnect('alice', 'alice');
+    solo.send({ ...solo.alice, operation: 'reconnect', roomCode: 'ABC234' },
+      { type: 'join', code: 'ABC234' }, 'alice-new');
+    expect(solo.rooms.roomStates()[0].players).toMatchObject([
+      { id: 'alice', ready: true, connected: true },
+    ]);
+
+    persistStart(); await Promise.resolve();
+    expect(solo.rooms.roomStates()[0]).toMatchObject({ phase: 'playing', players: [{ id: 'alice' }] });
+    expect(last(solo.messages.filter((message) => message.type === 'snapshot')).snapshot.players)
+      .toHaveLength(1);
+  });
+
+  it('broadcasts a fresh room-owned map before each match snapshot', async () => {
+    const createMap = vi.fn((mapSeed: number) => ({ ...dataRaceFixture(), id: `arena-${mapSeed}` }));
+    const game = fixture(4, createMap);
+    await game.start();
+    expect(game.messages.filter((message) => message.type === 'map' || message.type === 'snapshot')
+      .map((message) => message.type)).toEqual(['map', 'map', 'snapshot', 'snapshot']);
+    const initialMap = last(game.messages.filter((message) => message.type === 'map')).map;
+    game.ticks(RACE.matchTicks); await Promise.resolve();
+    game.send(game.bob, { type: 'rematch' });
+    game.send(game.alice, { type: 'ready', ready: true }); game.send(game.bob, { type: 'ready', ready: true });
+    game.messages.length = 0;
+    game.send(game.alice, { type: 'start' }); await Promise.resolve();
+    const rematchMap = last(game.messages.filter((message) => message.type === 'map')).map;
+    expect(rematchMap.id).not.toBe(initialMap.id);
+    expect(createMap.mock.calls.map(([mapSeed]) => mapSeed)).toEqual([4, 5]);
+    expect(game.messages.filter((message) => message.type === 'map' || message.type === 'snapshot')
+      .map((message) => message.type)).toEqual(['map', 'map', 'snapshot', 'snapshot']);
+  });
+
   it('randomly assigns distinct colors and preserves remaining players when a lobby seat is replaced', () => {
     const game = fixture(1), alternative = fixture(2);
     game.send(game.alice, { type: 'create' }); alternative.send(alternative.alice, { type: 'create' });
@@ -118,19 +177,35 @@ describe('authoritative private rooms', () => {
   it('allows reserved reconnects for thirty seconds and rejects new active-match admissions', async () => {
     const game = fixture(); await game.start();
     game.rooms.disconnect('alice', 'alice');
+    game.messages.length = 0;
     game.send({ ...game.alice, operation: 'reconnect', roomCode: 'ABC234' }, { type: 'join', code: 'ABC234' }, 'alice-new');
+    expect(game.messages.filter((message) => message.type === 'map' || message.type === 'snapshot')
+      .map((message) => message.type)).toEqual(['map', 'snapshot', 'snapshot']);
     const snapshot = last(game.messages.filter((message) => message.type === 'snapshot'));
     expect(snapshot.snapshot.players.find((player) => player.id === 'alice')!.protectionMs).toBe(1200);
     game.send({ playerId: 'new', name: 'New', operation: 'join', roomCode: 'ABC234' }, { type: 'join', code: 'ABC234' });
     expect(last(game.messages)).toMatchObject({ type: 'error' });
   });
 
-  it('aborts an empty match after its reservations expire without declaring winners', async () => {
+  it('eliminates simultaneous reservation expiries and preserves every starter in results', async () => {
     const game = fixture(); await game.start();
     game.rooms.disconnect('alice', 'alice'); game.rooms.disconnect('bob', 'bob');
-    game.ticks(1801); await Promise.resolve();
+    game.ticks(1801 + TERMINAL_PRESENTATION_TICKS); await Promise.resolve();
     const result = [...game.results.results.values()][0];
-    expect(result.phase).toBe('aborted'); expect(result.abortReason).toBe('room_empty'); expect(result.rankings).toEqual([]);
+    expect(result).toMatchObject({ phase: 'finished', abortReason: null });
+    expect(result.players.map((player) => player.id).sort()).toEqual(['alice', 'bob']);
+    const eliminationTicks = result.players.map((player) => player.eliminatedAtTick);
+    expect(eliminationTicks.every((tick) => tick !== null)).toBe(true);
+    expect(new Set(eliminationTicks).size).toBe(1);
+  });
+
+  it('eliminates an explicit leaver while retaining their stored standing', async () => {
+    const game = fixture(); await game.start();
+    game.send(game.alice, { type: 'leave' }); game.ticks(TERMINAL_PRESENTATION_TICKS); await Promise.resolve();
+    const result = [...game.results.results.values()][0];
+    expect(result.phase).toBe('finished');
+    expect(Object.fromEntries(result.players.map((player) => [player.id, player.eliminatedAtTick])))
+      .toEqual({ alice: 0, bob: null });
   });
 
   it('withholds final rankings and blocks rematch until durable persistence succeeds', async () => {

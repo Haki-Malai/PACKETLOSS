@@ -23,6 +23,7 @@ export function parseOptions(arguments_) {
     let help = false;
     let detached = false;
     let stop = false;
+    let solo = false;
     let bots = parseBotCount(process.env.PACKETLOSS_DEV_BOTS ?? '2');
     const names = new Map([
         ['--web-port', 'web'],
@@ -45,6 +46,10 @@ export function parseOptions(arguments_) {
             reset = true;
             continue;
         }
+        if (argument === '--solo') {
+            solo = true;
+            continue;
+        }
         if (argument === '--help' || argument === '-h') {
             help = true;
             continue;
@@ -63,7 +68,8 @@ export function parseOptions(arguments_) {
     if (new Set(Object.values(ports)).size !== Object.keys(ports).length) {
         throw new Error('Development services must use four distinct ports.');
     }
-    return { ports, bots, reset, help, detached, stop };
+    if (solo) bots = 0;
+    return { ports, bots, solo, reset, help, detached, stop };
 }
 
 /** Runs the Docker stack without requiring host Node 24 or AWS credentials. */
@@ -104,6 +110,7 @@ async function main() {
         PACKETLOSS_DEV_RUN_ID: randomUUID(),
         PACKETLOSS_DEV_PROCESS_GENERATION: randomUUID(),
         PACKETLOSS_DEV_BOTS: String(options.bots),
+        PACKETLOSS_DEV_SOLO: options.solo ? '1' : '0',
         ...Object.fromEntries(
             Object.entries(options.ports).map(([name, port]) => [
                 `PACKETLOSS_DEV_${name.toUpperCase()}_PORT`,
@@ -139,7 +146,9 @@ async function main() {
             'DynamoDB Local + Node 22 Lambda emulators + Node 24 game server. Multiplayer is ready automatically.'
         );
         console.log('Seed login: owner@packetloss.local / packetloss-dev. Recovery code: 000000.');
-        console.log(`Local bots: ${options.bots}. Create a room; bots join and ready automatically. You start the match.`);
+        console.log(options.solo
+            ? 'Solo Battle Royale: create a room to start immediately without bots or saved results.'
+            : `Local bots: ${options.bots}. Create a room; bots join and ready automatically. You start the match.`);
         console.log('Code reloads automatically: frontend, game server, gateway, and Node Lambdas. Game reloads interrupt local matches.');
         console.log('Data persists between runs. Stop: pnpm dev:full -- --stop');
         if (!options.detached) {
@@ -288,6 +297,7 @@ export function helpText() {
         `  --game-port PORT  Game HTTP/WebSocket port (default ${DEFAULT_PORTS.game})\n` +
         `  --admin-port PORT Game admin port (default ${DEFAULT_PORTS.admin})\n` +
         `  --bots COUNT      Automatic local opponents, 0–3 (default 2; 0 disables)\n` +
+        `  --solo            Start new rooms immediately with one player and no bots\n` +
         `  --reset           Clear persistent local accounts, records, results, and auth state\n` +
         `  --detach          Leave the Docker stack running in the background\n` +
         `  --stop            Stop containers, retaining database and outbox\n` +

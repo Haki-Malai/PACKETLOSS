@@ -1,16 +1,13 @@
-import { readFile } from 'node:fs/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { raceMapSchema } from '../src/game/protocol/messages';
 import { createGameServer } from './httpServer';
 import { RoomService } from './RoomService';
 import { DynamoAdapters } from './DynamoAdapters';
 
 /** Starts the packaged backend with explicit credentials supplied by its host service. */
 export async function main(): Promise<void> {
-  const map = raceMapSchema.parse(JSON.parse(await readFile(new URL('./map.json', import.meta.url), 'utf8')) as unknown);
   const adminToken = process.env.GAME_ADMIN_TOKEN;
   const allowedOrigins = process.env.GAME_ALLOWED_ORIGINS?.split(',').map((origin) => origin.trim()).filter(Boolean);
   const controlTable = process.env.GAME_CONTROL_TABLE, ticketsTable = process.env.GAME_TICKETS_TABLE;
@@ -25,7 +22,7 @@ export async function main(): Promise<void> {
     outboxDirectory: process.env.GAME_OUTBOX_DIR ?? '/var/lib/packetloss/results' });
   const claim = await adapters.claim();
   await adapters.recover();
-  const rooms = new RoomService({ map, results: adapters, now: () => performance.now(), epochNow: () => Date.now(),
+  const rooms = new RoomService({ results: adapters, now: () => performance.now(), epochNow: () => Date.now(),
     snapshotHz: Number(process.env.GAME_SNAPSHOT_HZ ?? 20), instanceRunId, processGeneration,
     randomId: randomUUID, randomSeed: () => randomBytes(4).readUInt32LE(), randomCode: () => {
       const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

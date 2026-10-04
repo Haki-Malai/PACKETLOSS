@@ -639,6 +639,35 @@
     font-size: 0.72rem;
     transform: translateX(-50%);
 }
+.packet-arena-warning,
+.packet-spectating {
+    position: absolute;
+    top: max(64px, calc(env(safe-area-inset-top) + 64px));
+    left: 50%;
+    margin: 0;
+    padding: 7px 12px;
+    border: 1px solid var(--packet-gold);
+    background: rgb(24 8 5 / 88%);
+    color: var(--packet-gold);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    transform: translateX(-50%);
+}
+.packet-arena-warning {
+    animation: packet-arena-warning-pulse 2s ease-in-out infinite;
+}
+.packet-spectating {
+    top: max(104px, calc(env(safe-area-inset-top) + 104px));
+    border-color: var(--packet-line);
+    background: rgb(5 9 18 / 88%);
+    color: var(--packet-text-muted);
+}
+@keyframes packet-arena-warning-pulse {
+    50% {
+        box-shadow: 0 0 20px currentColor;
+        opacity: 0.68;
+    }
+}
 .packet-race-leave {
     position: absolute;
     right: max(12px, env(safe-area-inset-right));
