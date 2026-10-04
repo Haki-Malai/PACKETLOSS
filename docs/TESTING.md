@@ -8,7 +8,7 @@ Tests use Vitest and live in `src/__tests__/`. They cover movement and collision
 - `pnpm typecheck` — check TypeScript types.
 - `pnpm lint` — run ESLint with zero warnings allowed.
 - `pnpm build` — create the production bundle.
-- `pnpm test:all` — run all three checks and build the production bundle.
+- `pnpm test:all` — typecheck the app, shared simulation, server, and APIs; run lint and tests; build frontend, server, and Lambda artifacts.
 
 Run a focused test while working on a feature:
 
@@ -28,6 +28,98 @@ Each test should identify a meaningful failure it would catch. Prefer small auth
 - Consolidate duplicate assertions across layers. Keep distinct regressions even if that means more tests; test count and coverage percentage are not the goal.
 
 Run the relevant test first, then `pnpm test:all` before handing off code changes unless the user has deferred those checks. Report exactly which checks ran and which remain unverified.
+
+## Data Race and multiplayer regression scenarios
+
+- `dataRace.test.ts` covers immediate starts, seeded spawn rotation, single-winner contested pickups, personal core effects, refill-pass boundaries, deadlines, tied ranks, departed starters, and fresh rematches. Enemy-free matches remain free of contact hazards after restoring older snapshots. `dataRaceMap.test.ts` checks all pickups are reachable, the twelve-core mirror and distance invariants, nearby pickup access, and map geometry.
+- `gameStateSession.test.ts` and `localSimulation.test.ts` interleave independent sessions and exercise fixed-step lifecycle ownership. `tsconfig.simulation.json` is the Node-only import boundary for shared simulation and protocol modules.
+- Protocol and admission tests reject version-one peers before tickets or gameplay snapshots are accepted. Movement parity scenarios cover queued turns while reversing into portal mouths, and shared input tests cover keyboard filtering and touch direction locking.
+- `multiplayerProtocol.test.ts` validates strict input messages and an enemy-free snapshot round trip through encoding, server-message validation, and reconstruction. `multiplayerRooms.test.ts` exercises room admission, readiness, reservations, creator transfer, persistence-before-results, outbox recovery, draining, overload aborts, and the maximum-uptime start boundary. `multiplayerTransport.test.ts` uses a real loopback WebSocket for authentication, origin, replay/rate-limit, payload, duplicate-connection, and reconnect behavior.
+- `multiplayerAvailability.test.tsx` and `multiplayerSocketClient.test.ts` cover status polling/backoff, drain-time reconnect and retry, continued input sequencing, authoritative snapshot reconstruction, stale process/run rejection, cancelled admission, and cached React publication. Movement-only snapshots must remain available to the raw presentation store without notifying React; score, displayed clock second, phase, connection, warning, room, and result changes must notify it. Back and local-run navigation invalidate delayed tickets and retained socket callbacks without discarding a valid reconnect reservation. Backend TypeScript tests cover owner authorization, regional exclusivity, ticket hashing/consumption data, result authorization, and operator stop policy.
+- `multiplayerLatency.test.ts` exercises the presentation clock and correction easing at 0–200 ms RTT with ordered jitter, including continuous 60, 120, and 144 Hz movement between 20 Hz snapshots. It covers same-tick reconciliation, exact fractional input timing, bounded prediction, immediate acknowledged reversals, corridor and wall clamping, remote history endpoints, portal/death/respawn snaps, reconnects, rematches, and recovery after stalled snapshot delivery. `multiplayerPresentation.test.ts` checks actor synchronization before camera snap, shader preparation before first render, latest-state resampling, responsive zoom, hidden-tab suspension and fresh resume, a single frame loop, and once-only cleanup on cancellation or failure. `multiplayerRooms.test.ts` also verifies that server catch-up sends only the newest snapshot and preserves the subsequent broadcast cadence. These deterministic checks do not replace browser playability or frame-time profiling.
+
+Run the main, server, and simulation TypeScript checks, full ESLint and Vitest suites, server and frontend builds, and backend TypeScript checks and Lambda build after multiplayer changes. Infrastructure validation lives in the infra repository and includes Terraform format/validate, unit tests, shell syntax, and workflow YAML parsing. Browser sessions, visual fairness review, latency/jitter playability, live ARM capacity, DNS/TLS, and regional lifecycle checks require their separately authorized environments; local tests do not establish those outcomes.
+
+## Full local development validation
+
+The development launcher and adapters must be checked without AWS credentials or
+network dependencies. Run the complete static and automated validation set from the
+repository root:
+
+```sh
+pnpm typecheck
+pnpm typecheck:server
+pnpm lint
+pnpm test
+pnpm build
+pnpm build:server
+```
+
+Run the backend checks with the same Node.js 24 toolchain:
+
+```sh
+pnpm typecheck:backend
+pnpm test backend
+pnpm build:backend
+```
+
+When changing the launcher, cover argument and port validation, Compose dependency
+readiness, foreground shutdown, explicit reset scope, durable Docker volume reuse,
+legacy SQLite migration, and the absence of AWS credentials. Development API tests cover signed access/refresh tokens,
+signup confirmation and password recovery, account isolation, durable profile and
+single-player record retention, immutable record IDs, DynamoDB restart behavior, hashed
+single-use tickets, owner capability, internal-route authorization, process fencing,
+participant-only results, and interrupted-match recovery. Development Node adapter
+tests retain the real fsynced outbox and verify heartbeat, ticket, start, finish, replay,
+and abort-on-restart behavior against the loopback contract.
+
+For local automatic reload checks, use an idle Docker stack and verify server/shared gameplay/map edits produce a fresh game generation within the same run; old tickets and heartbeats must fail. Verify gateway and backend TypeScript edits restart their processes without replacing DynamoDB or resetting accounts, scores, or completed results. Introduce and fix a temporary source error to check recovery on the next save. Changing only frontend presentation must not restart the game. Watchers must remain active with `--detach`. The API regression suite also checks generation registration, unchanged uptime, durable account data, and Lambda cold starts retaining the current game generation.
+
+Run the two development-boundary suites directly while iterating:
+
+```sh
+pnpm test src/__tests__/developmentAdapters.test.ts
+pnpm test src/__tests__/developmentPlayers.test.ts
+pnpm test backend
+```
+
+The Docker HTTP/WebSocket smoke script needs no browser. With the stack running:
+
+```sh
+pnpm dev:full -- --detach --bots 0       # Reserve all seats for the scripted clients
+node dev/smoke.mjs                       # Accounts, scores, four players, full match, rematch
+node dev/smoke.mjs --localhost           # Same flow through localhost, including CORS preflights
+pnpm dev:full -- --stop
+pnpm dev:full -- --detach
+node dev/smoke.mjs --after-restart       # Guest session, score, and result survive restart
+```
+
+The full match takes just over three minutes. It creates isolated smoke identities and
+records in the local database and saves its restart evidence under `.packetloss-dev`.
+It must run without other active players occupying the single room.
+
+For an authorized manual browser check, start clean with:
+
+```sh
+pnpm dev:full -- --reset --bots 0
+```
+
+Open `http://127.0.0.1:5173` in separate browsers or browser profiles. Ordinary tabs
+share the API refresh cookie and cannot represent independent players reliably. Enter
+a name and Play as guest; multiplayer must become Ready automatically. Use two to four
+independent guests or seeded `@packetloss.local` accounts,
+create and join one room, ready every player, finish or leave the match, reconnect within
+the reservation window, and request a rematch. Also finish one Classic or Endless run,
+stop the launcher, start it again without `--reset`, and confirm the profile, retained
+score, and terminal multiplayer result remain available. A new signup and password reset
+both use local code `000000`.
+
+This manual flow checks the loopback browser/API/WebSocket integration and durable local
+storage. It does not verify email delivery, API Gateway/Cognito JWT validation, AWS service
+consistency and IAM, EC2 start/stop or regional exclusion, Route 53, HTTPS/WSS, nginx,
+certificate renewal, live network latency, ARM performance, idle shutdown, or maximum
+uptime enforcement outside the process. Record those as unverified unless their reviewed
+AWS/browser environments were exercised separately.
 
 ## Run flow and menu regression scenarios
 

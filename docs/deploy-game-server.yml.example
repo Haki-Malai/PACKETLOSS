@@ -1,0 +1,33 @@
+name: Deploy Game Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: "Retained 40-character release SHA; blank builds this commit"
+        required: false
+        type: string
+      force:
+        description: "Explicitly interrupt active matches instead of draining"
+        type: boolean
+        default: false
+      deploy_runtime:
+        description: "Install on a running host and select the release for next boot"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    uses: Haki-Malai/infra/.github/workflows/deploy-game-server.yml@<FULL_PUBLISHED_INFRA_SHA>
+    with:
+      infra_ref: <FULL_PUBLISHED_INFRA_SHA>
+      release_sha: ${{ inputs.release_sha }}
+      force: ${{ inputs.force }}
+      deploy_runtime: ${{ inputs.deploy_runtime }}
