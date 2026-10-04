@@ -8,6 +8,7 @@ import { Camera3D } from '../engine/camera3d';
 import { buildMazeWallFootprint } from '../game/domain/world/MazeFootprint';
 import type { MultiplayerConnectionSnapshot } from '../game/infrastructure/adapters/MultiplayerSocketClient';
 import { MazeScene } from '../game/infrastructure/three/MazeScene';
+import * as mazeGeometry from '../game/infrastructure/three/MazeGeometry';
 import {
   battleArenaBounds, battleArenaOuterBounds, createBattleArenaMap, createBattleArenaWorldMap,
 } from '../game/simulation/BattleArenaMap';
@@ -48,6 +49,7 @@ function watchDisposal(group: Object3D) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -209,7 +211,10 @@ describe('Battle Royale perimeter presentation', () => {
     const maze = new MazeScene({ map: createBattleArenaWorldMap(map, 1), pulsingPerimeter: battleArenaOuterBounds(1) });
     const wall = maze.group.getObjectByName('walls') as Mesh;
     const finalGeometry = wall.geometry;
-    maze.startPerimeterContraction(previous, 1000);
+    maze.preparePerimeterContraction(previous);
+    expect(wall.visible).toBe(true);
+    expect(maze.group.getObjectByName('battle-arena-transition')?.visible).toBe(false);
+    maze.startPerimeterContraction(1000);
     previous.dispose();
     const transition = maze.group.getObjectByName('battle-arena-transition')!;
     const disposals = watchDisposal(transition);
@@ -261,7 +266,7 @@ describe('Battle Royale perimeter presentation', () => {
     disposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
   });
 
-  it('animates authoritative shrinks, disposes interrupted stages, and preserves camera follow', async () => {
+  it.each([0, 18])('prepares closures before rendering from stage %i and preserves camera framing through every remaining shrink', async (initialStage) => {
     let now = 0;
     let reducedMotion = false;
     let frame: FrameRequestCallback = () => undefined;
@@ -275,7 +280,9 @@ describe('Battle Royale perimeter presentation', () => {
     });
     const initial = new DataRace(map, 'arena-scene', [{ id: 'alice', name: 'Alice' }, { id: 'bob', name: 'Bob' }], 7).snapshot();
     initial.phase = 'countdown';
-    initial.players[0].movement = { cell: 23 * 49 + 23, to: null, progress: 0, direction: 'right', queued: 'right' };
+    initial.shrinkStage = initialStage;
+    initial.playTicks = initial.tick = initialStage * RACE.shrinkEveryTicks;
+    initial.players[0].movement = { cell: 23 * 49 + 24, to: null, progress: 0, direction: 'up', queued: 'up' };
     initial.players[0].connected = false;
     let connection: MultiplayerConnectionSnapshot = {
       phase: 'connected', stalled: false, recoverable: true, playerId: initial.players[0].id, room: null, map, race: initial,
@@ -284,6 +291,12 @@ describe('Battle Royale perimeter presentation', () => {
     };
     const snap = vi.spyOn(Camera3D.prototype, 'snapToFollowTarget');
     const bounds = vi.spyOn(Camera3D.prototype, 'setBounds');
+    const zoom = vi.spyOn(Camera3D.prototype, 'setZoom');
+    const walls = vi.spyOn(mazeGeometry, 'buildMazeWallGeometryFromFootprint');
+    const edges = vi.spyOn(mazeGeometry, 'buildMazeWallEdgeGeometry');
+    const prepareContraction = vi.spyOn(MazeScene.prototype, 'preparePerimeterContraction');
+    const disposeMaze = vi.spyOn(MazeScene.prototype, 'dispose');
+    const resourceDisposals: ReturnType<typeof watchDisposal> = [];
     const onError = vi.fn();
     const finalDispose = vi.fn();
     const root = document.createElement('div');
@@ -306,6 +319,9 @@ describe('Battle Royale perimeter presentation', () => {
       await session.ready;
       const [scene, camera] = renderer.render.mock.calls[renderer.render.mock.calls.length - 1];
       let maze = scene.getObjectByName('maze')!;
+      resourceDisposals.push(...watchDisposal(maze));
+      const constructionCounts = [walls.mock.calls.length, edges.mock.calls.length, prepareContraction.mock.calls.length];
+      expect(prepareContraction).toHaveBeenCalledTimes(RACE.maxShrinkStage - initialStage);
       expect(scene.getObjectByName('battle-arena-transition')).toBeUndefined();
       const initialMaterial = (maze.getObjectByName('perimeter-wall-edges') as InstancedMesh).material as MeshBasicMaterial;
       const normalColor = initialMaterial.color.clone();
@@ -316,27 +332,45 @@ describe('Battle Royale perimeter presentation', () => {
       frame(now);
       expect(initialMaterial.color.getHexString()).toBe('b846ff');
       const originalPosition = camera.position.clone();
+      const originalProjection = camera.projectionMatrix.clone();
       const snapCount = snap.mock.calls.length;
-      for (const stage of [1, 2, 20]) {
-        const disposals = watchDisposal(maze);
+      const zoomCount = zoom.mock.calls.length;
+      for (let stage = initialStage + 1; stage <= RACE.maxShrinkStage; stage += 1) {
+        // A delivery burst may skip a closure; select its prepared final state without replaying a stale transition.
+        if (stage === 3) continue;
+        const disposalCount = disposeMaze.mock.calls.length;
+        const previousCameraPosition = camera.position.clone();
         const race = structuredClone(connection.race!);
         race.tick = stage * RACE.shrinkEveryTicks;
         race.playTicks = race.tick;
         race.shrinkStage = stage;
-        // Keep this surviving actor stationary to isolate stage-induced camera movement.
+        // Check both a stationary survivor and normal camera follow along the surviving center corridor.
         race.players[0].movement = { ...initial.players[0].movement };
+        if (initialStage > 0) {
+          race.players[0].movement.to = 22 * 49 + 24;
+          race.players[0].movement.progress = (stage - initialStage) * 0.35;
+        }
         connection = { ...connection, race, raceHistory: [race], receivedAtMs: now += 16 };
         frame(now);
         expect(onError).not.toHaveBeenCalled();
         expect(maze.parent).toBeNull();
-        disposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
+        expect(disposeMaze).toHaveBeenCalledTimes(disposalCount + 1);
         maze = scene.getObjectByName('maze')!;
+        resourceDisposals.push(...watchDisposal(maze));
         expect(scene.children.filter((child) => child.name === 'maze')).toHaveLength(1);
         const transition = scene.getObjectByName('battle-arena-transition')!;
-        expect(transition).toBeDefined();
-        expect(camera.position.distanceTo(originalPosition)).toBeLessThan(0.001);
+        if (stage === 4) expect(transition).toBeUndefined();
+        else expect(transition.visible).toBe(true);
+        if (initialStage === 0) expect(camera.position.distanceTo(originalPosition)).toBeLessThan(0.001);
+        else {
+          expect(camera.position.z).toBeLessThan(previousCameraPosition.z);
+          expect(camera.position.distanceTo(previousCameraPosition)).toBeLessThan(16 * 0.35);
+        }
+        expect(camera.projectionMatrix.equals(originalProjection)).toBe(true);
         expect(snap).toHaveBeenCalledTimes(snapCount);
         expect(bounds).toHaveBeenCalledOnce();
+        expect(zoom).toHaveBeenCalledTimes(zoomCount);
+        expect([walls.mock.calls.length, edges.mock.calls.length, prepareContraction.mock.calls.length]).toEqual(constructionCounts);
         const perimeter = maze.getObjectByName('perimeter-wall-edges') as InstancedMesh;
         if (stage === 1) {
           const interior = maze.getObjectByName('wall-edges') as InstancedMesh;
@@ -386,5 +420,47 @@ describe('Battle Royale perimeter presentation', () => {
     }
     expect(renderer.dispose).toHaveBeenCalledOnce();
     expect(finalDispose).toHaveBeenCalledOnce();
+    resourceDisposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
+    expect(new Set(disposeMaze.mock.contexts).size).toBe(disposeMaze.mock.calls.length);
+    expect(disposeMaze).toHaveBeenCalledTimes(initialStage === 0 ? 21 : 22 - initialStage);
+  });
+
+  it('cancels future-stage preparation and releases partially prepared geometry when leaving during loading', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+      return { canvas: this, clearRect: vi.fn(), fillText: vi.fn() } as unknown as CanvasRenderingContext2D;
+    });
+    const prepare = vi.spyOn(MazeScene.prototype, 'preparePerimeterContraction');
+    const dispose = vi.spyOn(MazeScene.prototype, 'dispose');
+    const session = new MultiplayerPresentationSession({
+      map, canvas: document.createElement('canvas'), root: document.createElement('div'),
+      synchronization: new MultiplayerSynchronization(),
+      getConnectionSnapshot: () => ({
+        phase: 'connected', stalled: false, recoverable: true, playerId: 'alice', room: null, map, race: null,
+        raceHistory: [], receivedAtMs: 0, serverTimeMs: null, latencyMs: 0,
+        instanceRunId: 'run', processGeneration: 'generation', warning: null, message: '',
+      }),
+    });
+    const readiness = session.ready.catch((error: unknown) => error);
+    try {
+      await Promise.resolve();
+      await vi.advanceTimersToNextTimerAsync();
+      const preparedCount = prepare.mock.calls.length;
+      expect(preparedCount).toBeGreaterThan(0);
+      expect(preparedCount).toBeLessThan(RACE.maxShrinkStage);
+      const mazes = new Set([...prepare.mock.contexts as MazeScene[], ...prepare.mock.calls.map(([previous]) => previous)]);
+      const resources = [...mazes].flatMap((maze) => watchDisposal(maze.group));
+      session.dispose();
+      await expect(readiness).resolves.toMatchObject({ name: 'AbortError' });
+      await vi.runAllTimersAsync();
+      expect(prepare).toHaveBeenCalledTimes(preparedCount);
+      expect(dispose).toHaveBeenCalledTimes(mazes.size);
+      resources.forEach((resource) => expect(resource).toHaveBeenCalledOnce());
+      expect(renderer.prepare).not.toHaveBeenCalled();
+      expect(renderer.render).not.toHaveBeenCalled();
+      expect(renderer.dispose).toHaveBeenCalledOnce();
+    } finally {
+      session.dispose();
+    }
   });
 });

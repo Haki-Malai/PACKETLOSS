@@ -75,7 +75,7 @@ export class MazeScene {
   private pulsingEdges: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
   private wallTopologyKey = '';
   private readonly clipPlanes?: [Plane, Plane];
-  private contraction?: { group: Group; retiring: Group; arriving: Group; startedAtMs: number };
+  private contraction?: { group: Group; retiring: Group; arriving: Group; startedAtMs: number | null };
 
   /** Builds joined walls and assigns the outer ring and disappearing segments to the shared warning pulse. */
   constructor(
@@ -177,8 +177,8 @@ export class MazeScene {
     this.syncWallPulse(phase / WALL_PULSE_RADIANS_PER_MS, reducedMotion);
   }
 
-  /** Starts a wall-only contraction from the displayed stage; all temporary geometry belongs to this maze. */
-  startPerimeterContraction(previous: MazeScene, nowMs: number): void {
+  /** Prepares a wall-only contraction during loading without changing the displayed walls; this maze owns every batch. */
+  preparePerimeterContraction(previous: MazeScene): void {
     this.finishPerimeterContraction();
     const current = this.wallFootprint;
     const before = previous.wallFootprint;
@@ -200,8 +200,16 @@ export class MazeScene {
     (incoming.children[1] as InstancedMesh<BoxGeometry, MeshBasicMaterial>).material.transparent = true;
     group.add(steady, outgoing, incoming);
     this.group.add(group);
+    group.visible = false;
+    this.contraction = { group, retiring: outgoing, arriving: incoming, startedAtMs: null };
+  }
+
+  /** Starts the prepared transition without constructing geometry or changing world coordinates. */
+  startPerimeterContraction(nowMs: number): void {
+    if (!this.contraction) return;
+    this.contraction.startedAtMs = nowMs;
+    this.contraction.group.visible = true;
     this.walls.visible = this.wallEdges.visible = this.pulsingEdges.visible = false;
-    this.contraction = { group, retiring: outgoing, arriving: incoming, startedAtMs: nowMs };
     this.syncPerimeterContraction(nowMs);
   }
 
@@ -209,8 +217,13 @@ export class MazeScene {
   syncPerimeterContraction(nowMs: number, reducedMotion = false): void {
     const transition = this.contraction;
     if (!transition) return;
+    if (reducedMotion) {
+      this.finishPerimeterContraction();
+      return;
+    }
+    if (transition.startedAtMs === null) return;
     const elapsed = Math.max(0, nowMs - transition.startedAtMs);
-    if (reducedMotion || elapsed >= PERIMETER_CONTRACTION_MS) {
+    if (elapsed >= PERIMETER_CONTRACTION_MS) {
       this.finishPerimeterContraction();
       return;
     }

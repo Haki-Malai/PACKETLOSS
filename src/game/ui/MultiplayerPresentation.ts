@@ -18,7 +18,6 @@ import {
 import { addGameplayLighting } from '../infrastructure/three/ScenePresentation';
 import { resolveMapPathsForVariant } from '../app/mapRuntimeConfig';
 import {
-    battleArenaMapAtStage,
     battleArenaOuterBounds,
     createBattleArenaWorldMap,
 } from '../simulation/BattleArenaMap';
@@ -282,10 +281,23 @@ function createThreeStage({
             pulsingPerimeter: map.arena ? battleArenaOuterBounds(0) : undefined,
             nextMap: map.arena ? createBattleArenaWorldMap(map, 1) : undefined,
         });
-        cleanups.push(() => maze.dispose());
-        let stagedMap = battleArenaMapAtStage(map, 0);
+        const mazes = new Map<number, MazeScene>([[0, maze]]);
+        cleanups.push(() => mazes.forEach((preparedMaze) => preparedMaze.dispose()));
         let renderedStage = 0;
         let hasPresentedArena = false;
+
+        /** Builds each immutable arena stage once, before gameplay frames begin. */
+        function prepareMaze(stage: number): MazeScene {
+            const cached = mazes.get(stage);
+            if (cached) return cached;
+            const preparedMaze = new MazeScene({
+                map: createBattleArenaWorldMap(map, stage),
+                pulsingPerimeter: battleArenaOuterBounds(stage),
+                nextMap: stage < RACE.maxShrinkStage ? createBattleArenaWorldMap(map, stage + 1) : undefined,
+            });
+            mazes.set(stage, preparedMaze);
+            return preparedMaze;
+        }
         const resources = new Set<{ dispose(): void }>();
         cleanups.push(() => resources.forEach((resource) => resource.dispose()));
         addGameplayLighting(scene);
@@ -323,6 +335,7 @@ function createThreeStage({
         scene.add(bits, cores);
 
         const cameraTarget = { x: 0, y: 0 };
+        // Shrink stages only change gameplay boundaries and wall presentation, never camera framing.
         camera.setBounds(sourceMap.widthInPixels, sourceMap.heightInPixels);
         camera.startFollow(cameraTarget, CAMERA.followLerp.x, CAMERA.followLerp.y);
         let lastPickupKey = '';
@@ -344,19 +357,15 @@ function createThreeStage({
                 }
                 const race = connection.race;
                 const presentationTick = frame.presentationTick;
-                if (race.shrinkStage !== renderedStage) {
-                    const animateContraction = map.arena && hasPresentedArena && !reducedMotion
-                        && race.shrinkStage > renderedStage;
+                if (map.arena && race.shrinkStage !== renderedStage) {
+                    const animateContraction = hasPresentedArena && !reducedMotion
+                        && race.shrinkStage === renderedStage + 1;
+                    mazes.delete(renderedStage);
                     renderedStage = race.shrinkStage;
-                    stagedMap = battleArenaMapAtStage(map, renderedStage);
                     const previousMaze = maze;
-                    maze = new MazeScene({
-                        map: createBattleArenaWorldMap(map, renderedStage),
-                        pulsingPerimeter: map.arena ? battleArenaOuterBounds(renderedStage) : undefined,
-                        nextMap: map.arena && renderedStage < RACE.maxShrinkStage
-                            ? createBattleArenaWorldMap(map, renderedStage + 1) : undefined,
-                    });
-                    if (animateContraction) maze.startPerimeterContraction(previousMaze, now);
+                    maze = prepareMaze(renderedStage);
+                    if (animateContraction) maze.startPerimeterContraction(now);
+                    else maze.syncPerimeterContraction(now, true);
                     scene.remove(previousMaze.group);
                     previousMaze.dispose();
                     scene.add(maze.group);
@@ -393,7 +402,7 @@ function createThreeStage({
                             activeCores.push(pickup);
                             continue;
                         }
-                        const cell = stagedMap.cells[pickup.cell];
+                        const cell = map.cells[pickup.cell];
                         setPointTransform(
                             instance,
                             'base',
@@ -407,7 +416,7 @@ function createThreeStage({
                     bits.computeBoundingSphere();
                 }
                 activeCores.forEach((pickup, index) => {
-                    const cell = stagedMap.cells[pickup.cell];
+                    const cell = map.cells[pickup.cell];
                     setPointTransform(
                         instance,
                         'power',
@@ -421,7 +430,16 @@ function createThreeStage({
                 return { acknowledgedInput, discontinuity };
             },
             snapCamera: () => camera.snapToFollowTarget(),
+            /** Prepares the finite set of future walls and transitions while the loading screen owns presentation. */
             prepare: async () => {
+                if (map.arena) {
+                    for (let stage = renderedStage + 1; stage <= RACE.maxShrinkStage; stage += 1) {
+                        // Yield between stages so loading UI and network traffic remain responsive.
+                        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+                        if (disposed) return;
+                        prepareMaze(stage).preparePerimeterContraction(prepareMaze(stage - 1));
+                    }
+                }
                 camera.present(1, renderer.pixelRatio);
                 await renderer.prepare(scene, camera.camera);
             },

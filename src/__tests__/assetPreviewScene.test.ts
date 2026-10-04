@@ -48,7 +48,7 @@ describe('AssetPreviewScene', () => {
     const solo = scene.scene.getObjectByName('packet')!;
     scene.select(entry('player-powered'));
     scene.sample(1000, camera);
-    expect(solo.getObjectByName('hunter-rig')?.visible).toBe(true);
+    expect((solo.getObjectByName('eye-left') as Mesh).morphTargetInfluences![0]).toBe(1);
 
     const packets = MULTIPLAYER_PACKET_APPEARANCES.map((appearance) => {
       scene.select(entry(`player-multiplayer-${appearance.character}`));
@@ -61,7 +61,7 @@ describe('AssetPreviewScene', () => {
       const rim = packet.getObjectByName('rim-horizontal-1-1') as Mesh<BufferGeometry, MeshBasicMaterial>;
       expect(`#${rim.material.color.getHexString()}`).toBe(appearance.color);
       expect(packet.getObjectByName('hologram-body')?.visible).toBe(true);
-      expect(packet.getObjectByName('hunter-rig')?.visible).toBe(false);
+      expect((packet.getObjectByName('eye-left') as Mesh).morphTargetInfluences![0]).toBe(0);
       expect(packet.getObjectByName('death-effect')?.visible).toBe(false);
       expect(packet.getObjectByName('packet-labels')?.visible).toBe(true);
       expect(labelContexts[labelContexts.length - 2].fillText).toHaveBeenLastCalledWith('PLAYER', 256, 48, 480);
@@ -82,7 +82,7 @@ describe('AssetPreviewScene', () => {
     expect(solo.getObjectByName('character-detail')).toBeUndefined();
     expect(solo.getObjectByName('packet-labels')).toBeUndefined();
     expect(solo.getObjectByName('hologram-body')?.visible).toBe(true);
-    expect(solo.getObjectByName('hunter-rig')?.visible).toBe(false);
+    expect((solo.getObjectByName('eye-left') as Mesh).morphTargetInfluences![0]).toBe(0);
     expect(solo.getObjectByName('death-effect')?.visible).toBe(false);
     const disposers = packets.map((packet) => vi.spyOn(
       (packet.getObjectByName('rim-horizontal-1-1') as Mesh<BufferGeometry, MeshBasicMaterial>).material, 'dispose'
@@ -374,7 +374,7 @@ describe('AssetPreviewScene', () => {
     const collapse = enemy.getObjectByName('enemy-collapse')!;
     scene.select(entry('player-enemy-eating'));
     scene.sample(180, camera);
-    expect(packet.getObjectByName('hunter-rig')?.visible).toBe(true);
+    expect((packet.getObjectByName('eye-left') as Mesh).morphTargetInfluences![0]).toBe(1);
     const pixels = scene.scene.getObjectByName('enemy-eat-pixels')!;
     const pixel = pixels.children[0] as Mesh<BufferGeometry, MeshBasicMaterial>;
     const disposeGeometry = vi.spyOn(pixel.geometry, 'dispose');
@@ -409,7 +409,7 @@ describe('AssetPreviewScene', () => {
     expect(enemy.position.equals(start)).toBe(true);
     scene.select(entry('player-idle'));
     scene.sample(0, camera);
-    expect(packet.getObjectByName('hunter-rig')?.visible).toBe(false);
+    expect((packet.getObjectByName('eye-left') as Mesh).morphTargetInfluences![0]).toBe(0);
     expect(scene.scene.getObjectByName('enemy-eat-pixels')).toBeUndefined();
     scene.dispose();
     assets.dispose();
