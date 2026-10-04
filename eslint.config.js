@@ -13,7 +13,7 @@ export default tseslint.config(
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
-        project: ['./tsconfig.json', './tsconfig.server.json', './backend/tsconfig.json'],
+        project: ['./tsconfig.json', './tsconfig.server.json', './backend/tsconfig.json', './dev/tsconfig.json'],
         tsconfigRootDir: import.meta.dirname,
       },
       ecmaVersion: 2022,

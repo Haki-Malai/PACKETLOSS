@@ -74,7 +74,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm build` creates the production bundle in `dist/`; `pnpm preview` serves that build locally. `pnpm test:all` runs frontend, server, simulation, and backend typechecks, lint, tests, and all three builds.
+`pnpm build` creates the production bundle in `dist/`; `pnpm preview` serves that build locally. `pnpm test:all` runs frontend, server, simulation, backend, and development-tool typechecks, lint, tests, and all three builds. The `dev/` entrypoints are strict TypeScript; `dev/run.ts` bundles them for Node without adding a separate TypeScript runtime dependency. Run `pnpm typecheck:dev` to check them directly.
 
 `pnpm dev` enables development tools. `pnpm build --mode development` includes those tools in an optimized build; the default production build excludes the asset gallery, debug panels, collision inspection, and debug shortcuts. React UI reads the shared environment context, while runtime code uses the same build-time flag. `VITE_GAME_ENV=DEMO` selects a maze independently of development tools.
 

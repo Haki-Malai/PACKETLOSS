@@ -11,5 +11,5 @@ COPY --from=dependencies /app/node_modules ./node_modules
 COPY package.json ./package.json
 COPY backend ./backend
 COPY src ./src
-COPY dev/lambda.mjs ./dev/lambda.mjs
-ENTRYPOINT ["nodemon", "--legacy-watch", "--signal", "SIGTERM", "--delay", "0.3", "--watch", "backend", "--watch", "src/game/protocol/version.ts", "--watch", "dev/lambda.mjs", "--ext", "ts,mjs", "dev/lambda.mjs"]
+COPY dev/run.ts dev/lambda.ts ./dev/
+ENTRYPOINT ["nodemon", "--legacy-watch", "--signal", "SIGTERM", "--delay", "0.3", "--watch", "backend", "--watch", "src/game/protocol/version.ts", "--watch", "dev/run.ts", "--watch", "dev/lambda.ts", "--ext", "ts,mjs", "--exec", "node", "dev/run.ts", "lambda"]

@@ -8,7 +8,7 @@ Tests use Vitest and live in `src/__tests__/`. They cover movement and collision
 - `pnpm typecheck` — check TypeScript types.
 - `pnpm lint` — run ESLint with zero warnings allowed.
 - `pnpm build` — create the production bundle.
-- `pnpm test:all` — typecheck the app, shared simulation, server, and APIs; run lint and tests; build frontend, server, and Lambda artifacts.
+- `pnpm test:all` — typecheck the app, shared simulation, server, APIs, and development tools; run lint and tests; build frontend, server, and Lambda artifacts.
 
 Run a focused test while working on a feature:
 
@@ -59,6 +59,7 @@ Run the backend checks with the same Node.js 24 toolchain:
 
 ```sh
 pnpm typecheck:backend
+pnpm typecheck:dev
 pnpm test backend
 pnpm build:backend
 ```
@@ -87,11 +88,11 @@ The Docker HTTP/WebSocket smoke script needs no browser. With the stack running:
 
 ```sh
 pnpm dev:full -- --detach --bots 0       # Reserve all seats for the scripted clients
-node dev/smoke.mjs                       # Accounts, scores, four players, full match, rematch
-node dev/smoke.mjs --localhost           # Same flow through localhost, including CORS preflights
+node dev/run.ts smoke                    # Accounts, scores, four players, full match, rematch
+node dev/run.ts smoke --localhost        # Same flow through localhost, including CORS preflights
 pnpm dev:full -- --stop
 pnpm dev:full -- --detach
-node dev/smoke.mjs --after-restart       # Guest session, score, and result survive restart
+node dev/run.ts smoke --after-restart    # Guest session, score, and result survive restart
 ```
 
 The full match takes just over three minutes. It creates isolated smoke identities and

@@ -1,0 +1,7 @@
+{
+    "extends": "../backend/tsconfig.json",
+    "compilerOptions": {
+        "allowImportingTsExtensions": true
+    },
+    "include": ["**/*.ts"]
+}

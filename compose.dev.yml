@@ -29,7 +29,7 @@ services:
       context: .
       dockerfile: dev/Lambda.Dockerfile
     environment: *local-environment
-    entrypoint: ["node", "dev/lambda.mjs", "--bootstrap"]
+    entrypoint: ["node", "dev/run.ts", "lambda", "--bootstrap"]
     volumes:
       - ./.packetloss-dev/data:/data:ro
     depends_on:
@@ -45,7 +45,7 @@ services:
     volumes:
       - ./backend:/var/task/backend:ro
       - ./src:/var/task/src:ro
-      - ./dev/lambda.mjs:/var/task/dev/lambda.mjs:ro
+      - ./dev:/var/task/dev:ro
     depends_on:
       init:
         condition: service_completed_successfully
@@ -59,7 +59,7 @@ services:
     volumes:
       - ./backend:/var/task/backend:ro
       - ./src:/var/task/src:ro
-      - ./dev/lambda.mjs:/var/task/dev/lambda.mjs:ro
+      - ./dev:/var/task/dev:ro
     depends_on:
       init:
         condition: service_completed_successfully
@@ -69,7 +69,7 @@ services:
     build:
       context: .
       dockerfile: dev/Node.Dockerfile
-    command: ["nodemon", "--legacy-watch", "--signal", "SIGTERM", "--delay", "0.3", "--watch", "dev/gateway.mjs", "--ext", "mjs", "dev/gateway.mjs"]
+    command: ["nodemon", "--legacy-watch", "--signal", "SIGTERM", "--delay", "0.3", "--watch", "dev/gateway.ts", "--watch", "dev/run.ts", "--ext", "ts", "--exec", "node", "dev/run.ts", "gateway"]
     environment:
       ACCOUNT_LAMBDA_URL: http://account-lambda:8080
       MULTIPLAYER_LAMBDA_URL: http://multiplayer-lambda:8080
@@ -125,10 +125,15 @@ services:
       - --watch
       - public/assets/mazes/default
       - --watch
-      - dev/game.mjs
+      - dev/game.ts
+      - --watch
+      - dev/run.ts
       - --ext
       - ts,json,mjs
-      - dev/game.mjs
+      - --exec
+      - node
+      - dev/run.ts
+      - game
     # Keep the private API on loopback from the game's perspective.
     network_mode: service:gateway
     environment:

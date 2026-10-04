@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import { fileURLToPath } from 'node:url';
 import { parseTiledMap, type TiledMap } from '../src/game/infrastructure/map/TiledParser';
 import { raceMapSchema } from '../src/game/protocol/messages';
 import { createClassicRaceMap } from '../src/game/simulation/classicMap';
@@ -167,7 +166,7 @@ function listen(server: Server, port: number): Promise<void> {
     });
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
     void main().catch((error: unknown) => {
         console.error(
             error instanceof Error ? error.message : 'Development game server startup failed.'

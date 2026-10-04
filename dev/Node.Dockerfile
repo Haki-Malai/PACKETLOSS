@@ -7,5 +7,5 @@ COPY src ./src
 COPY server ./server
 COPY backend ./backend
 COPY public ./public
-COPY dev/*.mjs ./dev/
+COPY dev/*.ts ./dev/
 COPY index.html vite.config.ts postcss.config.cjs tsconfig*.json ./
