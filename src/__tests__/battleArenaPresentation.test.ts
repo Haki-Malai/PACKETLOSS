@@ -11,6 +11,7 @@ import { MazeScene } from '../game/infrastructure/three/MazeScene';
 import {
   battleArenaBounds, battleArenaOuterBounds, createBattleArenaMap, createBattleArenaWorldMap,
 } from '../game/simulation/BattleArenaMap';
+import { MultiplayerSynchronization } from '../game/simulation/MultiplayerSynchronization';
 import { DataRace } from '../game/simulation/DataRace';
 import { RACE } from '../game/simulation/types';
 import { MultiplayerPresentationSession } from '../game/ui/MultiplayerPresentation';
@@ -207,7 +208,7 @@ describe('Battle Royale perimeter presentation', () => {
     initial.players[0].movement = { cell: 23 * 49 + 23, to: null, progress: 0, direction: 'right', queued: 'right' };
     initial.players[0].connected = false;
     let connection: MultiplayerConnectionSnapshot = {
-      phase: 'connected', playerId: initial.players[0].id, room: null, map, race: initial,
+      phase: 'connected', stalled: false, recoverable: true, playerId: initial.players[0].id, room: null, map, race: initial,
       raceHistory: [initial], receivedAtMs: 0, serverTimeMs: null, latencyMs: 0,
       instanceRunId: 'run', processGeneration: 'generation', warning: null, message: '',
     };
@@ -217,9 +218,19 @@ describe('Battle Royale perimeter presentation', () => {
     const finalDispose = vi.fn();
     const root = document.createElement('div');
     vi.spyOn(root, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ width: 800, height: 600 }));
+    const synchronization = new MultiplayerSynchronization();
+    let publication = 0;
+    let accepted: typeof connection.race = null;
     const session = new MultiplayerPresentationSession({
       map, canvas: document.createElement('canvas'), root,
-      getConnectionSnapshot: () => connection, isReducedMotion: () => reducedMotion, onError,
+      synchronization,
+      getConnectionSnapshot: () => {
+        if (connection.race && connection.race !== accepted) {
+          synchronization.acceptSnapshot(map, connection.race, connection.playerId, ++publication, now);
+          accepted = connection.race;
+        }
+        return connection;
+      }, isReducedMotion: () => reducedMotion, onError,
     });
     try {
       await session.ready;
@@ -296,7 +307,8 @@ describe('Battle Royale perimeter presentation', () => {
       spectating.players[1].movement = { cell: 26 * 49 + 26, to: null, progress: 0, direction: 'right', queued: 'right' };
       connection = { ...connection, race: spectating, raceHistory: [spectating], receivedAtMs: now += 16 };
       frame(now);
-      const followed = new Vector3(26.5 * 16, 0, 26.5 * 16).project(camera);
+      const rendered = synchronization.sample(now)!.actors.get(spectating.players[1].id)!.point;
+      const followed = new Vector3((rendered.x + 0.5) * 16, 0, (rendered.y + 0.5) * 16).project(camera);
       expect(followed.x).toBeCloseTo(0, 2);
       expect(followed.y).toBeCloseTo(0, 2);
       expect(snap).toHaveBeenCalledTimes(snapCount + 1);

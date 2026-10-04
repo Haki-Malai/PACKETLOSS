@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MultiplayerSocketClient } from '../game/infrastructure/adapters/MultiplayerSocketClient';
 import { encodeRaceSnapshot, parseClientMessage, PROTOCOL_VERSION } from '../game/protocol/messages';
 import { RACE, type RaceMap, type RaceSnapshot } from '../game/simulation/types';
@@ -23,7 +23,12 @@ class FakeSocket {
         this.onopen?.(new Event('open'));
     }
 
+    private publication = 0;
+
     message(value: unknown): void {
+        if (value && typeof value === 'object' && 'type' in value && value.type === 'snapshot') {
+            value = { publication: ++this.publication, ...value };
+        }
         this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(value) }));
     }
 }
@@ -56,6 +61,7 @@ const snapshot: RaceSnapshot = {
     playTicks: 1,
     shrinkStage: 0,
     phase: 'playing',
+    movementEnabled: true,
     players: [
         {
             id: 'player-1',
@@ -97,7 +103,57 @@ const snapshot: RaceSnapshot = {
 };
 const wireSnapshot = encodeRaceSnapshot(map, snapshot);
 
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+/** Admits a live player so watchdog tests exercise an actual validated gameplay stream. */
+function activeSocket() {
+    const socket = new FakeSocket();
+    const client = new MultiplayerSocketClient(() => socket);
+    client.connect({ credential: { ticket: 'ticket', expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        websocketUrl: 'wss://game.example/ws', processGeneration: 'generation-1' }, operation: 'create',
+        expectedInstanceRunId: 'run-1', expectedProcessGeneration: 'generation-1' });
+    socket.open();
+    socket.message({ type: 'authenticated', version: PROTOCOL_VERSION, playerId: 'player-1',
+        instanceRunId: 'run-1', processGeneration: 'generation-1' });
+    socket.message({ type: 'map', map });
+    socket.message({ type: 'snapshot', publication: 1, snapshot: wireSnapshot, serverTimeMs: 1000,
+        instanceRunId: 'run-1', processGeneration: 'generation-1' });
+    return { socket, client };
+}
+
 describe('MultiplayerSocketClient', () => {
+    it('signals a 400 ms stall and closes a silent game stream even if pongs keep arriving', () => {
+        vi.useFakeTimers();
+        let now = 0;
+        vi.spyOn(performance, 'now').mockImplementation(() => now);
+        const { socket, client } = activeSocket();
+        now = 400; vi.advanceTimersByTime(400);
+        expect(client.getSnapshot().stalled).toBe(true);
+        expect(client.sendDirection('left')).toBeNull();
+        for (const next of [2000, 4000, 6000]) {
+            socket.message({ type: 'pong', sentAt: now, serverTimeMs: now });
+            const elapsed = next - now; now = next; vi.advanceTimersByTime(elapsed);
+        }
+        expect(client.getSnapshot()).toMatchObject({ phase: 'failed', recoverable: true });
+        expect(socket.close).toHaveBeenCalledOnce();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('does not predict failed sends and preserves newer same-tick authoritative updates', () => {
+        const { socket, client } = activeSocket();
+        socket.readyState = 3;
+        expect(client.sendDirection('left')).toBeNull();
+        expect(client.synchronization.diagnostics.pendingInputs).toBe(0);
+        socket.readyState = 1;
+        const frozen = { ...wireSnapshot, movementEnabled: false };
+        socket.message({ type: 'snapshot', publication: 2, snapshot: frozen, serverTimeMs: 1000,
+            instanceRunId: 'run-1', processGeneration: 'generation-1' });
+        socket.message({ type: 'snapshot', publication: 1, snapshot: wireSnapshot, serverTimeMs: 1000,
+            instanceRunId: 'run-1', processGeneration: 'generation-1' });
+        expect(client.getSnapshot().race?.movementEnabled).toBe(false);
+        expect(client.sendDirection('left')).toBeNull();
+        client.disconnect();
+    });
     it('authenticates first and sends only sequenced direction intent during play', () => {
         const socket = new FakeSocket();
         const client = new MultiplayerSocketClient(() => socket);
@@ -144,6 +200,7 @@ describe('MultiplayerSocketClient', () => {
             type: 'input',
             matchId: 'match-1',
             sequence: 1,
+            targetTick: expect.any(Number) as number,
             direction: 'left',
         });
         expect(inputMessage).not.toContain('score');
@@ -298,7 +355,7 @@ describe('MultiplayerSocketClient', () => {
             processGeneration: 'generation-1',
         });
         expect(uiListener).toHaveBeenCalledOnce();
-        expect(client.getSnapshot().raceHistory).toHaveLength(1);
+        expect(client.getSnapshot().raceHistory.length).toBeGreaterThan(1);
 
         uiListener.mockClear();
         const eliminated = structuredClone(contracted);
@@ -314,7 +371,7 @@ describe('MultiplayerSocketClient', () => {
             processGeneration: 'generation-1',
         });
         expect(uiListener).toHaveBeenCalledOnce();
-        expect(client.sendDirection('up')).toBe(0);
+        expect(client.sendDirection('up')).toBeNull();
         client.disconnect();
     });
 

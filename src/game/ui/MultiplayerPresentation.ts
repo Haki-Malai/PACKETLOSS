@@ -17,28 +17,20 @@ import {
 } from '../infrastructure/three/PickupPresentation';
 import { addGameplayLighting } from '../infrastructure/three/ScenePresentation';
 import { resolveMapPathsForVariant } from '../app/mapRuntimeConfig';
-import { position } from '../simulation/movement';
 import {
     battleArenaMapAtStage,
     battleArenaOuterBounds,
     createBattleArenaWorldMap,
 } from '../simulation/BattleArenaMap';
 import { sampleBlinkCadence } from '../shared/blinkCadence';
-import {
-    interpolateRemotePosition,
-    LocalMovementPresentation,
-    RacePresentationClock,
-    type PredictedInput,
-} from '../simulation/prediction';
+import type { MultiplayerSynchronization, MultiplayerRenderState } from '../simulation/MultiplayerSynchronization';
 import {
     RACE,
-    type Direction,
     type Pickup,
     type RaceMap,
     type RaceSnapshot,
 } from '../simulation/types';
 
-const INTERPOLATION_TICKS = 6;
 
 interface PlayerModel {
     color: string;
@@ -50,11 +42,8 @@ export interface MultiplayerPresentationStage {
     resize(_width: number, _height: number): void;
     sync(
         _connection: MultiplayerConnectionSnapshot,
-        _predictedTick: number,
-        _presentationTick: number,
-        _localPresentation: LocalMovementPresentation,
+        _frame: MultiplayerRenderState,
         _now: number,
-        _pendingInputs: readonly PredictedInput[],
         _reducedMotion: boolean
     ): { acknowledgedInput?: number; discontinuity: boolean };
     snapCamera(): void;
@@ -99,20 +88,17 @@ export interface MultiplayerPresentationOptions {
     root: HTMLElement;
     map: RaceMap;
     getConnectionSnapshot(): MultiplayerConnectionSnapshot;
+    synchronization: MultiplayerSynchronization;
     isReducedMotion?(): boolean;
     onError?(_error: unknown): void;
 }
 
-/** Owns multiplayer rendering resources, frame timing, prediction presentation, and disposal. */
+/** Owns multiplayer rendering resources, display-frame scheduling, and disposal. */
 export class MultiplayerPresentationSession {
     readonly ready: Promise<void>;
 
     private readonly abort = new AbortController();
     private readonly cleanups: Array<() => void> = [];
-    private readonly localClock = new RacePresentationClock();
-    private readonly remoteClock = new RacePresentationClock();
-    private readonly localPresentation = new LocalMovementPresentation();
-    private pending: PredictedInput[] = [];
     private stage: MultiplayerPresentationStage | null = null;
     private frame: number | null = null;
     private previousFrame: number | null = null;
@@ -130,33 +116,10 @@ export class MultiplayerPresentationSession {
         });
     }
 
-    /** Records local intent at the current raw snapshot time for later reconciliation. */
-    recordInput(sequence: number, direction: Direction): void {
-        if (this.disposed || sequence <= 0) return;
-        const connection = this.options.getConnectionSnapshot();
-        const race = connection.race;
-        if (!race || !['countdown', 'playing'].includes(race.phase)) return;
-        const localPlayer = race.players.find((player) => player.id === connection.playerId);
-        if (!localPlayer || localPlayer.eliminatedAtTick !== null) return;
-        this.pending.push({
-            sequence,
-            tick: this.localClock.sample(
-                race,
-                connection.receivedAtMs,
-                this.dependencies.now(),
-                connection.latencyMs ?? 0
-            ),
-            direction,
-        });
-    }
-
     /** Clears timing and correction history after match, connection, or visibility transitions. */
     reset(): void {
         if (this.disposed) return;
-        this.pending = [];
-        this.localClock.reset();
-        this.remoteClock.reset();
-        this.localPresentation.reset();
+        this.options.synchronization.resetPresentation();
         this.previousFrame = null;
         this.needsCameraSnap = true;
     }
@@ -213,28 +176,12 @@ export class MultiplayerPresentationSession {
         const connection = this.options.getConnectionSnapshot();
         const race = connection.race;
         if (!race) return false;
-        const result = stage.sync(
-            connection,
-            this.localClock.sample(
-                race,
-                connection.receivedAtMs,
-                now,
-                connection.latencyMs ?? 0
-            ),
-            this.remoteClock.sample(race, connection.receivedAtMs, now),
-            this.localPresentation,
-            now,
-            this.pending,
+        const frame = this.options.synchronization.sample(now);
+        if (!frame) return false;
+        return stage.sync(connection, frame, now,
             this.options.isReducedMotion?.()
-                ?? globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-                ?? false
-        );
-        if (result.acknowledgedInput !== undefined) {
-            this.pending = this.pending.filter(
-                (input) => input.sequence > result.acknowledgedInput!
-            );
-        }
-        return result.discontinuity;
+                ?? globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+        ).discontinuity;
     }
 
     /** Draws one frame and schedules exactly one successor while presentation is active. */
@@ -387,17 +334,15 @@ function createThreeStage({
                 resizeMultiplayerViewport(renderer, camera, width, height),
             sync: (
                 connection,
-                predictedTick,
-                presentationTick,
-                localPresentation,
+                frame,
                 now,
-                pendingInputs,
                 reducedMotion
             ) => {
                 if (connection.map?.id !== map.id || !connection.race) {
                     return { discontinuity: false };
                 }
                 const race = connection.race;
+                const presentationTick = frame.presentationTick;
                 if (race.shrinkStage !== renderedStage) {
                     renderedStage = race.shrinkStage;
                     stagedMap = battleArenaMapAtStage(map, renderedStage);
@@ -428,20 +373,7 @@ function createThreeStage({
                 );
                 let discontinuity = nextFollowedPlayerId !== followedPlayerId;
                 followedPlayerId = nextFollowedPlayerId;
-                discontinuity = syncActors(
-                    connection.race,
-                    connection.raceHistory,
-                    stagedMap,
-                    connection.playerId,
-                    followedPlayerId,
-                    predictedTick,
-                    presentationTick,
-                    localPresentation,
-                    now,
-                    pendingInputs,
-                    players,
-                    cameraTarget
-                ) || discontinuity;
+                discontinuity = syncActors(frame, followedPlayerId, now, players, cameraTarget) || discontinuity;
                 const acknowledgedInput = connection.race.players.find(
                     (player) => player.id === connection.playerId
                 )?.acknowledgedInput;
@@ -520,38 +452,19 @@ function createThreeStage({
 
 /** Maps authoritative identities and effects to solo Packet variants without changing gameplay. */
 function syncActors(
-    race: RaceSnapshot,
-    history: readonly RaceSnapshot[],
-    map: RaceMap,
-    localId: string | null,
+    frame: MultiplayerRenderState,
     followedPlayerId: string | null,
-    predictedTick: number,
-    presentationTick: number,
-    localPresentation: LocalMovementPresentation,
     now: number,
-    pendingInputs: readonly PredictedInput[],
     players: PlayerModel[],
     cameraTarget: { x: number; y: number }
 ): boolean {
-    const interpolationTick =
-        race.phase === 'playing'
-            ? Math.min(race.tick, presentationTick - INTERPOLATION_TICKS)
-            : race.tick;
     let discontinuity = false;
     for (const model of players) model.packet.group.visible = false;
-    race.players.forEach((player) => {
+    for (const { player, point, moving, discontinuity: actorDiscontinuity } of frame.actors.values()) {
         const model = players.find((candidate) => candidate.color === player.color);
-        if (!model) return;
+        if (!model) continue;
         const { packet } = model;
-        const local =
-            player.id === localId && player.eliminatedAtTick === null
-                ? localPresentation.sample(map, race, player, predictedTick, pendingInputs, now)
-                : null;
-        const movement = local?.movement ?? player.movement;
-        const point = local
-            ? local.point
-            : interpolateRemotePosition(history, interpolationTick, player.id, false, map) ??
-              position(map, movement);
+        const movement = player.movement;
         packet.group.position.set((point.x + 0.5) * TILE_SIZE, 0, (point.y + 0.5) * TILE_SIZE);
         packet.group.visible = player.eliminatedAtTick === null || player.deathMs > 0;
         model.labels.setIdentity(player.name, player.score);
@@ -561,23 +474,21 @@ function syncActors(
                 / PACKET_PORTAL_BLINK.intervalMs) % 2 === 0;
         const recoveryVisible = sampleBlinkCadence(PACKET_DEATH_RECOVERY.durationMs - player.protectionMs,
             PACKET_DEATH_RECOVERY.durationMs, PACKET_DEATH_RECOVERY).visible;
-        packet.model.visible =
-            player.deathMs > 0 ||
-            (player.protectionMs > 0 ? recoveryVisible : portalVisible);
+        packet.model.visible = player.deathMs > 0 || (player.protectionMs > 0 ? recoveryVisible : portalVisible);
         packet.setDeathProgress(player.deathMs > 0 ? 1 - player.deathMs / RACE.deathMs : null);
         packet.setPower(player.huntMs > 0, player.huntMs > 0 && player.huntMs <= ENEMY_SCARED_WARNING_DURATION_MS);
         packet.setMotion(
             movement.direction === 'right' ? 1 : movement.direction === 'left' ? -1 : 0,
             movement.direction === 'down' ? 1 : movement.direction === 'up' ? -1 : 0,
-            movement.to !== null && player.deathMs <= 0 ? 1 : 0
+            moving ? 1 : 0
         );
         packet.sample(now / 1000);
         if (player.id === followedPlayerId) {
             cameraTarget.x = packet.group.position.x;
             cameraTarget.y = packet.group.position.z;
-            discontinuity ||= local?.discontinuity ?? false;
+            discontinuity ||= actorDiscontinuity;
         }
-    });
+    }
     return discontinuity;
 }
 

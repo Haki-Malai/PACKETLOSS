@@ -1,2 +1,2 @@
-/** Fences arena-generation and solo-practice snapshot semantics across all processes. */
-export const PROTOCOL_VERSION = 5;
+/** Fences scheduled input, movement permission, and snapshot publication semantics. */
+export const PROTOCOL_VERSION = 6;

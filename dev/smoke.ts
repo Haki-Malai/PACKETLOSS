@@ -317,7 +317,7 @@ async function runSmoke(): Promise<void> {
         inputs = setInterval(() => {
             clients.forEach((client, index) => {
                 // Stop before the deadline so an in-flight test input cannot arrive after completion.
-                if (client.snapshot?.phase !== 'playing' || client.snapshot.playTicks >= 179 * 60)
+                if (!client.snapshot?.movementEnabled || client.snapshot.playTicks >= 179 * 60)
                     return;
                 const sequence = ++client.sequence;
                 const direction =
@@ -329,6 +329,7 @@ async function runSmoke(): Promise<void> {
                     type: 'input',
                     matchId: client.snapshot.matchId,
                     sequence,
+                    targetTick: client.snapshot.tick + 3,
                     direction,
                 });
             });

@@ -1,4 +1,4 @@
-import { type Direction, type Edge, type Movement, type RaceMap } from './types';
+import { type Direction, type Edge, type Movement, type RaceMap, type ScheduledInput } from './types';
 import { advanceEntity, getDistanceToCenter, resolveBufferedDirection } from '../domain/services/MovementRules';
 import { DIRECTION_VECTORS, OPPOSITE_DIRECTION } from '../domain/valueObjects/Direction';
 import { PORTAL_TRAVEL_FRACTION } from '../domain/services/PortalService';
@@ -98,4 +98,16 @@ export function physicalPath(map: RaceMap, from: number, to: number): number[] |
     }
   }
   return null;
+}
+
+/** Selects the newest consumed intent; repeated commands in one tick cannot create extra travel. */
+export function applyScheduledDirection(movement: Movement, inputs: readonly ScheduledInput[],
+  tick: number, acknowledgedInput: number): number {
+  let latest: ScheduledInput | undefined;
+  for (const input of inputs) {
+    if (input.targetTick <= tick && input.sequence > acknowledgedInput
+      && (!latest || input.sequence > latest.sequence)) latest = input;
+  }
+  if (latest) movement.queued = latest.direction;
+  return latest?.sequence ?? acknowledgedInput;
 }

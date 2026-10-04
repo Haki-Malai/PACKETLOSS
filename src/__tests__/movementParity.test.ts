@@ -56,12 +56,13 @@ describe('solo and online movement rules', () => {
     for (let tick = 0; tick < 4; tick += 1) game.step();
     game.input(player.id, 2, 'right'); game.step();
     game.input(player.id, 3, 'down');
+    game.step(); // Save the consumed turn, not an input still waiting for its target tick.
     const saved = game.snapshot();
     const inward = saved.players.find((candidate) => candidate.id === player.id)!;
-    const predicted = reconcileMovement(map, inward, saved.tick, saved.tick + 3, []);
+    const predicted = reconcileMovement(map, inward, saved.tick, saved.tick + 2, []);
     expect(position(map, predicted)).toEqual({ x: 0, y: 0 });
     game.restore(saved);
-    for (let tick = 0; tick < 4; tick += 1) game.step();
+    for (let tick = 0; tick < 3; tick += 1) game.step();
     const advanced = game.snapshot().players.find((candidate) => candidate.id === player.id)!;
     const point = position(map, advanced.movement);
     expect(point.x).toBe(0);

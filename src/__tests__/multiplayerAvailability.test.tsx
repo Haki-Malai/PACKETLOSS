@@ -43,7 +43,12 @@ class FakeSocket {
         this.onopen?.(new Event('open'));
     }
 
+    private publication = 0;
+
     message(value: unknown): void {
+        if (value && typeof value === 'object' && 'type' in value && value.type === 'snapshot') {
+            value = { publication: ++this.publication, ...value };
+        }
         this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(value) }));
     }
 
@@ -128,6 +133,42 @@ afterEach(() => {
 });
 
 describe('useMultiplayerAvailability', () => {
+    it('automatically gets a fresh ticket and waits for the room, map, and snapshot before declaring recovery', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal('WebSocket', FakeSocket);
+        const api = multiplayerApi(Promise.resolve({ ticket: 'fresh-ticket', websocketUrl: readyStatus.websocketUrl!,
+            processGeneration: 'generation-1', expiresAt: new Date(Date.now() + 60_000).toISOString() }));
+        const { result, unmount } = renderHook(() => useMultiplayerSession(api,
+            { accountId: 'player-1', nickname: 'PLAYER', avatar: 'packet' }, false));
+        await act(async () => { await result.current.createRoom(); });
+        const authenticated = { type: 'authenticated', version: PROTOCOL_VERSION, playerId: 'player-1',
+            instanceRunId: 'run-1', processGeneration: 'generation-1' };
+        const room = { code: 'ABC234', ownerId: 'player-1', phase: 'lobby', matchId: null, canStart: false, players: [] };
+        act(() => { sockets[0].message(authenticated); sockets[0].message({ type: 'room', room }); });
+        act(() => sockets[0].serverClose());
+        await act(async () => vi.advanceTimersByTimeAsync(500));
+        expect(api.createJoinCredential).toHaveBeenCalledTimes(2);
+        expect(api.createJoinCredential).toHaveBeenLastCalledWith({ operation: 'reconnect', region: 'eu', roomCode: 'ABC234' });
+        act(() => sockets[1].message(authenticated));
+        expect(result.current.recovery.phase).toBe('connecting');
+        act(() => sockets[1].message({ type: 'room', room: { ...room, phase: 'playing', matchId: 'recovered' } }));
+        expect(result.current.recovery.phase).toBe('connecting');
+        const map = dataRaceFixture();
+        const race = new DataRace(map, 'recovered', [{ id: 'player-1', name: 'PLAYER' }, { id: 'b', name: 'B' }], 1);
+        await act(async () => {
+            sockets[1].message({ type: 'map', map });
+            sockets[1].message({ type: 'snapshot', snapshot: encodeRaceSnapshot(map, race.snapshot()),
+                serverTimeMs: 0, instanceRunId: 'run-1', processGeneration: 'generation-1' });
+            await Promise.resolve();
+        });
+        expect(result.current.recovery).toEqual({ phase: 'idle', attempt: 0 });
+        expect(sockets[1].readyState).toBe(1);
+        act(() => sockets[1].serverClose());
+        act(() => result.current.leave());
+        await act(async () => vi.advanceTimersByTimeAsync(30_000));
+        expect(api.createJoinCredential).toHaveBeenCalledTimes(2);
+        unmount();
+    });
     it('skips menus and creates a fresh development room on every mount, including refresh with an existing guest', async () => {
         vi.stubEnv('VITE_DEV_MULTI', '1');
         vi.stubGlobal('WebSocket', FakeSocket);
@@ -448,10 +489,14 @@ describe('useMultiplayerAvailability', () => {
         rerender();
         expect(sockets[0].readyState).toBe(1);
         expect(result.current.connection.room?.code).toBe('ABC234');
+        const keepAlive = globalThis.setInterval(() => sockets[0].message({
+            type: 'pong', sentAt: performance.now(), serverTimeMs: Date.now(),
+        }), 1000);
         await act(async () => vi.advanceTimersByTimeAsync(9 * 60_000));
         act(() => sockets[0].message({ type: 'room', room: { ...room } }));
         await act(async () => vi.advanceTimersByTimeAsync(3 * 60_000));
         expect(result.current.hasReservation).toBe(true);
+        globalThis.clearInterval(keepAlive);
         act(() => result.current.leave());
         unmount();
     });

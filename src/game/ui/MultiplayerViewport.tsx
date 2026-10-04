@@ -6,6 +6,7 @@ import { MultiplayerPresentationSession } from './MultiplayerPresentation';
 import type { GameSession } from './useGameSession';
 import { BrowserInputAdapter } from '../infrastructure/adapters/BrowserInputAdapter';
 import { DirectionalInput } from '../infrastructure/adapters/DirectionalInput';
+import type { MultiplayerSynchronization } from '../simulation/MultiplayerSynchronization';
 
 /** Renders the authoritative Battle Royale while predicting only the local survivor's movement. */
 export function MultiplayerViewport({ session }: { session: GameSession }) {
@@ -26,8 +27,7 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
         if (!race || !['countdown', 'playing'].includes(race.phase)) return;
         const localPlayer = race.players.find((player) => player.id === latest.playerId);
         if (!localPlayer || localPlayer.eliminatedAtTick !== null) return;
-        const sequence = multiplayer.sendDirection(direction);
-        presentation.current?.recordInput(sequence, direction);
+        multiplayer.sendDirection(direction);
     };
 
     useEffect(() => {
@@ -88,6 +88,7 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
             root: targetRoot,
             map: raceMap,
             getConnectionSnapshot: session.multiplayer.getConnectionSnapshot,
+            synchronization: session.multiplayer.synchronization,
             isReducedMotion: () => {
                 const motion = sessionRef.current.store.getMotion();
                 return motion === 'reduced' || motion === 'system'
@@ -109,7 +110,7 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
             if (presentation.current === current) presentation.current = null;
             current.dispose();
         };
-    }, [raceMap, session.multiplayer.getConnectionSnapshot]);
+    }, [raceMap, session.multiplayer.getConnectionSnapshot, session.multiplayer.synchronization]);
 
     const race = connection.race;
     const remainingTicks = race ? Math.max(0, RACE.matchTicks - race.playTicks) : 0;
@@ -131,6 +132,7 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
             aria-label="Battle Royale"
         >
             <canvas ref={canvas} className="block h-full w-full" tabIndex={-1} />
+            {IS_DEV && <MultiplayerSyncDiagnostics synchronization={session.multiplayer.synchronization} />}
             {presentationError && (
                 <p className="packet-multiplayer-alert" role="alert">
                     {presentationError}
@@ -138,7 +140,7 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
             )}
             <div className="packet-race-status" role="status" aria-live="polite">
                 <span>
-                    {connection.phase === 'connected'
+                    {connection.stalled ? 'CONNECTION UNSTABLE' : connection.phase === 'connected'
                         ? 'CONNECTED'
                         : connection.phase.toUpperCase()}
                 </span>
@@ -206,4 +208,21 @@ function formatPresentationError(error: unknown): string {
 
 function isAbortError(error: unknown): boolean {
     return typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError';
+}
+
+/** Displays bounded diagnostic samples without subscribing React to movement frames. */
+function MultiplayerSyncDiagnostics({ synchronization }: { synchronization: MultiplayerSynchronization }) {
+    const [diagnostics, setDiagnostics] = useState(() => ({ ...synchronization.diagnostics }));
+    useEffect(() => {
+        const timer = globalThis.setInterval(() => setDiagnostics({ ...synchronization.diagnostics }), 1000);
+        return () => globalThis.clearInterval(timer);
+    }, [synchronization]);
+    return (
+        <pre
+            aria-label="Network diagnostics"
+            className="pointer-events-none absolute bottom-3 left-3 z-20 m-0 border border-packet-line bg-packet-void/90 px-2 py-1.5 font-mono text-xs leading-normal whitespace-pre text-packet-text"
+        >
+            {`SYNC age ${Math.round(diagnostics.snapshotAgeMs)} ms · pending ${diagnostics.pendingInputs} · buffer misses ${diagnostics.interpolationUnderruns}\nCorrection ${diagnostics.correctionMagnitude.toFixed(3)} tiles · ${diagnostics.correctionReason}`}
+        </pre>
+    );
 }

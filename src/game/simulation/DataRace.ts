@@ -1,7 +1,7 @@
 import { battleArenaBounds, battleArenaMapAtStage, isBattleArenaCellActive } from './BattleArenaMap';
-import { createMovement, move, movementEdge, position } from './movement';
+import { applyScheduledDirection, createMovement, move, movementEdge, position } from './movement';
 import { cloneSnapshot } from './cloneSnapshot';
-import { DIRECTIONS, RACE, type PlayerIdentity, type RaceMap, type RacePlayer, type RaceSnapshot } from './types';
+import { DIRECTIONS, RACE, SYNCHRONIZATION, type PlayerIdentity, type RaceMap, type RacePlayer, type RaceSnapshot, type ScheduledInput } from './types';
 import { COLLECTIBLE_CONFIG, PACKET_PORTAL_BLINK, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { isBodyOverlap } from '../domain/valueObjects/CollisionBody';
 
@@ -10,6 +10,7 @@ export class DataRace {
   private state: RaceSnapshot;
   private activeMap: RaceMap;
   private readonly soloDevelopment: boolean;
+  private readonly inputs = new Map<string, { sequence: number; targetTick: number; commands: Map<number, ScheduledInput> }>();
 
   /** Starts play immediately with seeded spawn/pickup ordering and authoritative participant colors. */
   constructor(readonly map: RaceMap, matchId: string, identities: readonly PlayerIdentity[], seed: number,
@@ -22,7 +23,7 @@ export class DataRace {
     this.soloDevelopment = soloDevelopment && identities.length === 1;
     if (map.spawns.length !== 4 || map.pickups.length === 0) throw new Error('Map requires four spawns and pickups.');
     this.activeMap = battleArenaMapAtStage(map, 0);
-    this.state = { matchId, mapId: map.id, tick: 0, playTicks: 0, phase: 'playing',
+    this.state = { matchId, mapId: map.id, tick: 0, playTicks: 0, phase: 'playing', movementEnabled: true,
       players: [], enemies: [], pickups: map.pickups.map((point) => ({ ...point })), refill: 0,
       randomState: seed >>> 0, shrinkStage: 0, rankings: [], abortReason: null };
     const participants = [...identities].sort((a, b) => a.id.localeCompare(b.id));
@@ -40,7 +41,10 @@ export class DataRace {
   }
 
   /** Returns a detached wire snapshot so consumers cannot mutate authoritative state. */
-  snapshot(): RaceSnapshot { return cloneSnapshot(this.state); }
+  snapshot(): RaceSnapshot { return cloneSnapshot({ ...this.state, movementEnabled: this.movementEnabled }); }
+
+  /** Includes the terminal presentation freeze and the explicit solo-development exception. */
+  private get movementEnabled(): boolean { return this.state.phase === 'playing' && !this.outcomeLocked(); }
 
   /** Reads lifecycle metadata without allocating the full collectible snapshot. */
   get phase(): RaceSnapshot['phase'] { return this.state.phase; }
@@ -53,23 +57,42 @@ export class DataRace {
   restore(snapshot: RaceSnapshot): void {
     if (snapshot.matchId !== this.state.matchId || snapshot.mapId !== this.map.id) throw new Error('Snapshot belongs to another session.');
     this.state = cloneSnapshot({ ...snapshot, enemies: [] });
+    this.inputs.clear();
     this.activeMap = battleArenaMapAtStage(this.map, this.state.shrinkStage);
   }
 
-  /** Applies a validated direction once; sequence numbers never grant extra simulation time. */
-  input(playerId: string, sequence: number, direction: typeof DIRECTIONS[number]): boolean {
+  /** Queues bounded tick-stamped intent; late input waits for the next authoritative step. */
+  input(playerId: string, sequence: number, direction: typeof DIRECTIONS[number], targetTick = this.state.tick + 1): boolean {
     const player = this.state.players.find((candidate) => candidate.id === playerId);
+    const queued = this.inputs.get(playerId);
     if (!player?.connected || player.eliminatedAtTick !== null
       || this.outcomeLocked()
-      || sequence <= player.acknowledgedInput || !Number.isSafeInteger(sequence)
+      || sequence <= (queued?.sequence ?? player.acknowledgedInput) || !Number.isSafeInteger(sequence)
+      || !Number.isSafeInteger(targetTick) || targetTick < 0
+      || targetTick > this.state.tick + SYNCHRONIZATION.maxPredictionTicks
+      || targetTick < (queued?.targetTick ?? 0)
       || !DIRECTIONS.includes(direction) || !['countdown', 'playing'].includes(this.state.phase)) return false;
-    player.acknowledgedInput = sequence;
-    player.movement.queued = direction;
+    const commands = queued?.commands ?? new Map<number, ScheduledInput>();
+    const effectiveTick = Math.max(this.state.tick + 1, targetTick);
+    commands.set(effectiveTick, { sequence, targetTick: effectiveTick, direction });
+    this.inputs.set(playerId, { sequence, targetTick, commands });
     return true;
+  }
+
+  /** Consumes the newest applicable intent once, before this completed tick's movement. */
+  private consumeInput(player: RacePlayer): void {
+    const queue = this.inputs.get(player.id);
+    if (!queue) return;
+    player.acknowledgedInput = applyScheduledDirection(player.movement, [...queue.commands.values()],
+      this.state.tick, player.acknowledgedInput);
+    for (const tick of queue.commands.keys()) {
+      if (tick <= this.state.tick) queue.commands.delete(tick);
+    }
   }
 
   /** Removes a disconnected participant from play while retaining their authoritative score. */
   disconnect(playerId: string): void {
+    this.inputs.delete(playerId);
     const player = this.state.players.find((candidate) => candidate.id === playerId);
     if (player) player.connected = false;
   }
@@ -86,6 +109,7 @@ export class DataRace {
     if (!['countdown', 'playing'].includes(this.state.phase)) return;
     const player = this.state.players.find((candidate) => candidate.id === playerId);
     if (player) {
+      this.inputs.delete(playerId);
       player.connected = false;
       this.eliminatePlayer(player);
     }
@@ -95,6 +119,7 @@ export class DataRace {
   abort(reason: string): void {
     if (this.state.phase === 'finished' || this.state.phase === 'aborted') return;
     this.state.phase = 'aborted';
+    this.inputs.clear();
     this.state.abortReason = reason;
     this.state.rankings = [];
   }
@@ -109,6 +134,7 @@ export class DataRace {
     }
     this.state.playTicks += 1;
     const outcomeLocked = this.outcomeLocked();
+    if (outcomeLocked) this.inputs.clear();
     for (const player of this.state.players) {
       if (player.eliminatedAtTick !== null) {
         player.deathMs = Math.max(0, player.deathMs - RACE.stepMs);
@@ -119,6 +145,7 @@ export class DataRace {
       player.portalBlinkMs = Math.max(0, (player.portalBlinkMs ?? 0) - RACE.stepMs);
       if (player.huntMs < 1e-6) { player.huntMs = 0; player.chain = 0; }
       if (!player.connected || outcomeLocked) continue;
+      this.consumeInput(player);
       move(this.activeMap, player.movement, RACE.playerSpeed * RACE.stepMs / 1000, true, undefined,
         () => { player.portalBlinkMs = PACKET_PORTAL_BLINK.durationMs; });
     }
@@ -219,6 +246,7 @@ export class DataRace {
     sampled = position(map, player.movement),
   ): void {
     if (player.eliminatedAtTick !== null) return;
+    this.inputs.delete(player.id);
     if (player.movement.to !== null) {
       const nearest = [player.movement.cell, player.movement.to].map((cell) => {
         const endpoint = map.cells[cell];
@@ -252,6 +280,7 @@ export class DataRace {
 
   /** Freezes play and assigns competition ranks across survivors and elimination cohorts. */
   private finish(): void {
+    this.inputs.clear();
     this.state.phase = 'finished';
     const survivors = this.state.players.filter((player) => player.eliminatedAtTick === null)
       .sort((a, b) => b.score - a.score || a.slot - b.slot);

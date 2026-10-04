@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { MultiplayerSynchronization } from '../game/simulation/MultiplayerSynchronization';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataRace } from '../game/simulation/DataRace';
@@ -27,7 +28,7 @@ function mount(developmentMultiplayer = false) {
   const sendDirection = vi.fn<(_direction: Direction) => number>(() => 1);
   const closeNextWall = vi.fn();
   const session = { developmentMultiplayer,
-    multiplayer: { connection, sendDirection, closeNextWall, getConnectionSnapshot: () => connection },
+    multiplayer: { synchronization: new MultiplayerSynchronization(), connection, sendDirection, closeNextWall, getConnectionSnapshot: () => connection },
     leaveMultiplayer: vi.fn() } as unknown as GameSession;
   const mounted = render(<MultiplayerViewport session={session} />);
   return { ...mounted, canvas: mounted.container.querySelector('canvas')!, sendDirection, closeNextWall };

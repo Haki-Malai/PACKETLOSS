@@ -414,12 +414,13 @@ export function MenuScreens({
             break;
         }
         case 'multiplayer-reconnect':
-            body = <p className="packet-copy">Your place is reserved for 30 seconds.</p>;
+            body = <p className="packet-copy" role="status">{s.multiplayer.message || 'Your place is reserved for 30 seconds.'}</p>;
             actions = (
                 <>
                     <MenuButton
                         action="reconnect"
                         variant="primary"
+                        disabled={s.multiplayer.joining || ['waiting', 'connecting'].includes(s.multiplayer.recovery.phase)}
                         onClick={() => void s.multiplayer.reconnect()}
                     >
                         Reconnect

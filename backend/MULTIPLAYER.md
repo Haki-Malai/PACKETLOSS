@@ -26,7 +26,7 @@ The `x-test-user` header is accepted only by explicitly test-configured applicat
 - Status: `{phase,activeRegion,instanceRunId,processGeneration,websocketUrl,protocolVersion,regions}`.
   Each region contains `{region,phase,ready,hostname,updatedAt}`. `updatedAt` is the
   time the API observed EC2 state. Phases are stopped, starting, ready, failed,
-  draining, or stopping. Readiness requires a fresh process heartbeat and the shared protocol version in `src/game/protocol/version.ts` (currently 2).
+  draining, or stopping. Readiness requires a fresh process heartbeat and the shared protocol version in `src/game/protocol/version.ts` (currently 6).
 - Capabilities: `{canStart}`. The configured immutable owner subject is never returned.
 - Start request: `{region:"eu"|"na"}`; response 202 `{phase,region,operationId}`.
   `operationId` is the new `instanceRunId`. Regional starts require both real EC2
@@ -131,8 +131,10 @@ pickup objects. Its `pickupSet` chooses the shorter of `{basis:"remaining",ids:[
 and `{basis:"removed",ids:[...]}`; the browser validates those IDs against the received
 map before rebuilding presentation state. Positions, scores, effects, elapsed steps,
 and pickup membership remain server-authored. Clients submit only sequenced direction
-intent tied to the current match ID. The server stops accepting new countdowns before
-the three-second countdown plus 180-second match can cross the fixed uptime deadline.
+intent tied to the current match ID and a target simulation tick. Snapshots carry
+authoritative movement permission and an increasing publication counter, including
+state changes that share a simulation tick. The server rejects match starts that
+could cross the configured uptime deadline.
 
 ## Full local development contract
 
@@ -185,3 +187,9 @@ Full DynamoDB transaction execution and Lambda emulator reloads require the expl
 local Docker smoke workflow in `docs/TESTING.md`; mocked SDK tests do not establish
 those integration outcomes. Remote IAM, API Gateway authorizer wiring, EC2 startup,
 DNS, TLS, and regional lifecycle behavior require reviewed deployed verification.
+
+## Protocol 6 release coordination
+
+Protocol 6 changes input timing and acknowledgement semantics. Inputs require an integer `targetTick`; snapshots require `movementEnabled` and a publication counter in the envelope. Arena generator version 3 and completed-result storage remain unchanged.
+
+Build the frontend, game service, account/control Lambdas, development clients, and release manifest from the same revision. Validate with Node 24 and `pnpm test:all`. For deployment, first drain admission and let active matches finish, then use the existing deployment runbook to publish the matching control/game/frontend artifacts and verify protocol-six readiness before reopening admission. Existing tabs must refresh; there is no dual-protocol fallback. Rollback requires the matching previous artifact set, with admission drained again. Deployment and remote drain/resume commands require a separately reviewed operational action.

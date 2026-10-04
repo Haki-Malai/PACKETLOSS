@@ -89,6 +89,7 @@ export interface RaceSnapshot {
   playTicks: number;
     shrinkStage: number;
   phase: 'countdown' | 'playing' | 'finished' | 'aborted';
+  movementEnabled: boolean;
   players: RacePlayer[];
   enemies: RaceEnemy[];
   pickups: Pickup[];
@@ -102,6 +103,20 @@ export interface PlayerIdentity {
     name: string;
     color?: string;
 }
+/** Direction intent is consumed before movement of targetTick, never on receipt. */
+export interface ScheduledInput {
+  sequence: number;
+  targetTick: number;
+  direction: Direction;
+}
+export const SYNCHRONIZATION = {
+  maxPredictionTicks: 24,
+  commandSlackTicks: 2,
+  interpolationTicks: 6,
+  historyTicks: 60,
+  heartbeatMs: 2000,
+  timeoutMs: 5000,
+} as const;
 export const RACE = {
   stepMs: MOVEMENT_STEP_MS,
   countdownTicks: 0,

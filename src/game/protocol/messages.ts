@@ -89,6 +89,7 @@ const raceState = {
     playTicks: integer,
     shrinkStage: z.number().int().min(0).max(20),
     phase: z.enum(['countdown', 'playing', 'finished', 'aborted']),
+    movementEnabled: z.boolean(),
     players: z.array(player).min(1).max(4),
     enemies: z
         .array(
@@ -165,7 +166,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start') }).strict(),
   z.object({ type: z.literal('development-close-wall'), matchId: identifier }).strict(),
     z
-        .object({ type: z.literal('input'), matchId: identifier, sequence: integer, direction })
+        .object({ type: z.literal('input'), matchId: identifier, sequence: integer, targetTick: integer, direction })
         .strict(),
   z.object({ type: z.literal('rematch') }).strict(),
   z.object({ type: z.literal('leave') }).strict(),
@@ -187,6 +188,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     z
         .object({
             type: z.literal('snapshot'),
+            publication: integer,
             snapshot: wireRaceSnapshotSchema,
             serverTimeMs: finite,
             instanceRunId: identifier,

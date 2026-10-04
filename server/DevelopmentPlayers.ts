@@ -302,7 +302,7 @@ export class DevelopmentPlayers {
         if (
             !snapshot ||
             !player.map ||
-            snapshot.phase !== 'playing' ||
+            !snapshot.movementEnabled ||
             now < player.nextInput ||
             now - player.snapshotAt > 1000 ||
             snapshot.playTicks * RACE.stepMs + now - player.snapshotAt >=
@@ -321,6 +321,7 @@ export class DevelopmentPlayers {
                 type: 'input',
                 matchId: snapshot.matchId,
                 sequence: ++player.sequence,
+                targetTick: snapshot.tick + Math.min(24, Math.floor((now - player.snapshotAt) / RACE.stepMs) + 3),
                 direction,
             });
     }

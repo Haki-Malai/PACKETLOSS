@@ -24,7 +24,7 @@ describe('multiplayer protocol validation', () => {
         };
     expect(parseClientMessage(JSON.stringify(authenticate))).toEqual(authenticate);
     expect(parseServerMessage(JSON.stringify(authenticated))).toEqual(authenticated);
-        for (const version of [1, 2, 3, 4]) {
+        for (const version of [1, 2, 3, 4, 5]) {
             expect(parseClientMessage(JSON.stringify({ ...authenticate, version }))).toBeNull();
             expect(parseServerMessage(JSON.stringify({ ...authenticated, version }))).toBeNull();
         }
@@ -68,7 +68,7 @@ describe('multiplayer protocol validation', () => {
     expect(snapshot.enemies).toEqual([]);
         const message = parseServerMessage(
             JSON.stringify({
-                type: 'snapshot',
+                type: 'snapshot', publication: 1,
                 snapshot: encodeRaceSnapshot(map, snapshot),
                 serverTimeMs: 1000,
                 instanceRunId: 'run',
@@ -93,7 +93,7 @@ describe('multiplayer protocol validation', () => {
         const snapshot = race.snapshot();
         const message = parseServerMessage(
             JSON.stringify({
-                type: 'snapshot',
+                type: 'snapshot', publication: 1,
                 snapshot: encodeRaceSnapshot(map, snapshot),
                 serverTimeMs: 1000,
                 instanceRunId: 'run',
@@ -106,7 +106,7 @@ describe('multiplayer protocol validation', () => {
     });
 
   it('accepts only sequenced direction input, rejecting forged authority and malformed payloads', () => {
-    const input = { type: 'input', matchId: 'match', sequence: 1, direction: 'left' };
+    const input = { type: 'input', matchId: 'match', sequence: 1, targetTick: 12, direction: 'left' };
     expect(parseClientMessage(JSON.stringify(input))).toEqual(input);
         for (const forged of [
             { ...input, score: 99 },
@@ -114,6 +114,9 @@ describe('multiplayer protocol validation', () => {
             { ...input, huntMs: 9999 },
             { ...input, sequence: 1.5 },
             { ...input, sequence: -1 },
+            { ...input, targetTick: -1 },
+            { ...input, targetTick: 1.5 },
+            { ...input, targetTick: undefined },
             { ...input, direction: 'teleport' },
         ]) {
       expect(parseClientMessage(JSON.stringify(forged))).toBeNull();

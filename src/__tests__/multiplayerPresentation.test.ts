@@ -1,3 +1,4 @@
+import { MultiplayerSynchronization } from '../game/simulation/MultiplayerSynchronization';
 import { describe, expect, it, vi } from 'vitest';
 import type { MultiplayerConnectionSnapshot } from '../game/infrastructure/adapters/MultiplayerSocketClient';
 import { DataRace } from '../game/simulation/DataRace';
@@ -36,7 +37,7 @@ function connection(tick = 10): MultiplayerConnectionSnapshot {
     while (race.tick < tick) race.step();
     const snapshot = race.snapshot();
     return {
-        phase: 'connected',
+        phase: 'connected', stalled: false, recoverable: true,
         playerId: snapshot.players[0].id,
         room: null,
         map,
@@ -112,12 +113,22 @@ function createHarness(
     const onError = vi.fn();
     const activeMap = latest.map;
     if (!activeMap) throw new Error('Expected a multiplayer map.');
+    const synchronization = new MultiplayerSynchronization();
+    let publication = 0;
+    let accepted: typeof latest.race = null;
     const session = new MultiplayerPresentationSession(
         {
             canvas: {} as HTMLCanvasElement,
             root,
             map: activeMap,
-            getConnectionSnapshot: () => latest,
+            synchronization,
+            getConnectionSnapshot: () => {
+                if (latest.race && latest.map && latest.race !== accepted) {
+                    synchronization.acceptSnapshot(latest.map, latest.race, latest.playerId, ++publication, now);
+                    accepted = latest.race;
+                }
+                return latest;
+            },
             isReducedMotion,
             onError,
         },
@@ -158,7 +169,7 @@ describe('multiplayer presentation lifecycle', () => {
         const harness = createHarness(() => Promise.resolve(), () => true);
         await harness.session.ready;
         const calls = harness.stage.sync.mock.calls;
-        expect(calls[calls.length - 1]?.[6]).toBe(true);
+        expect(calls[calls.length - 1]?.[3]).toBe(true);
         harness.session.dispose();
     });
 

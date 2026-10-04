@@ -384,7 +384,7 @@ describe('Battle Royale authority', () => {
   it('replays local movement with immediate reversal and cannot replay more than 400 ms', () => {
     const map = dataRaceFixture(), player = race().snapshot().players[0];
     player.movement = createMovement(0, 'right'); move(map, player.movement, 0.5);
-    const predicted = reconcileMovement(map, player, 100, 101, [{ sequence: 1, tick: 100, direction: 'left' }]);
+    const predicted = reconcileMovement(map, player, 100, 101, [{ sequence: 1, targetTick: 101, direction: 'left' }]);
     expect(position(map, predicted).x).toBeCloseTo(0.5 - 1 / 16);
     const capped = reconcileMovement(map, player, 100, 10000, []);
     expect(position(map, capped).x).toBeCloseTo(2);

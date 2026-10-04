@@ -72,6 +72,7 @@ export class RoomService {
   private controlHealthy = true;
   private lastActivity: number;
   private maximumTickDebtMs = 0;
+  private publication = 0;
 
   /** Supplies monotonic time and external persistence as injectable platform adapters. */
   constructor(private readonly options: RoomServiceOptions) {
@@ -155,7 +156,7 @@ export class RoomService {
         case 'input':
           this.pump();
           if (!room.race || room.race.matchId !== message.matchId) throw new Error('Input belongs to another match.');
-          if (!room.race.input(identity.playerId, message.sequence, message.direction)) throw new Error('Stale or inactive input.');
+          if (!room.race.input(identity.playerId, message.sequence, message.direction, message.targetTick)) throw new Error('Stale or inactive input.');
           return;
         case 'leave':
           this.remove(room, identity.playerId); send({ type: 'left' }); break;
@@ -392,7 +393,7 @@ export class RoomService {
     if (!room.race || !room.map) return;
     const snapshot = room.race.snapshot();
     if (snapshot.phase === 'finished' && room.saveState !== 'saved') return;
-    this.broadcast(room, { type: 'snapshot', snapshot: encodeRaceSnapshot(room.map, snapshot), serverTimeMs: this.options.epochNow(),
+    this.broadcast(room, { type: 'snapshot', publication: ++this.publication, snapshot: encodeRaceSnapshot(room.map, snapshot), serverTimeMs: this.options.epochNow(),
       instanceRunId: this.options.instanceRunId ?? 'local-run', processGeneration: this.options.processGeneration ?? 'local-process' });
     if (snapshot.phase !== 'playing') this.publishRoom(room);
   }

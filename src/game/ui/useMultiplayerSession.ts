@@ -10,6 +10,7 @@ import {
     type ConnectRoomRequest,
 } from '../infrastructure/adapters/MultiplayerSocketClient';
 import { useMultiplayerAvailability } from './useMultiplayerAvailability';
+import { MultiplayerRecovery, type RecoveryResult, type RecoveryState } from '../infrastructure/adapters/MultiplayerRecovery';
 import { PROTOCOL_VERSION } from '../protocol/version';
 
 const RESERVED_ROOM_KEY = 'packetloss.multiplayer.reserved-room';
@@ -77,19 +78,25 @@ export function useMultiplayerSession(
     const mounted = useRef(false);
     const joinGeneration = useRef(0);
     const accountId = profile?.accountId ?? null;
+    const [recoveryState, setRecoveryState] = useState<RecoveryState>({ phase: 'idle', attempt: 0 });
+    const [recovery] = useState(() => new MultiplayerRecovery(setRecoveryState));
+    const terminalAdmission = useRef(false);
+    const recoveryDeadline = useRef<number | null>(null);
+    const recoveryAttempt = useRef<(_signal: AbortSignal) => Promise<RecoveryResult>>(() => Promise.resolve('stop'));
 
     useEffect(() => {
         mounted.current = true;
         return () => {
             mounted.current = false;
             joinGeneration.current += 1;
-            socket.disconnect(false);
+            recovery.cancel();
+            socket.cancelPendingJoin();
         };
-    }, [socket]);
+    }, [socket, recovery, accountId]);
     useEffect(() => {
         const code = connection.room?.code ?? null;
         if (
-            code &&
+            connection.phase !== 'closed' && code &&
             accountId &&
             connection.instanceRunId &&
             connection.processGeneration
@@ -99,7 +106,8 @@ export function useMultiplayerSession(
                 accountId,
                 instanceRunId: connection.instanceRunId,
                 processGeneration: connection.processGeneration,
-                expiresAt: Date.now() + RESERVED_ROOM_STORAGE_MS,
+                expiresAt: connection.phase === 'connected' ? Date.now() + RESERVED_ROOM_STORAGE_MS
+                    : recoveryDeadline.current ?? Date.now() + 30_000,
             };
             setReservedRoom(room);
             storeReservedRoom(room);
@@ -138,16 +146,25 @@ export function useMultiplayerSession(
     }, [accountId, reservedRoom]);
 
     /** Acquires a ticket only after rechecking readiness, then authenticates the socket. */
-    async function enterRoom(operation: JoinOperation, roomCode?: string): Promise<boolean> {
+    async function enterRoom(operation: JoinOperation, roomCode?: string, signal?: AbortSignal): Promise<boolean> {
         if (!api || !profile || joining) {
             setMessage(profile ? 'Multiplayer is unavailable.' : 'Log in to play multiplayer.');
             return false;
         }
+        terminalAdmission.current = false;
         const generation = ++joinGeneration.current;
+        const cancel = () => {
+            if (joinGeneration.current !== generation) return;
+            joinGeneration.current += 1;
+            socket.cancelPendingJoin();
+            setJoining(false);
+        };
+        signal?.addEventListener('abort', cancel, { once: true });
         const isCurrent = () => mounted.current && joinGeneration.current === generation;
         setJoining(true);
         setMessage('');
         try {
+            if (signal?.aborted) { cancel(); return false; }
             const status = await api.getMultiplayerStatus();
             if (!isCurrent()) return false;
             const reconnectingDuringDrain =
@@ -160,6 +177,7 @@ export function useMultiplayerSession(
                 !status.processGeneration ||
                 status.protocolVersion !== PROTOCOL_VERSION
             ) {
+                terminalAdmission.current = status.protocolVersion !== null && status.protocolVersion !== PROTOCOL_VERSION;
                 setMessage(status.phase === 'starting' ? 'The server is still starting.' : 'The server is offline.');
                 return false;
             }
@@ -171,6 +189,7 @@ export function useMultiplayerSession(
             ) {
                 setReservedRoom(null);
                 storeReservedRoom(null);
+                terminalAdmission.current = true;
                 setMessage('The previous room reservation has expired.');
                 return false;
             }
@@ -186,6 +205,7 @@ export function useMultiplayerSession(
                 credential.websocketUrl !== status.websocketUrl ||
                 credential.processGeneration !== status.processGeneration
             ) {
+                terminalAdmission.current = true;
                 setMessage('The game server changed while joining. Recheck availability and try again.');
                 return false;
             }
@@ -201,16 +221,39 @@ export function useMultiplayerSession(
             return true;
         } catch (error) {
             if (isCurrent()) {
+                terminalAdmission.current = typeof error === 'object' && error !== null && 'status' in error
+                    && (error.status === 401 || error.status === 403);
                 setMessage(error instanceof Error ? error.message : 'Unable to join multiplayer.');
             }
             return false;
         } finally {
+            signal?.removeEventListener('abort', cancel);
             if (isCurrent()) setJoining(false);
         }
     }
 
+    recoveryAttempt.current = async (signal) => {
+        const code = socket.getSnapshot().room?.code ?? reservedRoom?.code;
+        if (!code || !await enterRoom('reconnect', code, signal)) {
+            return terminalAdmission.current || !code ? 'stop' : 'retry';
+        }
+        return waitForAdmission(socket, signal);
+    };
+
+    useEffect(() => {
+        if (!['disconnected', 'failed'].includes(connection.phase)) return;
+        if (!connection.recoverable || !accountId || !(connection.room?.code ?? reservedRoom?.code)) return;
+        recoveryDeadline.current ??= Date.now() + 30_000;
+        recovery.start(recoveryDeadline.current, (signal) => recoveryAttempt.current(signal));
+    }, [connection.phase, connection.recoverable, connection.room, accountId, reservedRoom, recovery]);
+    useEffect(() => {
+        if (isAdmitted(connection)) recoveryDeadline.current = null;
+    }, [connection]);
+
     /** Invalidates pending HTTP and socket admission while retaining reconnectable room metadata. */
     function cancelPendingJoin(): void {
+        recovery.cancel();
+        recoveryDeadline.current = null;
         joinGeneration.current += 1;
         setJoining(false);
         setMessage('');
@@ -221,6 +264,8 @@ export function useMultiplayerSession(
         availability,
         connection,
         getConnectionSnapshot: socket.getSnapshot,
+        synchronization: socket.synchronization,
+        recovery: recoveryState,
         region,
         setRegion,
         joining,
@@ -228,10 +273,13 @@ export function useMultiplayerSession(
             reservedRoom !== null &&
             accountId !== null &&
             reservedRoom.accountId === accountId,
-        message: connection.message || message,
+        message: recoveryState.phase === 'waiting' || recoveryState.phase === 'connecting'
+            ? `Reconnecting (attempt ${recoveryState.attempt} of 5)…`
+            : recoveryState.phase === 'manual' ? 'Automatic reconnection stopped. Retry manually.' : connection.message || message,
         createRoom: () => enterRoom('create'),
         joinRoom: (roomCode: string) => enterRoom('join', roomCode),
         reconnect: () => {
+            recovery.cancel();
             const code = connection.room?.code ?? reservedRoom?.code;
             return code ? enterRoom('reconnect', code) : Promise.resolve(false);
         },
@@ -243,6 +291,8 @@ export function useMultiplayerSession(
             socket.sendDirection(direction),
         cancelPendingJoin,
         leave: () => {
+            recovery.cancel();
+            recoveryDeadline.current = null;
             joinGeneration.current += 1;
             setJoining(false);
             setReservedRoom(null);
@@ -250,4 +300,30 @@ export function useMultiplayerSession(
             socket.leave();
         },
     };
+}
+
+/** Requires authoritative admission, not merely an open/authenticated WebSocket. */
+function isAdmitted(state: ReturnType<MultiplayerSocketClient['getSnapshot']>): boolean {
+    return state.phase === 'connected' && state.room !== null && (state.room.phase === 'lobby'
+        || state.map !== null && state.race !== null && state.race.matchId === state.room.matchId
+            && state.race.mapId === state.map.id);
+}
+
+/** Waits for room state and an active match snapshot, releasing subscription on every exit. */
+function waitForAdmission(socket: MultiplayerSocketClient, signal: AbortSignal): Promise<RecoveryResult> {
+    return new Promise((resolve) => {
+        const finish = (result: RecoveryResult) => {
+            unsubscribe(); signal.removeEventListener('abort', cancel); resolve(result);
+        };
+        const cancel = () => { socket.cancelPendingJoin(); finish('retry'); };
+        const inspect = () => {
+            const state = socket.getSnapshot();
+            if (isAdmitted(state)) finish('connected');
+            else if (state.phase === 'closed' || !state.recoverable) finish('stop');
+            else if (state.phase === 'disconnected' || state.phase === 'failed') finish('retry');
+        };
+        const unsubscribe = socket.subscribe(inspect);
+        signal.addEventListener('abort', cancel, { once: true });
+        if (signal.aborted) cancel(); else inspect();
+    });
 }

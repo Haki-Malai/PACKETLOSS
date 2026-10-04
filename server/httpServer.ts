@@ -4,8 +4,9 @@ import { readFileSync } from 'node:fs';
 import { freemem } from 'node:os';
 import express from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
-import { parseClientMessage, PROTOCOL_VERSION, type ServerMessage } from '../src/game/protocol/messages';
-import { RACE } from '../src/game/simulation/types';
+import { parseClientMessage, PROTOCOL_VERSION } from '../src/game/protocol/messages';
+import { RACE, SYNCHRONIZATION } from '../src/game/simulation/types';
+import { SnapshotSender } from './SnapshotSender';
 import { RoomService, type AuthenticatedPlayer, type TicketConsumer } from './RoomService';
 
 export interface GameServerOptions {
@@ -31,13 +32,14 @@ export function createGameServer(options: GameServerOptions) {
   const simulationWorkSamples: number[] = [];
   let simulationWorkCursor = 0;
   let maximumSimulationWorkMs = 0;
+  let coalescedSnapshots = 0;
   /** Returns local-only operational and simulation benchmark measurements. */
   const diagnostics = () => {
     const ordered = [...simulationWorkSamples].sort((a, b) => a - b);
     const percentile = ordered.length ? ordered[Math.max(0, Math.ceil(ordered.length * 0.99) - 1)] : 0;
     const memory = process.memoryUsage();
     return { ...options.rooms.status(), simulationWorkP99Ms: percentile,
-      maximumSimulationWorkMs, simulationWorkSamples: ordered.length,
+      maximumSimulationWorkMs, coalescedSnapshots, simulationWorkSamples: ordered.length,
       residentSetBytes: memory.rss, heapUsedBytes: memory.heapUsed,
       memoryAvailableBytes: availableMemoryBytes(),
       uptimeRemainingMs: Math.max(0, maximumUptimeMs - (now() - started)) };
@@ -82,21 +84,18 @@ export function createGameServer(options: GameServerOptions) {
     const peerId = randomUUID();
     let identity: AuthenticatedPlayer | null = null;
     let authenticating = false;
-    let alive = true;
+    let lastPong = now();
     let budget = 90;
     let lastRefill = now();
     const authTimeout = setTimeout(() => socket.close(4401, 'Authentication timeout'), 5000);
-    /** Sends bounded server messages; a slow peer cannot accumulate unlimited snapshots. */
-    const send = (message: ServerMessage): void => {
-      if (socket.readyState !== WebSocket.OPEN) return;
-      if (socket.bufferedAmount > 512 * 1024) { socket.close(4408, 'Client too slow'); return; }
-      socket.send(JSON.stringify(message));
-    };
+    const sender = new SnapshotSender(socket, now, () => { coalescedSnapshots += 1; });
+    const send = sender.send.bind(sender);
     const heartbeat = setInterval(() => {
-      if (!alive) { socket.terminate(); return; }
-      alive = false; socket.ping();
-    }, 15000);
-    socket.on('pong', () => { alive = true; });
+      sender.check();
+      if (now() - lastPong >= SYNCHRONIZATION.timeoutMs) { socket.terminate(); return; }
+      socket.ping();
+    }, SYNCHRONIZATION.heartbeatMs);
+    socket.on('pong', () => { lastPong = now(); });
     socket.on('message', (data, binary) => {
       const current = now(); budget = Math.min(90, budget + (current - lastRefill) * 60 / 1000); lastRefill = current;
       if (binary || budget < 1) { socket.close(4408, 'Invalid frame or excessive input'); return; }
@@ -125,7 +124,7 @@ export function createGameServer(options: GameServerOptions) {
     });
     socket.on('error', () => { socket.terminate(); });
     socket.on('close', () => {
-      clearTimeout(authTimeout); clearInterval(heartbeat);
+      clearTimeout(authTimeout); clearInterval(heartbeat); sender.dispose();
       if (identity) options.rooms.disconnect(peerId, identity.playerId);
       if (identity && authenticatedPeers.get(identity.playerId) === socket) authenticatedPeers.delete(identity.playerId);
     });

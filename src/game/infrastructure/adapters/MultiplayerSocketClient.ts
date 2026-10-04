@@ -5,7 +5,8 @@ import {
     type ClientMessage,
     type RoomState,
 } from '../../protocol/messages';
-import { RACE, type RaceMap, type RaceSnapshot } from '../../simulation/types';
+import { RACE, SYNCHRONIZATION, type RaceMap, type RaceSnapshot } from '../../simulation/types';
+import { MultiplayerSynchronization } from '../../simulation/MultiplayerSynchronization';
 import type { JoinCredential, JoinOperation } from './MultiplayerClient';
 
 export type MultiplayerConnectionPhase =
@@ -31,6 +32,8 @@ export interface MultiplayerConnectionSnapshot {
     processGeneration: string | null;
     warning: { reason: 'shutdown' | 'deployment'; remainingMs: number } | null;
     message: string;
+    stalled: boolean;
+    recoverable: boolean;
 }
 
 interface WebSocketLike {
@@ -65,18 +68,22 @@ const INITIAL_SNAPSHOT: MultiplayerConnectionSnapshot = {
     processGeneration: null,
     warning: null,
     message: '',
+    stalled: false,
+    recoverable: true,
 };
 const SOCKET_OPEN = 1;
 
 /** Owns one authenticated browser WebSocket and validates every inbound message. */
 export class MultiplayerSocketClient {
+    readonly synchronization = new MultiplayerSynchronization();
     private socket: WebSocketLike | null = null;
     private state: MultiplayerConnectionSnapshot = INITIAL_SNAPSHOT;
     private readonly listeners = new Set<() => void>();
     private uiState: MultiplayerConnectionSnapshot = INITIAL_SNAPSHOT;
     private readonly uiListeners = new Set<() => void>();
     private heartbeat: ReturnType<typeof globalThis.setInterval> | null = null;
-    private inputSequence = 0;
+    private lastMessageAt = 0;
+    private stallTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
     private requestedRoom: Omit<ConnectRoomRequest, 'credential'> | null = null;
 
     constructor(
@@ -107,7 +114,8 @@ export class MultiplayerSocketClient {
             expectedInstanceRunId: request.expectedInstanceRunId,
             expectedProcessGeneration: request.expectedProcessGeneration,
         };
-        this.inputSequence = 0;
+        this.synchronization.reset();
+        this.lastMessageAt = performance.now();
         this.publish({ ...INITIAL_SNAPSHOT, phase: 'connecting' });
         const socket = this.createSocket(request.credential.websocketUrl);
         this.socket = socket;
@@ -130,6 +138,7 @@ export class MultiplayerSocketClient {
                 this.fail('The server sent an invalid message.');
                 return;
             }
+            this.lastMessageAt = performance.now();
             switch (message.type) {
                 case 'authenticated':
                     if (
@@ -181,22 +190,16 @@ export class MultiplayerSocketClient {
                             this.fail('The server sent a snapshot for an unknown map.');
                             return;
                         }
-                        const acknowledged = snapshot.players.find(
-                            (player) => player.id === this.state.playerId
-                        )?.acknowledgedInput;
-                        if (acknowledged !== undefined) {
-                            this.inputSequence = Math.max(this.inputSequence, acknowledged);
-                        }
-                        const history =
-                            this.state.race?.matchId === snapshot.matchId
-                                && this.state.race.shrinkStage === snapshot.shrinkStage
-                                ? [...this.state.raceHistory, snapshot].slice(-8)
-                                : [snapshot];
+                        const receivedAtMs = performance.now();
+                        if (!this.state.map || !this.synchronization.acceptSnapshot(this.state.map, snapshot,
+                            this.state.playerId, message.publication, receivedAtMs)) return;
+                        this.scheduleStallCheck();
                     this.publish({
                         ...this.state,
                         race: snapshot,
-                        raceHistory: history,
-                        receivedAtMs: performance.now(),
+                        raceHistory: this.synchronization.history,
+                        receivedAtMs,
+                        stalled: false,
                         serverTimeMs: message.serverTimeMs,
                     });
                     break;
@@ -211,10 +214,11 @@ export class MultiplayerSocketClient {
                     } else this.publish({ ...this.state, message: message.message });
                     break;
                 case 'pong':
+                    this.synchronization.observeRoundTrip(performance.now() - message.sentAt);
                     this.publish({
                         ...this.state,
                         serverTimeMs: message.serverTimeMs,
-                        latencyMs: Math.max(0, performance.now() - message.sentAt),
+                        latencyMs: this.synchronization.latencyMs,
                     });
                     break;
                 case 'left':
@@ -223,14 +227,15 @@ export class MultiplayerSocketClient {
             }
         };
         socket.onerror = () => {
-            if (this.socket === socket) this.fail('The multiplayer connection failed.');
+            if (this.socket === socket) this.fail('The multiplayer connection failed.', true);
         };
-        socket.onclose = () => {
+        socket.onclose = (event) => {
             if (this.socket !== socket) return;
             this.stopHeartbeat();
             this.socket = null;
             if (this.state.phase !== 'failed' && this.state.phase !== 'closed') {
-                this.publish({ ...this.state, phase: 'disconnected', message: 'Connection lost.' });
+                this.publish({ ...this.state, phase: 'disconnected',
+                    recoverable: ![4400, 4401].includes(event.code), message: event.code === 4401 ? 'Authentication failed.' : 'Connection lost.' });
             }
         };
     }
@@ -255,16 +260,11 @@ export class MultiplayerSocketClient {
         this.send({ type: 'rematch' });
     }
 
-    sendDirection(direction: 'up' | 'right' | 'down' | 'left'): number {
-        const matchId = this.state.race?.matchId;
-        const localPlayer = this.state.race?.players.find(
-            (player) => player.id === this.state.playerId
-        );
-        if (!matchId || this.state.race?.phase === 'finished'
-            || localPlayer?.eliminatedAtTick !== null) return this.inputSequence;
-        this.inputSequence += 1;
-        this.send({ type: 'input', matchId, sequence: this.inputSequence, direction });
-        return this.inputSequence;
+    /** Commits input and prediction together, or reports that no command was sent. */
+    sendDirection(direction: 'up' | 'right' | 'down' | 'left'): number | null {
+        if (this.state.phase !== 'connected') return null;
+        return this.synchronization.submitDirection(direction, performance.now(),
+            (input) => this.send({ type: 'input', ...input }));
     }
 
     leave(): void {
@@ -275,7 +275,7 @@ export class MultiplayerSocketClient {
     /** Cancels an in-flight admission without discarding a recoverable room reservation. */
     cancelPendingJoin(): void {
         this.disconnect(false);
-        this.inputSequence = 0;
+        this.synchronization.reset();
         this.publish(INITIAL_SNAPSHOT);
     }
 
@@ -294,9 +294,11 @@ export class MultiplayerSocketClient {
         if (closed) this.publish({ ...INITIAL_SNAPSHOT, phase: 'closed' });
     }
 
-    private send(message: ClientMessage): void {
-        if (!this.socket || this.socket.readyState !== SOCKET_OPEN) return;
-        this.socket.send(JSON.stringify(message));
+    /** Returns success only when this connection actually accepts the message. */
+    private send(message: ClientMessage): boolean {
+        if (!this.socket || this.socket.readyState !== SOCKET_OPEN) return false;
+        try { this.socket.send(JSON.stringify(message)); return true; }
+        catch { this.fail('The multiplayer connection failed.', true); return false; }
     }
 
     /** Measures latency immediately for prediction, then keeps the connection alive. */
@@ -304,17 +306,38 @@ export class MultiplayerSocketClient {
         this.stopHeartbeat();
         this.send({ type: 'ping', sentAt: performance.now() });
         this.heartbeat = globalThis.setInterval(() => {
+            const now = performance.now();
+            const requiredAt = this.state.race?.phase === 'playing'
+                ? this.state.receivedAtMs ?? this.lastMessageAt : this.lastMessageAt;
+            if (now - requiredAt >= SYNCHRONIZATION.timeoutMs) {
+                this.fail('Connection timed out.', true);
+                return;
+            }
             this.send({ type: 'ping', sentAt: performance.now() });
-        }, 10_000);
+        }, SYNCHRONIZATION.heartbeatMs);
+    }
+
+    /** Publishes one stall transition without waking React on every movement frame. */
+    private scheduleStallCheck(): void {
+        if (this.stallTimer !== null) globalThis.clearTimeout(this.stallTimer);
+        this.stallTimer = globalThis.setTimeout(() => {
+            this.stallTimer = null;
+            if (this.state.phase === 'connected' && this.state.race?.phase === 'playing') {
+                this.publish({ ...this.state, stalled: true });
+            }
+        }, SYNCHRONIZATION.maxPredictionTicks * RACE.stepMs);
     }
 
     private stopHeartbeat(): void {
         if (this.heartbeat !== null) globalThis.clearInterval(this.heartbeat);
         this.heartbeat = null;
+        if (this.stallTimer !== null) globalThis.clearTimeout(this.stallTimer);
+        this.stallTimer = null;
     }
 
-    private fail(message: string): void {
-        this.publish({ ...this.state, phase: 'failed', message });
+    /** Closes failed transport while preserving whether automatic admission is still safe. */
+    private fail(message: string, recoverable = false): void {
+        this.publish({ ...this.state, phase: 'failed', message, recoverable });
         this.disconnect(false);
     }
 
@@ -334,6 +357,7 @@ function sameUiSnapshot(
 ): boolean {
     return (
         current.phase === next.phase &&
+        current.stalled === next.stalled && current.recoverable === next.recoverable &&
         current.playerId === next.playerId &&
         current.map === next.map &&
         current.room === next.room &&
