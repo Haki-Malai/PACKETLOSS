@@ -2,9 +2,11 @@ import { CollisionTile, CollisionTiles } from '../world/CollisionGrid';
 import { Direction, DIRECTIONS, DIRECTION_VECTORS, MovementActor, OPPOSITE_DIRECTION } from '../valueObjects/Direction';
 import { MovementProgress } from '../valueObjects/MovementProgress';
 import { TilePosition } from '../valueObjects/TilePosition';
+import { TILE_SIZE } from '../../../config/constants';
 
-export const DEFAULT_TILE_SIZE = 16;
-export const MOVEMENT_STEP_MS = 1000 / 60;
+export const DEFAULT_TILE_SIZE = TILE_SIZE;
+export const MOVEMENT_STEPS_PER_SECOND = 60;
+export const MOVEMENT_STEP_MS = 1000 / MOVEMENT_STEPS_PER_SECOND;
 
 export interface BufferedEntity {
   moved: MovementProgress;
@@ -32,6 +34,14 @@ export type CanMoveFn = (
   _tileSize?: number,
   _actor?: MovementActor,
 ) => boolean;
+
+/** Commits immediate reversals while buffering perpendicular turns until an open tile center. */
+export function resolveBufferedDirection(current: Direction, queued: Direction, centered: boolean,
+  canLeave: (_direction: Direction) => boolean): Direction {
+  if (queued === current) return current;
+  if (!centered) return queued === OPPOSITE_DIRECTION[current] ? queued : current;
+  return canLeave(queued) ? queued : current;
+}
 
 /** Checks whether an actor may continue its corridor or leave its current tile center. */
 export function canMove(
@@ -99,25 +109,9 @@ export function applyBufferedDirection(
   tileSize: number = DEFAULT_TILE_SIZE,
   canMoveFn: CanMoveFn = canMove,
 ): Direction {
-  const { current, next } = entity.direction;
-  if (next === current) {
-    return current;
-  }
-
-  if (entity.moved.x !== 0 || entity.moved.y !== 0) {
-    if (next === OPPOSITE_DIRECTION[current]) entity.direction.current = next;
-    return entity.direction.current;
-  }
-
-  if (canMoveFn(next, entity.moved.y, entity.moved.x, collisionTiles, tileSize, 'packet')) {
-    entity.direction.current = next;
-    if (next === 'left' || next === 'right') {
-      entity.moved.x = 0;
-    } else {
-      entity.moved.y = 0;
-    }
-  }
-
+  entity.direction.current = resolveBufferedDirection(entity.direction.current, entity.direction.next,
+    entity.moved.x === 0 && entity.moved.y === 0,
+    (direction) => canMoveFn(direction, entity.moved.y, entity.moved.x, collisionTiles, tileSize, 'packet'));
   return entity.direction.current;
 }
 

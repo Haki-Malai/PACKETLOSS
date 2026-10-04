@@ -6,7 +6,16 @@ import type { RunMode } from '../app/contracts';
 import type { LevelClearCheckpoint, PacketGame, RunResult, RuntimeState } from '../app/contracts';
 import type { MapVariant } from '../app/mapRuntimeConfig';
 import type { PreloadedGameResources } from '../app/preloadGameResources';
+import {
+    createAccountClient,
+    type AccountApi,
+    type SignupDetails,
+} from '../infrastructure/adapters/AccountClient';
 import { LocalProfileStore } from '../infrastructure/adapters/LocalProfileStore';
+import {
+    isMultiplayerApi,
+    type MultiplayerApi,
+} from '../infrastructure/adapters/MultiplayerClient';
 import { EMPTY_DEBUG, type DebugSnapshot } from '../shared/events/DebugSnapshot';
 import {
     getTutorialLesson,
@@ -15,9 +24,23 @@ import {
     type TutorialSnapshot,
 } from '../tutorial/TutorialLesson';
 import { createDebugStore } from './debugStore';
+import { useAccountSession } from './useAccountSession';
+import { getDefaultGameStateStore, type GameStateStore } from '../../state/gameState';
+import { useMultiplayerSession } from './useMultiplayerSession';
 
 export type Screen =
+    | 'account'
+    | 'signup'
+    | 'confirm-account'
+    | 'login'
+    | 'recover'
     | 'title'
+    | 'multiplayer'
+    | 'multiplayer-start'
+    | 'multiplayer-room'
+    | 'multiplayer-playing'
+    | 'multiplayer-result'
+    | 'multiplayer-reconnect'
     | 'mode'
     | 'loading'
     | 'playing'
@@ -34,6 +57,8 @@ export type Screen =
 export interface GameShellOptions {
     mapVariant: MapVariant;
     store?: LocalProfileStore;
+    accountClient?: AccountApi | null;
+    multiplayerClient?: MultiplayerApi | null;
     createGame?: (_options: CreatePacketGameOptions) => PacketGame;
     preloadedResources?: PreloadedGameResources;
 }
@@ -58,6 +83,8 @@ interface ShellState {
     focusTarget: string | null;
     navigation: number;
     runMode: RunMode;
+    accountReturnScreen: 'account' | 'title' | 'result';
+    gameState: GameStateStore;
 }
 
 /**
@@ -70,9 +97,13 @@ interface ShellState {
 export function useGameSession(options: GameShellOptions) {
     const { isDev } = useEnvironment();
     const [store] = useState(() => options.store ?? new LocalProfileStore());
+    const [accountClient] = useState(() =>
+        options.accountClient === undefined ? createAccountClient() : options.accountClient
+    );
+    const account = useAccountSession(accountClient, store);
     const [debug] = useState(() => (IS_DEV && isDev ? createDebugStore() : null));
     const [state, setState] = useState<ShellState>({
-        screen: 'title',
+        screen: accountClient ? 'account' : 'title',
         parentScreen: 'title',
         confirmation: null,
         hasGame: false,
@@ -86,10 +117,23 @@ export function useGameSession(options: GameShellOptions) {
         focusTarget: null,
         navigation: 0,
         runMode: 'classic',
+        accountReturnScreen: 'account',
+        gameState: getDefaultGameStateStore(),
     });
     // Runtime callbacks and repeated clicks must see transitions before React commits them.
     const current = useRef(state);
     const lifetime = useRef({ active: false, generation: 0, game: null as PacketGame | null });
+    const multiplayerClient =
+        options.multiplayerClient === undefined
+            ? isMultiplayerApi(accountClient)
+                ? accountClient
+                : null
+            : options.multiplayerClient;
+    const multiplayer = useMultiplayerSession(
+        multiplayerClient,
+        account.state.profile,
+        ['title', 'multiplayer', 'multiplayer-start'].includes(state.screen)
+    );
 
     useEffect(() => {
         const owner = lifetime.current;
@@ -102,6 +146,57 @@ export function useGameSession(options: GameShellOptions) {
             debug?.publish(EMPTY_DEBUG);
         };
     }, [debug]);
+
+    useEffect(() => {
+        if (
+            accountClient &&
+            !account.state.checking &&
+            account.state.profile &&
+            current.current.screen === 'account'
+        ) {
+            show('title');
+        }
+        // `show` operates on refs and intentionally does not need to restart this effect.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [accountClient, account.state.checking, account.state.profile]);
+
+    useEffect(() => {
+        const race = multiplayer.connection.race;
+        const room = multiplayer.connection.room;
+        const view = current.current.screen;
+        if (!view.startsWith('multiplayer')) return;
+        if (
+            multiplayer.connection.phase === 'closed' &&
+            [
+                'multiplayer-room',
+                'multiplayer-playing',
+                'multiplayer-result',
+                'multiplayer-reconnect',
+            ].includes(view)
+        ) {
+            show('title');
+        } else if (
+            ['disconnected', 'failed'].includes(multiplayer.connection.phase) &&
+            room &&
+            ['multiplayer-room', 'multiplayer-playing', 'multiplayer-result'].includes(view)
+        ) {
+            show('multiplayer-reconnect');
+        } else if (room?.phase === 'saving') {
+            if (view !== 'multiplayer-result') show('multiplayer-result');
+        } else if (race?.phase === 'countdown' || race?.phase === 'playing') {
+            if (view !== 'multiplayer-playing') show('multiplayer-playing');
+        } else if (race?.phase === 'finished' || race?.phase === 'aborted') {
+            if (view !== 'multiplayer-result') show('multiplayer-result');
+        } else if (room?.phase === 'lobby' && view !== 'multiplayer-room') {
+            show('multiplayer-room');
+        }
+        // `show` operates on refs and intentionally does not need to restart this effect.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        multiplayer.connection.phase,
+        multiplayer.connection.race,
+        multiplayer.connection.room,
+    ]);
 
     /** Applies state immediately for runtime callbacks, then schedules React's update if active. */
     function update(patch: Partial<ShellState>) {
@@ -166,15 +261,27 @@ export function useGameSession(options: GameShellOptions) {
             if (view.result) return;
             const mode = runtime.result.mode ?? view.runMode;
             const recordMap = mode === 'endless' ? 'default' : options.mapVariant;
-            const best = store.getTopRecords(recordMap, mode)[0];
-            store.saveRun({
+            const records = account.state.profile ? account.state.records : store.getRecords();
+            const best = records
+                .filter(
+                    (candidate) =>
+                        candidate.map === recordMap && (candidate.mode ?? 'classic') === mode
+                )
+                .sort(
+                    (left, right) =>
+                        right.score - left.score ||
+                        Date.parse(right.completedAt) - Date.parse(left.completedAt)
+                )[0];
+            const record = {
                 ...runtime.result,
                 id,
                 nickname,
                 map: recordMap,
                 mode,
                 completedAt: new Date().toISOString(),
-            });
+            };
+            store.saveRun(record);
+            void account.saveRecords([record]);
             show('result', null, {
                 result: runtime.result,
                 levelClear: null,
@@ -200,12 +307,13 @@ export function useGameSession(options: GameShellOptions) {
     function startRun(tutorialLesson?: TutorialLessonId, mode: RunMode = 'classic') {
         const owner = lifetime.current;
         if (!owner.active || current.current.screen === 'loading') return;
+        multiplayer.cancelPendingJoin();
         disposeRun();
         const generation = owner.generation;
         const id =
             globalThis.crypto?.randomUUID?.() ??
             `${Date.now()}-${generation}-${Math.random().toString(36).slice(2)}`;
-        const nickname = store.getNickname();
+        const nickname = account.state.profile?.nickname ?? store.getNickname();
         const tutorial: TutorialSnapshot | null = tutorialLesson
             ? {
                   lesson: tutorialLesson,
@@ -261,7 +369,7 @@ export function useGameSession(options: GameShellOptions) {
             update({ hasGame: true });
             await game.start();
             if (!valid()) return;
-            update({ ready: true });
+            update({ ready: true, gameState: game.getGameStateStore?.() ?? current.current.gameState });
             if (current.current.screen === 'loading') show(tutorialLesson ? 'tutorial' : 'playing');
         }
         void initialize().catch((error: unknown) => {
@@ -284,6 +392,7 @@ export function useGameSession(options: GameShellOptions) {
      * @param focusTarget - Menu CSS selector to focus, or null to focus the title panel.
      */
     function mainMenu(focusTarget: string | null = null) {
+        multiplayer.cancelPendingJoin();
         disposeRun();
         show('title', focusTarget, {
             hasGame: false,
@@ -345,6 +454,7 @@ export function useGameSession(options: GameShellOptions) {
      * @param screen - Submenu to display.
      */
     function submenu(screen: 'settings' | 'help' | 'profile' | 'mode') {
+        if (screen === 'mode') multiplayer.cancelPendingJoin();
         lifetime.current.game?.pause();
         show(screen, null, {
             parentScreen: lifetime.current.game ? 'paused' : 'title',
@@ -354,11 +464,44 @@ export function useGameSession(options: GameShellOptions) {
     /** Returns from a submenu to its parent panel or cancels a confirmation. */
     function back() {
         const view = current.current;
-        if (view.screen === 'confirm' && view.confirmation) {
+        if (['multiplayer', 'multiplayer-start'].includes(view.screen)) {
+            multiplayer.cancelPendingJoin();
+            show('title');
+        } else if (view.screen === 'confirm' && view.confirmation) {
             show(view.confirmation.parent, `[data-action="${view.confirmation.returnAction}"]`, {
                 confirmation: null,
             });
+        } else if (['signup', 'confirm-account', 'login', 'recover'].includes(view.screen)) {
+            show(view.accountReturnScreen);
         } else show(view.parentScreen);
+    }
+
+    /** Opens an account form and remembers the menu that should receive Back or success. */
+    function openAccount(
+        screen: 'signup' | 'confirm-account' | 'login' | 'recover',
+        returnScreen: 'account' | 'title' | 'result' = 'title'
+    ) {
+        show(screen, null, { accountReturnScreen: returnScreen });
+    }
+
+    /** Creates an account and advances to email confirmation on success. */
+    async function signup(details: SignupDetails): Promise<void> {
+        if (await account.signup(details)) show('confirm-account');
+    }
+
+    /** Confirms a new account and advances to login while preserving its return screen. */
+    async function confirmAccount(email: string, code: string): Promise<void> {
+        if (await account.confirmSignup(email, code)) show('login');
+    }
+
+    /** Logs in and returns to the menu from which the form was opened. */
+    async function login(email: string, password: string): Promise<void> {
+        if (await account.login(email, password)) show(current.current.accountReturnScreen);
+    }
+
+    /** Applies a recovered password and returns to login. */
+    async function resetPassword(email: string, code: string, password: string): Promise<void> {
+        if (await account.resetPassword(email, code, password)) show('login');
     }
 
     /**
@@ -389,15 +532,49 @@ export function useGameSession(options: GameShellOptions) {
     return {
         state,
         store,
+        account,
+        multiplayer,
         debug,
         mapVariant: options.mapVariant,
         startRun,
+        /** Opens multiplayer without starting or pausing a remote server. */
+        openMultiplayer: () => show('multiplayer'),
+        /** Opens the owner-only regional startup control. */
+        openMultiplayerStart: () => show('multiplayer-start'),
+        /** Starts a reserved-room reconnect from a screen that accepts multiplayer routing. */
+        reconnectMultiplayer: () => {
+            show('multiplayer-reconnect');
+            void multiplayer.reconnect();
+        },
+        /** Leaves the current room and returns to local menu flows. */
+        leaveMultiplayer: () => {
+            multiplayer.leave();
+            mainMenu('[data-action="multiplayer"]');
+        },
         mainMenu,
         resume,
         continueLevel,
         leaveResult,
         claimPause,
         submenu,
+        openAccount,
+        signup,
+        confirmAccount,
+        /** Enters multiplayer with a fresh local guest identity. */
+        playAsGuest: async (nickname: string) => {
+            if (await account.guest(nickname)) show('multiplayer');
+        },
+        login,
+        resetPassword,
+        /** Leaves the initial account prompt and continues with local play. */
+        skipAccount: () => show('title'),
+        /** Ends the account session while preserving local game access. */
+        logout: async () => {
+            multiplayer.leave();
+            const pending = account.logout();
+            show('title');
+            await pending;
+        },
         back,
         confirm,
         nextLesson,
@@ -415,8 +592,15 @@ export function useGameSession(options: GameShellOptions) {
         refresh: (focusTarget: string | null = null) => show(current.current.screen, focusTarget),
         /** Clears saved run records and refreshes the profile screen. */
         clearRecords: () => {
-            store.clearRecords();
+            if (!account.state.profile) {
+                store.clearRecords();
+                show('profile');
+                return;
+            }
             show('profile');
+            void account.clearRecords().then((cleared) => {
+                if (!cleared) show('profile', '[data-action="clear-records"]');
+            });
         },
         /** Consumes the pending confirmation before invoking it so it cannot be accepted twice. */
         confirmAction: () => {

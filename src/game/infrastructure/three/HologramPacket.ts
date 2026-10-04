@@ -4,6 +4,7 @@ import {
   PlaneGeometry, Quaternion, Vector3,
 } from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { resolvePacketScoreTier, type PacketScoreTier } from './PacketScoreEffects';
 import { StateTransition } from './StateTransition';
 
 interface FloatingPiece {
@@ -24,6 +25,11 @@ const GOLD_COLOR = new Color(GOLD);
 const PICKUP_RIM_COLOR = new Color(0xb8f9ff);
 const HUNTER_RIM_COLOR = new Color(0xfff1ba);
 
+export interface PacketAppearance {
+  color: string;
+  character: 'antenna' | 'goggles' | 'crest' | 'headphones';
+}
+
 /** A shaded solid body with readable floating details, sampled only from the game clock. */
 export class HologramPacket {
   readonly group = new Group();
@@ -35,15 +41,13 @@ export class HologramPacket {
   private readonly glyphs = [this.ownGeometry(createDigitGeometry(false)), this.ownGeometry(createDigitGeometry(true))];
   private readonly hunterEyes = [-1, 1].map((side) => this.ownGeometry(createHunterEyeGeometry(side)));
   private readonly halo = createHaloTexture();
+  private readonly scoreGlow: Mesh<PlaneGeometry, MeshBasicMaterial>;
   private readonly body = new Group();
   private readonly gaze = new Group();
   private readonly eyes: FloatingPiece[] = [];
   private readonly eyeEdges: Mesh<BufferGeometry, MeshBasicMaterial>[] = [];
   private readonly eyeSockets: Mesh<BufferGeometry, MeshStandardMaterial>[] = [];
   private readonly hunterRig = new Group();
-  private readonly intake = new Group();
-  private readonly intakeJaws: Mesh<PlaneGeometry, MeshBasicMaterial>[] = [];
-  private readonly intakeCavity: Mesh<PlaneGeometry, MeshBasicMaterial>;
   private readonly pickupRims = new Set<MeshBasicMaterial>();
   private readonly digits: FloatingPiece[] = [];
   private readonly pixels: Mesh<BufferGeometry, MeshBasicMaterial>[] = [];
@@ -62,6 +66,9 @@ export class HologramPacket {
   private readonly cameraRotation = new Quaternion();
   private readonly powerTransition = new StateTransition(0.32);
   private readonly powerColor = new Color(CYAN);
+  private readonly baseColor: Color;
+  private readonly brightColor: Color;
+  private readonly pickupRimColor: Color;
   private readonly pickupColor = new Color();
   private frame = 0;
   private trailOpacity = 0;
@@ -70,12 +77,19 @@ export class HologramPacket {
   private powerWarning = false;
   private powerAmount: number | undefined;
   private enemyEatProgress: number | null = null;
+  private scoreTier: PacketScoreTier | null = null;
   private disposed = false;
 
-  constructor() {
+  /** Creates independently owned visuals; omitting appearance preserves the solo Packet. */
+  constructor(appearance?: PacketAppearance) {
+    this.baseColor = new Color(appearance?.color ?? CYAN);
+    this.brightColor = appearance ? this.baseColor.clone().lerp(new Color(0xffffff), 0.25) : new Color(0x40dcff);
+    this.pickupRimColor = appearance ? this.baseColor.clone().lerp(new Color(0xffffff), 0.75) : PICKUP_RIM_COLOR;
     this.group.name = 'packet';
     this.model.name = 'hologram-model';
     this.group.add(this.model);
+    this.scoreGlow = this.glow('score-glow', 0, 0, -2.5, 9.4, 8.2, 0);
+    this.scoreGlow.material.color.copy(this.baseColor);
     this.body.name = 'hologram-body';
     this.body.scale.x = 1.2;
     this.model.add(this.body);
@@ -141,6 +155,7 @@ export class HologramPacket {
     }
     // These solid rails trace the depth of the visible top and right surfaces.
     const railMaterial = this.material('depth-edge', 0x287495);
+    if (appearance) railMaterial.color.copy(this.baseColor).multiplyScalar(0.4);
     for (const [i, [x, y, z, width, height, depth]] of [
       [-2.72, 1.84, 0, 0.16, 0.16, 3.8],
       [2.72, 1.84, 0, 0.16, 0.16, 3.8],
@@ -181,18 +196,6 @@ export class HologramPacket {
       const prong = this.rect(`hunter-prong-${side}`, side * 3, 1.4, 2.22, 0.24, 1.5, GOLD, 1);
       prong.rotation.z = -side * 0.32;
       this.hunterRig.add(prong);
-    }
-    this.intake.name = 'enemy-intake';
-    this.intake.position.z = 2.3;
-    this.hunterRig.add(this.intake);
-    this.intakeCavity = new Mesh(this.plane, this.material('intake-cavity', 0x000205));
-    this.intakeCavity.name = 'intake-cavity';
-    this.intakeCavity.scale.set(1.72, 0.1, 1);
-    this.intake.add(this.intakeCavity);
-    for (const [index, side] of [-1, 1].entries()) {
-      const jaw = this.rect(index === 0 ? 'intake-jaw-bottom' : 'intake-jaw-top', 0, side * 0.12, 0.02, 1.9, 0.14, GOLD, 1);
-      this.intake.add(jaw);
-      this.intakeJaws.push(jaw);
     }
 
     const positions = [
@@ -276,16 +279,23 @@ export class HologramPacket {
     this.sample(0);
   }
 
+  /** Samples cosmetic animation in seconds without advancing gameplay or changing identity colors. */
   sample(timeSeconds: number): void {
     if (this.disposed) return;
     const time = Math.max(0, timeSeconds);
+    const tier = this.scoreTier;
+    const glowOpacity = tier?.glowOpacity ?? 0;
+    const glowScale = (tier?.glowScale ?? 1) * (1 + Math.sin(time * 2.2) * 0.025);
+    this.scoreGlow.visible = glowOpacity > 0 && this.deathProgress === null;
+    this.scoreGlow.material.opacity = glowOpacity * (0.92 + Math.sin(time * 2.2) * 0.08);
+    this.scoreGlow.scale.set(9.4 * glowScale, 8.2 * glowScale, 1);
     const pickup = this.deathProgress === null ? this.frame / 3 : 0;
     const hunter = this.deathProgress === null
       ? this.powerTransition.sample(Number(this.powered || this.enemyEatProgress !== null), time, this.powerAmount)
       : this.powerTransition.reset();
-    const accent = this.powerColor.setHex(CYAN).lerp(GOLD_COLOR, hunter);
+    const accent = this.powerColor.copy(this.baseColor).lerp(GOLD_COLOR, hunter);
     const warning = this.powerWarning ? MathUtils.lerp(1, 0.6 + Math.sin(time * 16) * 0.4, hunter) : 1;
-    this.pickupColor.copy(PICKUP_RIM_COLOR).lerp(HUNTER_RIM_COLOR, hunter);
+    this.pickupColor.copy(this.pickupRimColor).lerp(HUNTER_RIM_COLOR, hunter);
     this.model.position.x = 0;
     this.model.position.y = 6.15 + Math.sin(time * 1.7) * 0.16;
     this.model.scale.setScalar(1.15 * (1 + Math.sin(time * 2.2) * 0.008));
@@ -319,14 +329,8 @@ export class HologramPacket {
     }
     this.hunterRig.visible = hunter > 0;
     this.hunterRig.scale.set(MathUtils.lerp(0.55, 1, hunter), hunter, 1);
-    const eating = this.deathProgress === null ? this.enemyEatProgress : null;
-    const opening = eating === null ? 0 : MathUtils.smoothstep(eating, 0, 0.25) * (1 - MathUtils.smoothstep(eating, 0.75, 0.95));
-    this.intakeCavity.scale.y = 0.1 + opening * 0.6;
-    for (const [index, jaw] of this.intakeJaws.entries()) {
-      jaw.position.y = (index === 0 ? -1 : 1) * (0.12 + opening * 0.3);
-      jaw.material.color.setHex(GOLD).lerp(HUNTER_RIM_COLOR, eating === null ? 0 : MathUtils.smoothstep(eating, 0.65, 0.85));
-    }
     for (const [i, digit] of this.digits.entries()) {
+      const enabled = tier === null || (digit.surface ? i - 10 < tier.surfaceDigits : i < tier.floatingDigits);
       const switchTime = time + (this.deathProgress ?? 0) * 8;
       const switchStep = Math.floor(switchTime / (0.8 + noise(i + 320) * 1.4) + digit.phase);
       const value = noise(switchStep * 19 + i * 71 + 840) < 0.5 ? 0 : 1;
@@ -337,23 +341,25 @@ export class HologramPacket {
       digit.mesh.position.x = digit.x;
       digit.mesh.position.y = digit.y + (digit.surface ? 0 : (phase - 0.5) * 0.5);
       digit.mesh.position.z = digit.surface ? 2.145 : 1.5 + Math.sin(time * 0.7 + i * 1.4) * 0.35;
-      digit.mesh.material.opacity = digit.surface ? 0.45 + opacity * 0.45 : opacity * (i % 2 === 0 ? 1 : 0.9);
-      digit.mesh.material.color.setHex(!digit.surface && i % 5 === 0 ? 0x40dcff : CYAN).lerp(GOLD_COLOR, hunter);
-      digit.mesh.visible = digit.surface === true || opacity > 0.015;
+      digit.mesh.material.opacity = enabled ? digit.surface ? 0.45 + opacity * 0.45 : opacity * (i % 2 === 0 ? 1 : 0.9) : 0;
+      digit.mesh.material.color.copy(!digit.surface && i % 5 === 0 ? this.brightColor : this.baseColor).lerp(GOLD_COLOR, hunter);
+      digit.mesh.visible = enabled && (digit.surface === true || opacity > 0.015);
     }
     for (const [i, pixel] of this.pixels.entries()) {
       const step = Math.floor(time / (0.7 + noise(i + 650) * 1.1));
-      pixel.material.opacity = 0.2 + noise(step * 23 + i * 43 + 700) * 0.6;
+      pixel.visible = tier === null || i < tier.pixelCount;
+      pixel.material.opacity = pixel.visible ? (0.2 + noise(step * 23 + i * 43 + 700) * 0.6) * (tier?.pixelOpacity ?? 1) : 0;
       pixel.material.color.copy(accent);
     }
-    this.trail.visible = this.trailOpacity > 0.01;
+    const trailStrength = this.trailOpacity * (tier?.trailStrength ?? 1);
+    this.trail.visible = trailStrength > 0.01;
     for (const streak of this.streaks) {
       const phase = (time / streak.period + streak.phase) % 1;
       const envelope = MathUtils.smoothstep(phase, 0, 0.09) * (1 - MathUtils.smoothstep(phase, 0.48, 1));
       streak.mesh.position.x = -(3.8 + phase * 1.4);
       streak.mesh.position.y = streak.y;
       streak.mesh.scale.x = streak.width * (1 - phase * 0.3);
-      streak.mesh.material.opacity = envelope * this.trailOpacity * 0.75;
+      streak.mesh.material.opacity = envelope * trailStrength * 0.75;
       streak.mesh.material.color.copy(accent);
       streak.mesh.visible = envelope > 0.02;
     }
@@ -379,6 +385,23 @@ export class HologramPacket {
   setMotion(x: number, y: number, amount: number): void {
     this.motion.set(x, 0, y);
     this.trailOpacity = MathUtils.clamp(amount, 0, 1);
+  }
+
+  /** Selects score cosmetics for the next sample; null restores the original solo visuals. */
+  setScore(score: number | null): void {
+    const tier = score === null ? null : resolvePacketScoreTier(score);
+    if (this.scoreTier === tier) return;
+    this.scoreTier = tier;
+    // Death echoes share the body layout but own their visibility independently.
+    for (const echo of this.deathEchoes) {
+      echo.traverse((object) => {
+        if (object.name.startsWith('surface-binary-')) {
+          object.visible = tier === null || Number(object.name.slice(15)) < tier.surfaceDigits;
+        } else if (object.name.startsWith('surface-pixel-')) {
+          object.visible = tier === null || Number(object.name.slice(14)) < tier.pixelCount;
+        }
+      });
+    }
   }
 
   setDeathProgress(progress: number | null): void {

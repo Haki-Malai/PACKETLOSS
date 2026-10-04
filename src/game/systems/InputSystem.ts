@@ -1,70 +1,57 @@
-import {
-  COARSE_POINTER_MEDIA_QUERY,
-  MOBILE_SWIPE_AXIS_LOCK_RATIO,
-  MOBILE_SWIPE_THRESHOLD_PX,
-  MOBILE_TAP_MAX_DELTA_PX,
-} from '../../config/constants';
 import { IS_DEV } from '../../config/environment';
-import type { Direction } from '../domain/valueObjects/Direction';
 import { WorldState } from '../domain/world/WorldState';
 import { BrowserInputAdapter, isInteractiveInputTarget, PointerState } from '../infrastructure/adapters/BrowserInputAdapter';
 import { handleDebugKeyDown } from './DebugInput';
+import { DirectionalInput } from '../infrastructure/adapters/DirectionalInput';
 
 interface PauseController {
   togglePause(): void;
 }
 
-interface TouchGesture {
-  pointerId: number;
-  startX: number;
-  startY: number;
-  hasCommittedSwipe: boolean;
-}
-
-const DIRECTIONAL_KEY_PRIORITY: ReadonlyArray<{ codes: readonly string[]; direction: Direction }> = [
-  { codes: ['ArrowLeft', 'KeyA'], direction: 'left' },
-  { codes: ['ArrowRight', 'KeyD'], direction: 'right' },
-  { codes: ['ArrowUp', 'KeyW'], direction: 'up' },
-  { codes: ['ArrowDown', 'KeyS'], direction: 'down' },
-];
 const BROWSER_SCROLL_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 const PAUSE_EVENT_KEYS = new Set([' ', 'Spacebar']);
 
 export class InputSystem {
   readonly updatePhase = 'beforeSimulation' as const;
   private disposers: Array<() => void> = [];
-  private activeTouchGesture: TouchGesture | null = null;
+  private readonly directions: DirectionalInput;
 
+  /** Receives the platform input and shares direction interpretation with online play. */
   constructor(
     private readonly input: BrowserInputAdapter,
     private readonly world: WorldState,
     private readonly pauseController: PauseController,
     private readonly allowPowerShortcut = true,
-  ) {}
+  ) {
+    this.directions = new DirectionalInput((code) => this.input.isKeyDown(code));
+  }
 
+  /** Subscribes to gameplay gestures and resets without owning the platform adapter. */
   start(): void {
     this.disposers.push(this.input.onKeyDown((event) => this.handleKeyDown(event)));
     this.disposers.push(this.input.onPointerMove((pointer) => this.handlePointerMove(pointer)));
     this.disposers.push(this.input.onPointerDown((pointer) => this.handlePointerDown(pointer)));
     this.disposers.push(this.input.onPointerUp((pointer) => this.handlePointerUp(pointer)));
     this.disposers.push(this.input.onPointerCancel((pointer) => this.handlePointerCancel(pointer)));
-    this.disposers.push(this.input.onReset(() => { this.activeTouchGesture = null; }));
+    this.disposers.push(this.input.onReset(() => this.directions.reset()));
   }
 
+  /** Applies held keyboard intent before the local simulation advances. */
   update(): void {
     if (!this.world.isMoving || this.world.outcome) return;
-    const keyboardDirection = this.getDirectionalKeyboardIntent();
+    const keyboardDirection = this.directions.keyboardDirection();
     if (keyboardDirection) {
       this.world.packet.direction.next = keyboardDirection;
     }
   }
 
+  /** Releases subscriptions and drops any partially completed gesture. */
   destroy(): void {
     this.disposers.forEach((dispose) => {
       dispose();
     });
     this.disposers = [];
-    this.activeTouchGesture = null;
+    this.directions.reset();
   }
 
   /** Routes active gameplay keys, with inspection and cheat shortcuts available only in development. */
@@ -96,18 +83,12 @@ export class InputSystem {
     if (!this.world.isMoving || this.world.outcome) return;
     if (IS_DEV) this.world.pointerScreen = { x: pointer.x, y: pointer.y };
 
-    const gesture = this.getActiveGesture(pointer.pointerId);
-    if (!gesture || gesture.hasCommittedSwipe || this.hasDirectionalKeyboardInput()) {
-      return;
-    }
-
-    const swipeDirection = this.resolveSwipeDirection(gesture, pointer);
+    const swipeDirection = this.directions.move(pointer);
     if (!swipeDirection) {
       return;
     }
 
     this.world.packet.direction.next = swipeDirection;
-    gesture.hasCommittedSwipe = true;
   }
 
   /** Starts touch gestures or pauses mouse play, recording inspection coordinates in development. */
@@ -115,121 +96,24 @@ export class InputSystem {
     if (!this.world.isMoving || this.world.outcome) return;
     if (IS_DEV) this.world.pointerScreen = { x: pointer.x, y: pointer.y };
 
-    if (!this.isTouchLikePointer(pointer)) {
+    if (!this.directions.start(pointer)) {
       this.pauseController.togglePause();
-      return;
     }
-
-    this.activeTouchGesture = {
-      pointerId: pointer.pointerId,
-      startX: pointer.x,
-      startY: pointer.y,
-      hasCommittedSwipe: false,
-    };
   }
 
+  /** Ends a gesture and applies the solo-only tap-to-pause action. */
   private handlePointerUp(pointer: PointerState): void {
     if (!this.world.isMoving || this.world.outcome) {
-      this.activeTouchGesture = null;
+      this.directions.reset();
       return;
     }
-    const gesture = this.getActiveGesture(pointer.pointerId);
-    if (!gesture) {
-      return;
-    }
-
-    if (this.isTapGesture(gesture, pointer)) {
+    if (this.directions.end(pointer)) {
       this.pauseController.togglePause();
     }
-
-    this.activeTouchGesture = null;
   }
 
+  /** Drops an interrupted gesture without committing a direction or pausing. */
   private handlePointerCancel(pointer: PointerState): void {
-    if (this.activeTouchGesture?.pointerId === pointer.pointerId) {
-      this.activeTouchGesture = null;
-    }
-  }
-
-  private getActiveGesture(pointerId: number): TouchGesture | null {
-    if (!this.activeTouchGesture || this.activeTouchGesture.pointerId !== pointerId) {
-      return null;
-    }
-
-    return this.activeTouchGesture;
-  }
-
-  private isTapGesture(gesture: TouchGesture, pointer: PointerState): boolean {
-    if (gesture.hasCommittedSwipe) {
-      return false;
-    }
-
-    const { absX, absY } = this.getGestureMagnitude(gesture, pointer);
-    return Math.max(absX, absY) <= MOBILE_TAP_MAX_DELTA_PX;
-  }
-
-  private resolveSwipeDirection(gesture: TouchGesture, pointer: PointerState): Direction | null {
-    const { dx, dy, absX, absY } = this.getGestureMagnitude(gesture, pointer);
-    const dominant = Math.max(absX, absY);
-
-    if (dominant < MOBILE_SWIPE_THRESHOLD_PX) {
-      return null;
-    }
-
-    const minor = Math.min(absX, absY);
-    if (minor > 0 && dominant / minor < MOBILE_SWIPE_AXIS_LOCK_RATIO) {
-      return null;
-    }
-
-    if (absX >= absY) {
-      return dx >= 0 ? 'right' : 'left';
-    }
-
-    return dy >= 0 ? 'down' : 'up';
-  }
-
-  private getGestureMagnitude(
-    gesture: Pick<TouchGesture, 'startX' | 'startY'>,
-    pointer: Pick<PointerState, 'x' | 'y'>,
-  ): { dx: number; dy: number; absX: number; absY: number } {
-    const dx = pointer.x - gesture.startX;
-    const dy = pointer.y - gesture.startY;
-
-    return {
-      dx,
-      dy,
-      absX: Math.abs(dx),
-      absY: Math.abs(dy),
-    };
-  }
-
-  private hasDirectionalKeyboardInput(): boolean {
-    return this.getDirectionalKeyboardIntent() !== null;
-  }
-
-  private getDirectionalKeyboardIntent(): Direction | null {
-    for (const intent of DIRECTIONAL_KEY_PRIORITY) {
-      if (intent.codes.some((code) => this.input.isKeyDown(code))) {
-        return intent.direction;
-      }
-    }
-
-    return null;
-  }
-
-  private isTouchLikePointer(pointer: PointerState): boolean {
-    if (pointer.pointerType === 'touch') {
-      return true;
-    }
-
-    if (!pointer.isPrimary) {
-      return false;
-    }
-
-    if (typeof window === 'undefined') {
-      return false;
-    }
-
-    return !!window.matchMedia?.(COARSE_POINTER_MEDIA_QUERY).matches;
+    this.directions.cancel(pointer.pointerId);
   }
 }

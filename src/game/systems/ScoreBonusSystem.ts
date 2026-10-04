@@ -1,4 +1,3 @@
-import { getScoreBonusStatus, setScoreBonusStatus } from '../../state/gameState';
 import {
     SCORE_BONUS_ACTIVE_MS,
     SCORE_BONUS_TIERS,
@@ -127,6 +126,8 @@ export class ScoreBonusSystem {
                         phase: 'available' as const,
                     }
                   : null;
-        if (next || getScoreBonusStatus()) setScoreBonusStatus(next);
+        if (next || this.world.gameState.getScoreBonusStatus()) {
+            this.world.gameState.setScoreBonusStatus(next);
+        }
     }
 }

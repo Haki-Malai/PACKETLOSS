@@ -98,7 +98,9 @@ describe('RenderSystem entity presentation', () => {
     collectibles.update(0);
     renderSystem.render();
     const star = scene.getObjectByName('pellet-effect') as Mesh<BufferGeometry, MeshBasicMaterial>;
-    expect(star.geometry).toBe((scene.getObjectByName(`pellets-${kind}`) as Mesh).geometry);
+    const sourceStar = scene.getObjectByName(`pellets-${kind}`) as Mesh<BufferGeometry, MeshStandardMaterial>;
+    expect(star.geometry).toBe(sourceStar.geometry);
+    expect(star.material.color.equals(sourceStar.material.color)).toBe(true);
     expect(star.scale.x).toBe(radius);
     expect(star.position.x).toBe(8);
     const startColor = star.material.color.clone();
@@ -112,7 +114,8 @@ describe('RenderSystem entity presentation', () => {
     expect(star.position.x).toBeLessThan(12);
     expect(star.scale.x).toBeLessThan(radius);
     expect(star.rotation.y).not.toBe(0);
-    expect(star.material.color.r).toBeLessThan(startColor.r);
+    if (kind === 'power') expect(star.material.color.r).toBeLessThan(startColor.r);
+    else expect(star.material.color.equals(startColor)).toBe(true);
     expect(star.material.color.b).toBeGreaterThan(star.material.color.r);
 
     world.isMoving = false;

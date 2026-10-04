@@ -4,7 +4,6 @@ import {
   PACKET_DEATH_RECOVERY,
   SPEED,
 } from '../../config/constants';
-import { getGameState, loseLife } from '../../state/gameState';
 import { awardScore } from './awardScore';
 import { EnemyEntity } from '../domain/entities/EnemyEntity';
 import { CollisionBody } from '../domain/valueObjects/CollisionBody';
@@ -34,7 +33,7 @@ export class EnemyPacketCollisionSystem {
     if (this.world.packet.deathAnimationRemainingMs > 0) {
       this.world.packet.deathAnimationRemainingMs = Math.max(0, this.world.packet.deathAnimationRemainingMs - elapsed);
       if (this.world.packet.deathAnimationRemainingMs === 0) {
-        if (getGameState().lives === 0) this.world.outcome = 'lost';
+        if (this.world.gameState.getSnapshot().lives === 0) this.world.outcome = 'lost';
         else this.respawnPacket();
       }
       return;
@@ -74,7 +73,7 @@ export class EnemyPacketCollisionSystem {
 
   /** Starts Packet death and drops any movement distance deferred at the contact boundary. */
   private applyPacketHitOutcome(): void {
-    loseLife();
+    this.world.gameState.loseLife();
     this.movementRules.discardPendingDistance(this.world.packet);
     this.world.packet.enemyEatRemainingMs = 0;
     this.world.packet.deathAnimationRemainingMs = PACKET_DEATH_ANIMATION.durationMs;

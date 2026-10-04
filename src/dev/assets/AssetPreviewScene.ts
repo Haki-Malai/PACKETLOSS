@@ -10,6 +10,8 @@ import type { EnemyKey } from '../../game/domain/entities/EnemyEntity';
 import { createEmptyCollisionTile } from '../../game/domain/world/CollisionGrid';
 import type { EnemyEffect, LagZone, QuarantineWall, WorldMapData } from '../../game/domain/world/WorldState';
 import { ArcadeAssets } from '../../game/infrastructure/three/ArcadeAssets';
+import { MULTIPLAYER_PACKET_APPEARANCES } from '../../game/infrastructure/three/PacketAppearances';
+import { PacketLabels } from '../../game/infrastructure/three/PacketLabels';
 import { EnemyEffects } from '../../game/infrastructure/three/EnemyEffects';
 import { EnemyEatPresentation } from '../../game/infrastructure/three/EnemyEatPresentation';
 import { WALL_HEIGHT } from '../../game/infrastructure/three/MazeGeometry';
@@ -50,8 +52,10 @@ const MOVEMENT: Readonly<Record<string, readonly [number, number]>> = {
 export class AssetPreviewScene {
   readonly scene = new Scene();
   readonly bounds = new Box3();
-  private readonly packet: Group;
-  private readonly packetShadow: Mesh;
+  private packet: Group;
+  private packetShadow: Mesh;
+  private readonly packets = new Map<string, { packet: Group; shadow: Mesh }>();
+  private readonly labels = new Map<Group, PacketLabels>();
   private readonly enemies = new Map<EnemyKey, Group>();
   private readonly spamCopies: Group[] = [];
   private readonly enemyEffects = new EnemyEffects();
@@ -83,11 +87,17 @@ export class AssetPreviewScene {
       this.guide.visible = false;
       this.scene.add(this.floor, this.guide, this.enemyEffects.group, this.quarantineWalls.group);
 
-      this.packet = assets.createPacket();
-      this.packet.position.set(CENTER, 0, CENTER);
-      this.packetShadow = assets.createContactShadow(SPRITE_SIZE.packet);
-      this.packet.add(this.packetShadow);
-      this.scene.add(this.packet);
+      for (const appearance of [undefined, ...MULTIPLAYER_PACKET_APPEARANCES]) {
+        const packet = assets.createPacket(appearance);
+        packet.position.set(CENTER, 0, CENTER);
+        packet.visible = false;
+        const shadow = assets.createContactShadow(SPRITE_SIZE.packet);
+        packet.add(shadow);
+        this.scene.add(packet);
+        this.packets.set(appearance?.character ?? 'solo', { packet, shadow });
+      }
+      this.packet = this.packets.get('solo')!.packet;
+      this.packetShadow = this.packets.get('solo')!.shadow;
       for (const key of ENEMY_IDENTITIES) {
         const enemy = assets.createEnemy(key);
         enemy.name = `enemy-${key}`;
@@ -124,14 +134,30 @@ export class AssetPreviewScene {
     }
   }
 
-  /** Resets the previous sample and frames the selected asset or ability demonstration. */
+  /** Resets the previous sample, applies gallery identity/score examples, and frames the asset. */
   select(entry: AssetPreviewEntry, transform: AssetPreviewTransform = NO_TRANSFORM): void {
     if (this.disposed) return;
     if (!ASSET_CATALOG.some((candidate) => candidate.id === entry.id)) throw new Error(`Unknown preview asset: ${entry.id}`);
     this.clearSelection();
     this.entry = entry;
+    const selectedPacket = this.packets.get(entry.appearance?.character ?? 'solo')!;
+    this.packet = selectedPacket.packet;
+    this.packetShadow = selectedPacket.shadow;
     this.setBounds(18, 18, 15);
-    if (entry.category === 'Player' || entry.id.startsWith('effect-')) {
+    if (entry.appearance && entry.score !== undefined) {
+      let labels = this.labels.get(this.packet);
+      if (!labels) {
+        labels = new PacketLabels(entry.appearance.color);
+        this.labels.set(this.packet, labels);
+        this.packet.add(labels.group);
+      }
+      labels.group.visible = true;
+      labels.setIdentity('PLAYER', entry.score);
+      this.assets.setPacketScore(this.packet, entry.score);
+      this.setBounds(32, 32, 24);
+      this.bounds.min.y = -5;
+    }
+    if (entry.category === 'Packet' || entry.id.startsWith('effect-')) {
       this.packet.visible = true;
       if (entry.id === 'player-death') this.setBounds(24, 24, 19);
       if (entry.id === 'player-eating' || entry.id.startsWith('effect-')) {
@@ -186,6 +212,7 @@ export class AssetPreviewScene {
     this.updateStage();
   }
 
+  /** Samples the selected presentation and its camera-facing identity without running gameplay. */
   sample(timeMs: number, camera: Camera): void {
     if (this.disposed) return;
     const duration = this.entry.durationMs;
@@ -220,7 +247,7 @@ export class AssetPreviewScene {
       id === 'player-power-warning', powerAmount);
     this.assets.setPacketEnemyEatProgress(this.packet,
       this.enemyEating && elapsed < ENEMY_EAT_DURATION_MS ? elapsed / ENEMY_EAT_DURATION_MS : null);
-    this.packet.visible = (this.entry.category === 'Player' || this.effect !== undefined || this.enemyEating !== undefined) && visible;
+    this.packet.visible = (this.entry.category === 'Packet' || this.effect !== undefined || this.enemyEating !== undefined) && visible;
     this.packetShadow.visible = deathProgress === null || deathProgress < 0.94;
 
     if (this.entry.category === 'Enemies') {
@@ -246,6 +273,7 @@ export class AssetPreviewScene {
     }
     this.assets.sampleAnimation(elapsed / 1000);
     this.assets.facePacket(this.packet, camera);
+    this.labels.get(this.packet)?.faceCamera(camera);
     if (this.enemyEating) {
       this.enemyEating.sample(this.enemies.get(id === 'player-enemy-eating' ? 'virus' : this.enemyKey())!,
         this.packet.getObjectByName('pickup-target')!, elapsed / ENEMY_EAT_DURATION_MS);
@@ -270,6 +298,8 @@ export class AssetPreviewScene {
 
   /** Releases preview-owned geometry and effects without disposing shared character and point assets. */
   private disposeOwnedResources(): void {
+    for (const labels of this.labels.values()) labels.dispose();
+    this.labels.clear();
     this.effect?.material.dispose();
     this.enemyEating?.dispose();
     this.maze?.dispose();
@@ -293,6 +323,9 @@ export class AssetPreviewScene {
     this.assets.setPacketDeathProgress(this.packet, null);
     this.assets.setPacketPower(this.packet, false, false, 0);
     this.assets.setPacketEnemyEatProgress(this.packet, null);
+    this.assets.setPacketScore(this.packet, null);
+    const labels = this.labels.get(this.packet);
+    if (labels) labels.group.visible = false;
     for (const [key, enemy] of this.enemies) {
       enemy.visible = false;
       enemy.position.set(CENTER, 0, CENTER);

@@ -4,7 +4,8 @@ import { MovementProgress } from '../valueObjects/MovementProgress';
 import { TilePosition } from '../valueObjects/TilePosition';
 import { CollisionGrid, CollisionTile } from './CollisionGrid';
 import type { WallConnection } from './MazeFootprint';
-import type { RunMode } from '../../app/contracts';
+import type { RunMode } from '../../simulation/modes';
+import { getDefaultGameStateStore, type GameStateStore } from '../../../state/gameState';
 
 export interface WorldProperty {
   name: string;
@@ -124,6 +125,7 @@ export interface MovableEntity {
 }
 
 export class WorldState {
+  readonly gameState: GameStateStore;
   runMode: RunMode = 'classic';
   powerRemainingMs = 0;
   readonly map: WorldMapData;
@@ -169,7 +171,9 @@ export class WorldState {
     packet: PacketEntity;
     enemies: EnemyEntity[];
     enemyJailBounds: EnemyJailBounds;
+    gameState?: GameStateStore;
   }) {
+    this.gameState = params.gameState ?? getDefaultGameStateStore();
     this.map = params.map;
     this.tileSize = params.tileSize;
     this.collisionGrid = params.collisionGrid;

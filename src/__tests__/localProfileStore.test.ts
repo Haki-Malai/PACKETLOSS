@@ -180,6 +180,17 @@ describe('LocalProfileStore', () => {
         expect(reloaded.getMotion()).toBe('full');
     });
 
+    it('replaces local history with canonical validated cloud retention', () => {
+        const store = new LocalProfileStore(memoryStorage());
+        store.saveRun(run({ id: 'local' }));
+        store.replaceRecords([run({ id: 'cloud', score: 5000 })]);
+
+        expect(store.getRecords().map((record) => record.id)).toEqual(['cloud']);
+        expect(store.getTopRecords('default')[0]?.score).toBe(5000);
+        store.saveRun(run({ id: 'local' }));
+        expect(store.getRecords()).toHaveLength(2);
+    });
+
     it.each([
         'invalid json',
         JSON.stringify({ version: 3, nickname: 'OLD', motion: 'system', records: [] }),

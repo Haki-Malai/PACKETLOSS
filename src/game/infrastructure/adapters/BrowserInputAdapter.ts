@@ -27,6 +27,11 @@ export class BrowserInputAdapter {
     return this.input.onKeyDown(listener);
   }
 
+  /** Observes key releases after the platform adapter updates held input. */
+  onKeyUp(listener: (_event: KeyboardEvent) => void): () => void {
+    return this.input.onKeyUp(listener);
+  }
+
   onPointerMove(listener: (_pointer: PointerState) => void): () => void {
     return this.input.onPointerMove(listener);
   }

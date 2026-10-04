@@ -5,10 +5,13 @@ import {
 import { EAT_EFFECT_DURATION_MS } from '../../game/shared/pickupEffects';
 import { ENEMY_EAT_DURATION_MS } from '../../game/shared/enemyEating';
 import { ENEMY_KEYS } from '../../game/domain/entities/EnemyEntity';
+import type { PacketAppearance } from '../../game/infrastructure/three/HologramPacket';
+import { MULTIPLAYER_PACKET_APPEARANCES } from '../../game/infrastructure/three/PacketAppearances';
+import { PACKET_SCORE_TIERS } from '../../game/infrastructure/three/PacketScoreEffects';
 
 export interface AssetPreviewEntry {
   id: string;
-  category: 'Player' | 'Enemies' | 'Points' | 'Walls' | 'Other';
+  category: 'Packet' | 'Enemies' | 'Points' | 'Walls' | 'Other';
   name: string;
   state: string;
   source: string;
@@ -16,6 +19,8 @@ export interface AssetPreviewEntry {
   loop: boolean;
   thumbnailMs: number;
   transformable?: boolean;
+  appearance?: PacketAppearance;
+  score?: number;
 }
 
 export const ENEMY_IDENTITIES = ENEMY_KEYS;
@@ -23,8 +28,9 @@ export const WALL_TILE_IDS = [0, 1, 2, 5, 6, 7, 10, 14, 15, 23] as const;
 const PLAYER_SOURCE = 'src/game/infrastructure/three/HologramPacket.ts';
 const MAZE_SOURCE = 'src/game/infrastructure/three/MazeGeometry.ts';
 
+/** Builds a Packet category preview while retaining the animation's stable player ID. */
 const player = (state: string, name: string, durationMs = 6000, loop = true, thumbnailMs = 750): AssetPreviewEntry => ({
-  id: `player-${state}`, category: 'Player', name: 'Packet', state: name,
+  id: `player-${state}`, category: 'Packet', name: 'Packet', state: name,
   source: PLAYER_SOURCE, durationMs, loop, thumbnailMs,
 });
 
@@ -45,6 +51,14 @@ export const ASSET_CATALOG: readonly AssetPreviewEntry[] = [
   player('death', 'Death and recovery', PACKET_DEATH_ANIMATION.durationMs + PACKET_DEATH_RECOVERY.durationMs, false, 260),
   player('recovery', 'Recovery blinking', PACKET_DEATH_RECOVERY.durationMs, false, 180),
   player('portal', 'Portal blinking', PACKET_PORTAL_BLINK.durationMs, false, 240),
+  ...MULTIPLAYER_PACKET_APPEARANCES.map((appearance): AssetPreviewEntry => ({
+    ...player(`multiplayer-${appearance.character}`, 'Multiplayer color'),
+    name: appearance.name, appearance, score: 12345,
+  })),
+  ...PACKET_SCORE_TIERS.map((tier, index): AssetPreviewEntry => ({
+    ...player(`score-${tier.id}`, `Multiplayer · Step ${index + 1}/${PACKET_SCORE_TIERS.length} · ${tier.minimumScore} points`),
+    name: `Packet · ${String(index + 1).padStart(2, '0')} ${tier.name}`, appearance: MULTIPLAYER_PACKET_APPEARANCES[0], score: tier.minimumScore,
+  })),
   ...ENEMY_IDENTITIES.flatMap((key): AssetPreviewEntry[] => (['normal', 'scared', 'warning', 'eaten', 'returning'] as const).map((state): AssetPreviewEntry => ({
     id: `enemy-${key}-${state}`, category: 'Enemies', name: key[0].toUpperCase() + key.slice(1),
     state: { normal: 'Normal', scared: 'Scared', warning: 'Scared warning', eaten: 'Eaten', returning: 'Return to jail' }[state],

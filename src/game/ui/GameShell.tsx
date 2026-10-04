@@ -5,6 +5,7 @@ import { getTutorialLesson, TUTORIAL_LESSONS } from '../tutorial/TutorialLesson'
 import { DebugOverlay, Hud } from './GameOverlays';
 import { MenuInteraction } from './MenuPanel';
 import { MenuScreens } from './MenuScreens';
+import { MultiplayerViewport } from './MultiplayerViewport';
 import { useGameSession, type GameShellOptions } from './useGameSession';
 
 export function GameShell(options: GameShellOptions) {
@@ -28,12 +29,14 @@ export function GameShell(options: GameShellOptions) {
     const ui = useRef<HTMLElement>(null);
     const menuViewport = useRef<HTMLDivElement>(null);
     const panel = useRef<HTMLDivElement>(null);
-    const playing = state.screen === 'playing';
+    const localPlaying = state.screen === 'playing';
+    const multiplayerPlaying = state.screen === 'multiplayer-playing';
+    const playing = localPlaying || multiplayerPlaying;
     const tutorialPhase = state.tutorial?.phase;
 
     useLayoutEffect(() => {
         if (playing) {
-            const canvas = surface.current?.querySelector('canvas');
+            const canvas = root.current?.querySelector('canvas');
             if (canvas) {
                 canvas.tabIndex = -1;
                 canvas.focus({ preventScroll: true });
@@ -98,7 +101,19 @@ export function GameShell(options: GameShellOptions) {
             if (event.key === 'Escape') {
                 event.preventDefault();
                 if (state.screen === 'paused') resume();
-                else if (['settings', 'help', 'profile', 'mode', 'confirm'].includes(state.screen))
+                else if (
+                    [
+                        'settings',
+                        'help',
+                        'profile',
+                        'mode',
+                        'confirm',
+                        'signup',
+                        'confirm-account',
+                        'login',
+                        'recover',
+                    ].includes(state.screen)
+                )
                     back();
                 else if (state.screen === 'tutorial-complete') exitTutorial();
                 else if (['loading', 'error', 'result'].includes(state.screen)) {
@@ -152,10 +167,11 @@ export function GameShell(options: GameShellOptions) {
             className="game-shell relative h-full w-full"
             data-menu-motion={store.getMotion()}
         >
-            <div ref={surface} inert={!playing} className="absolute inset-0">
+            <div ref={surface} inert={!localPlaying} hidden={!localPlaying} className="absolute inset-0">
                 <div id="packet-scene" className="absolute inset-0" />
-                {state.ready && <Hud onPause={pause} />}
+                {state.ready && <Hud onPause={pause} gameState={state.gameState} />}
             </div>
+            {multiplayerPlaying && <MultiplayerViewport session={session} />}
             <MenuInteraction value={claimPause}>
                 <section
                     ref={ui}
@@ -184,7 +200,7 @@ export function GameShell(options: GameShellOptions) {
                 className="packet-tutorial-objective absolute flex flex-col gap-2"
                 role="status"
                 aria-live="polite"
-                hidden={!playing || !lesson}
+                hidden={!localPlaying || !lesson}
             >
                 {lesson && (
                     <>
@@ -197,7 +213,7 @@ export function GameShell(options: GameShellOptions) {
                     </>
                 )}
             </aside>
-            {IS_DEV && isDev && state.ready && session.debug && (
+            {IS_DEV && isDev && localPlaying && state.ready && session.debug && (
                 <DebugOverlay store={session.debug} />
             )}
         </div>

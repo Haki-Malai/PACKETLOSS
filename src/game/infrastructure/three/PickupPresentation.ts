@@ -1,8 +1,14 @@
-import { BufferGeometry, Color, Euler, MathUtils, Matrix4, Mesh, MeshBasicMaterial, Object3D, Quaternion, Vector3 } from 'three';
+import {
+  BufferGeometry, BufferGeometryLoader, Color, Euler, MathUtils, Matrix4, Mesh,
+  MeshBasicMaterial, MeshStandardMaterial, Object3D, Quaternion, Vector3,
+} from 'three';
 import { COLLECTIBLE_CONFIG } from '../../../config/constants';
 import { STAR_ABSORPTION_DURATION_MS, type CollectibleKind, type EatEffect } from '../../shared/pickupEffects';
+import pointStarGeometry from './point-star.json';
+import powerStarGeometry from './power-star.json';
 
-const ABSORPTION_COLOR = new Color(0x00d9ff);
+const POINT_COLORS: Record<CollectibleKind, number> = { base: 0x00d9ff, power: 0xffe24d };
+const ABSORPTION_COLOR = new Color(POINT_COLORS.base);
 const absorptionTarget = new Vector3();
 const absorptionSource = new Matrix4();
 const pointPosition = new Vector3();
@@ -11,6 +17,23 @@ const pointRotation = new Euler();
 const pointQuaternion = new Quaternion();
 const powerSpinAxis = new Vector3(0, 0, -1);
 const powerSpin = new Quaternion();
+
+/** Creates the shared star shape for any mode; the caller owns and disposes its geometry. */
+export function createPointGeometry(kind: CollectibleKind): BufferGeometry {
+  return new BufferGeometryLoader().parse(kind === 'power' ? powerStarGeometry : pointStarGeometry);
+}
+
+/** Creates a caller-owned material with the online palette and the star's authored facet shading. */
+export function createPointMaterial(kind: CollectibleKind): MeshStandardMaterial {
+  const power = kind === 'power';
+  return new MeshStandardMaterial({
+    color: POINT_COLORS[kind],
+    emissive: power ? 0x8a6300 : 0x006a80,
+    vertexColors: true,
+    roughness: power ? 0.45 : 0.9,
+    metalness: power ? 0.2 : 0,
+  });
+}
 
 /** Samples the shared six-second pickup turn with the gameplay camera's tilt and lean. */
 export function samplePickupRotation(rotation: Quaternion, x: number, y: number, timeSeconds: number,
@@ -69,7 +92,7 @@ export function sampleEatEffect(
   mesh.scale.setScalar(diameter / 2);
   pointRotation.set(0, progress * Math.PI * 0.75, Math.sin(progress * Math.PI) * 0.2, 'XYZ');
   mesh.quaternion.multiply(pointQuaternion.setFromEuler(pointRotation));
-  mesh.material.color.setHex(0xffffff).lerp(ABSORPTION_COLOR, progress);
+  mesh.material.color.setHex(POINT_COLORS[effect.kind]).lerp(ABSORPTION_COLOR, progress);
   mesh.material.opacity = 1 - MathUtils.smoothstep(progress, 0.7, 1);
   mesh.visible = progress < 1;
 }

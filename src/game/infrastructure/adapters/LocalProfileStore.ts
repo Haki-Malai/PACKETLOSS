@@ -92,10 +92,17 @@ function bestFirst(a: LocalRunRecord, b: LocalRunRecord): number {
     return b.score - a.score || recentFirst(a, b);
 }
 
-function retainedRecords(records: LocalRunRecord[]): LocalRunRecord[] {
+/** Keeps the union of top ten and recent ten records for each supported map and mode. */
+export function retainRunRecords(records: readonly LocalRunRecord[]): LocalRunRecord[] {
     const retained = new Map<string, LocalRunRecord>();
-    for (const [map, mode] of [['default', 'classic'], ['demo', 'classic'], ['default', 'endless']] as const) {
-        const forMap = records.filter((record) => record.map === map && (record.mode ?? 'classic') === mode);
+    for (const [map, mode] of [
+        ['default', 'classic'],
+        ['demo', 'classic'],
+        ['default', 'endless'],
+    ] as const) {
+        const forMap = records.filter(
+            (record) => record.map === map && (record.mode ?? 'classic') === mode
+        );
         for (const record of [
             ...[...forMap].sort(bestFirst).slice(0, 10),
             ...[...forMap].sort(recentFirst).slice(0, 10),
@@ -141,7 +148,7 @@ export class LocalProfileStore {
                 version: 2,
                 nickname: normalizeNickname(value.nickname),
                 motion: value.motion,
-                records: retainedRecords(value.records.map(normalizeRecord)),
+                records: retainRunRecords(value.records.map(normalizeRecord)),
             };
             for (const record of this.profile.records) this.savedIds.add(record.id);
             if (legacy) this.persist();
@@ -182,15 +189,25 @@ export class LocalProfileStore {
     saveRun(record: LocalRunRecord): void {
         if (!isRunRecord(record) || this.savedIds.has(record.id)) return;
         this.savedIds.add(record.id);
-        this.profile.records = retainedRecords([
-            ...this.profile.records,
-            normalizeRecord(record),
-        ]);
+        this.profile.records = retainRunRecords([...this.profile.records, normalizeRecord(record)]);
         this.persist();
     }
 
     clearRecords(): void {
         this.profile.records = [];
+        this.persist();
+    }
+
+    /** Returns defensive copies of every locally retained record. */
+    getRecords(): readonly LocalRunRecord[] {
+        return this.profile.records.map((record) => ({ ...record }));
+    }
+
+    /** Replaces local history with a validated canonical retained set. */
+    replaceRecords(records: readonly LocalRunRecord[]): void {
+        this.profile.records = retainRunRecords(records.filter(isRunRecord).map(normalizeRecord));
+        this.savedIds.clear();
+        for (const record of this.profile.records) this.savedIds.add(record.id);
         this.persist();
     }
 

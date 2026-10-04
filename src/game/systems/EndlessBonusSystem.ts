@@ -1,4 +1,3 @@
-import { getScoreBonusStatus, setScoreBonusStatus } from '../../state/gameState';
 import { isBodyOverlap } from '../domain/services/EnemyPacketCollisionService';
 import { SCORE_BONUS_ACTIVE_MS, SCORE_BONUS_TIERS, type ScoreBonusKind } from '../domain/valueObjects/ScoreBonus';
 import type { EndlessMazeStream } from '../domain/world/EndlessMazeStream';
@@ -91,6 +90,8 @@ export class EndlessBonusSystem {
       : this.pickups.length > 0
         ? { count: this.pickups.length, phase: 'available' as const }
         : null;
-    if (next || getScoreBonusStatus()) setScoreBonusStatus(next);
+    if (next || this.world.gameState.getScoreBonusStatus()) {
+      this.world.gameState.setScoreBonusStatus(next);
+    }
   }
 }

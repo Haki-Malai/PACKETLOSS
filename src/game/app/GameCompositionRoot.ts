@@ -1,7 +1,7 @@
 import { Camera3D } from '../../engine/camera3d';
 import { clamp } from '../../engine/math';
 import { ENEMY_CONFIG, INITIAL_LIVES, SPEED, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
-import { resetGameState } from '../../state/gameState';
+import { getDefaultGameStateStore, type GameStateStore } from '../../state/gameState';
 import { EnemyEntity, ENEMY_KEYS } from '../domain/entities/EnemyEntity';
 import { PacketEntity } from '../domain/entities/PacketEntity';
 import { EnemyDecisionService } from '../domain/services/EnemyDecisionService';
@@ -78,6 +78,7 @@ export interface GameCompositionOptions {
   preloadedResources?: PreloadedGameResources;
   mode?: RunMode;
   endlessSeed?: number;
+  gameState?: GameStateStore;
 }
 
 export class GameCompositionRoot {
@@ -184,7 +185,8 @@ export class GameCompositionRoot {
         enemies.push(copy);
       }
 
-      resetGameState(0, INITIAL_LIVES);
+      const gameState = this.options.gameState ?? getDefaultGameStateStore();
+      gameState.reset(0, INITIAL_LIVES);
 
       const world = new WorldState({
         map,
@@ -194,6 +196,7 @@ export class GameCompositionRoot {
         packet,
         enemies,
         enemyJailBounds,
+        gameState,
       });
       world.runMode = mode;
       const tutorialPoints = this.options.tutorialLesson
@@ -285,6 +288,7 @@ export class GameCompositionRoot {
       mount.replaceChildren(canvas);
       return {
         world,
+        gameState,
         renderer,
         input,
         scheduler,

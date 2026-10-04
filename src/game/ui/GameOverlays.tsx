@@ -1,41 +1,41 @@
-import { useSyncExternalStore } from 'react';
-import { GameEvent, gameEvents, getGameState, getScoreBonusStatus } from '../../state/gameState';
+import { useCallback, useSyncExternalStore } from 'react';
+import {
+    GameEvent,
+    getDefaultGameStateStore,
+    type GameStateStore,
+} from '../../state/gameState';
 import type { DebugStore } from './debugStore';
 import { MenuButton } from './MenuPanel';
 
-/**
- * Subscribes the HUD to score changes without subscribing to the entire game state.
- *
- * @returns A cleanup function that removes the score listener.
- */
-const subscribeScore = (listener: () => void) => {
-    gameEvents.on(GameEvent.ScoreChanged, listener);
-    return () => gameEvents.off(GameEvent.ScoreChanged, listener);
-};
-/**
- * Subscribes the HUD to life-count changes.
- *
- * @returns A cleanup function that removes the lives listener.
- */
-const subscribeLives = (listener: () => void) => {
-    gameEvents.on(GameEvent.LivesChanged, listener);
-    return () => gameEvents.off(GameEvent.LivesChanged, listener);
-};
-/** Subscribes the HUD to discrete multiplier status changes. */
-const subscribeBonus = (listener: () => void) => {
-    gameEvents.on(GameEvent.BonusChanged, listener);
-    return () => gameEvents.off(GameEvent.BonusChanged, listener);
-};
-/** Reads a primitive score snapshot so unrelated state updates do not rerender the HUD. */
-const getScore = () => getGameState().score;
-/** Reads a nonnegative whole life count as a stable primitive snapshot. */
-const getLives = () => Math.max(0, Math.floor(getGameState().lives));
-
-export function Hud({ onPause }: { onPause: () => void }) {
+export function Hud({
+    onPause,
+    gameState = getDefaultGameStateStore(),
+}: {
+    onPause: () => void;
+    gameState?: GameStateStore;
+}) {
+    const subscribeScore = useCallback((listener: () => void) => {
+        gameState.on(GameEvent.ScoreChanged, listener);
+        return () => gameState.off(GameEvent.ScoreChanged, listener);
+    }, [gameState]);
+    const subscribeLives = useCallback((listener: () => void) => {
+        gameState.on(GameEvent.LivesChanged, listener);
+        return () => gameState.off(GameEvent.LivesChanged, listener);
+    }, [gameState]);
+    const subscribeBonus = useCallback((listener: () => void) => {
+        gameState.on(GameEvent.BonusChanged, listener);
+        return () => gameState.off(GameEvent.BonusChanged, listener);
+    }, [gameState]);
+    const getScore = useCallback(() => gameState.getSnapshot().score, [gameState]);
+    const getLives = useCallback(
+        () => Math.max(0, Math.floor(gameState.getSnapshot().lives)),
+        [gameState]
+    );
+    const getBonus = useCallback(() => gameState.getScoreBonusStatus(), [gameState]);
     // HUD is event-driven through game state events.
     const score = useSyncExternalStore(subscribeScore, getScore);
     const lives = useSyncExternalStore(subscribeLives, getLives);
-    const bonus = useSyncExternalStore(subscribeBonus, getScoreBonusStatus);
+    const bonus = useSyncExternalStore(subscribeBonus, getBonus);
     // HUD is rendered in DOM overlay; no canvas draw required.
     return (
         <div

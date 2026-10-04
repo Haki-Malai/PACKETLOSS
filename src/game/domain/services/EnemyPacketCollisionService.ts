@@ -1,5 +1,6 @@
 import { EnemyEntity } from '../entities/EnemyEntity';
-import { CollisionBody } from '../valueObjects/CollisionBody';
+import { isBodyOverlap, type CollisionBody } from '../valueObjects/CollisionBody';
+export { isBodyOverlap } from '../valueObjects/CollisionBody';
 
 export type EnemyPacketContactType = 'body-overlap';
 export type EnemyPacketCollisionOutcome = 'packet-hit' | 'enemy-hit';
@@ -16,16 +17,6 @@ export interface EnemyCollisionCandidate {
 }
 
 export type CollisionOutcomeResolver = (_enemy: EnemyEntity) => EnemyPacketCollisionOutcome;
-
-export function isBodyOverlap(first: CollisionBody, second: CollisionBody): boolean {
-  if (first.radius <= 0 || second.radius <= 0) {
-    return false;
-  }
-  const dx = first.x - second.x;
-  const dy = first.y - second.y;
-  const combinedRadius = first.radius + second.radius;
-  return dx * dx + dy * dy < combinedRadius * combinedRadius;
-}
 
 function defaultOutcomeResolver(enemy: EnemyEntity): EnemyPacketCollisionOutcome {
   return enemy.state.scared ? 'enemy-hit' : 'packet-hit';

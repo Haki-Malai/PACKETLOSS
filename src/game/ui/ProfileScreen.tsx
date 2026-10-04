@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { LocalRunRecord } from '../infrastructure/adapters/LocalProfileStore';
 import type { RunMode } from '../app/contracts';
+import { AVATAR_CHOICES, type AvatarChoice } from '../infrastructure/adapters/AccountClient';
 import { CustomSelect, MenuButton, MenuColumns, fieldLayout, inputLayout } from './MenuPanel';
 import type { GameSession } from './useGameSession';
 
@@ -20,10 +21,15 @@ export function duration(elapsedMs: number): string {
 }
 
 export function ProfileBody({ session }: { session: GameSession }) {
-    const { store, mapVariant } = session;
-    const [nickname, setNickname] = useState(() => store.getNickname());
+    const { store, mapVariant, account } = session;
+    const cloudProfile = account.state.profile;
+    const [nickname, setNickname] = useState(() => cloudProfile?.nickname ?? store.getNickname());
+    const [avatar, setAvatar] = useState<AvatarChoice>(() => cloudProfile?.avatar ?? 'packet');
     const [mode, setMode] = useState<RunMode>('endless');
     const recordsMap = mode === 'endless' ? 'default' : mapVariant;
+    const records = cloudProfile ? account.state.records : store.getRecords();
+    const topRecords = selectRecords(records, recordsMap, mode, false);
+    const recentRecords = selectRecords(records, recordsMap, mode, true);
     return (
         <>
             <CustomSelect
@@ -38,9 +44,17 @@ export function ProfileBody({ session }: { session: GameSession }) {
                 onSubmit={(event) => {
                     event.preventDefault();
                     session.claimPause();
-                    store.setNickname(nickname);
-                    setNickname(store.getNickname());
-                    session.refresh('[data-control="nickname"]');
+                    if (cloudProfile) {
+                        void account.updateProfile({ nickname, avatar }).then((saved) => {
+                            if (!saved) return;
+                            setNickname(nickname.trim().slice(0, 16) || 'PLAYER');
+                            session.refresh('[data-control="nickname"]');
+                        });
+                    } else {
+                        store.setNickname(nickname);
+                        setNickname(store.getNickname());
+                        session.refresh('[data-control="nickname"]');
+                    }
                 }}
             >
                 <label className={fieldLayout}>
@@ -55,20 +69,69 @@ export function ProfileBody({ session }: { session: GameSession }) {
                         onChange={(event) => setNickname(event.target.value)}
                     />
                 </label>
+                {cloudProfile && (
+                    <div className={fieldLayout}>
+                        <span>Avatar</span>
+                        <CustomSelect
+                            ariaLabel="Avatar"
+                            value={avatar}
+                            options={AVATAR_CHOICES.map((value) => ({
+                                value,
+                                label:
+                                    value === 'packet'
+                                        ? 'The Packet'
+                                        : value[0].toUpperCase() + value.slice(1),
+                            }))}
+                            onChange={setAvatar}
+                            control="profile-avatar"
+                        />
+                    </div>
+                )}
                 <MenuButton type="submit" action="save-name">
-                    Save name
+                    Save profile
                 </MenuButton>
             </form>
+            {account.hasLocalImport && (
+                <MenuButton
+                    action="import-records"
+                    onClick={() => void account.importLocalRecords()}
+                    disabled={account.state.busy}
+                >
+                    Import local records
+                </MenuButton>
+            )}
+            {account.state.pendingRecords.length > 0 && (
+                <MenuButton
+                    action="retry-cloud-save"
+                    onClick={() => void account.retryPendingRecords()}
+                    disabled={account.state.busy}
+                >
+                    Retry cloud save
+                </MenuButton>
+            )}
             <MenuColumns>
-                <RecordSection title="TOP SCORES" records={store.getTopRecords(recordsMap, mode)} />
-                <RecordSection
-                    title="RECENT RUNS"
-                    records={store.getRecentRecords(recordsMap, mode)}
-                    recent
-                />
+                <RecordSection title="TOP SCORES" records={topRecords} />
+                <RecordSection title="RECENT RUNS" records={recentRecords} recent />
             </MenuColumns>
         </>
     );
+}
+
+/** Selects one top or recent record view from local or cloud retained history. */
+function selectRecords(
+    records: readonly LocalRunRecord[],
+    map: LocalRunRecord['map'],
+    mode: RunMode,
+    recent: boolean
+): LocalRunRecord[] {
+    return records
+        .filter((record) => record.map === map && (record.mode ?? 'classic') === mode)
+        .sort((a, b) =>
+            recent
+                ? Date.parse(b.completedAt) - Date.parse(a.completedAt)
+                : b.score - a.score || Date.parse(b.completedAt) - Date.parse(a.completedAt)
+        )
+        .slice(0, 10);
 }
 
 function RecordSection({

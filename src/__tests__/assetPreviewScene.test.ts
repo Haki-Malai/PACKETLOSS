@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ASSET_CATALOG } from '../dev/assets/assetCatalog';
 import { AssetPreviewScene } from '../dev/assets/AssetPreviewScene';
 import { Camera3D } from '../engine/camera3d';
+import { MULTIPLAYER_PACKET_APPEARANCES } from '../game/infrastructure/three/PacketAppearances';
 import { createCharacterAssets } from './fixtures/characterFixtures';
 
 function entry(id: string) {
@@ -22,8 +23,107 @@ function preview() {
   return { assets, scene, camera: camera.camera };
 }
 
+/** Supplies only the canvas text boundary; previews still use real label textures and meshes. */
+function mockLabelCanvases() {
+  const contexts: Array<{ fillText: ReturnType<typeof vi.fn> }> = [];
+  vi.stubGlobal('document', {
+    createElement: () => {
+      const canvas = { width: 0, height: 0 } as HTMLCanvasElement;
+      const context = { canvas, clearRect: vi.fn(), fillRect: vi.fn(), fillText: vi.fn(),
+        measureText: (text: string) => ({ width: text.length * 24 }) };
+      canvas.getContext = (() => context) as unknown as HTMLCanvasElement['getContext'];
+      contexts.push(context);
+      return canvas;
+    },
+  });
+  return contexts;
+}
+
 describe('AssetPreviewScene', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('previews every multiplayer identity and restores cached solo presentation without leaking effects', () => {
+    const labelContexts = mockLabelCanvases();
+    const { assets, scene, camera } = preview();
+    const solo = scene.scene.getObjectByName('packet')!;
+    scene.select(entry('player-powered'));
+    scene.sample(1000, camera);
+    expect(solo.getObjectByName('hunter-rig')?.visible).toBe(true);
+
+    const packets = MULTIPLAYER_PACKET_APPEARANCES.map((appearance) => {
+      scene.select(entry(`player-multiplayer-${appearance.character}`));
+      scene.sample(750, camera);
+      const visible = scene.scene.children.filter((child) => child.name === 'packet' && child.visible);
+      expect(visible).toHaveLength(1);
+      const packet = visible[0];
+      expect(packet).not.toBe(solo);
+      expect(packet.getObjectByName('character-detail')).toBeUndefined();
+      const rim = packet.getObjectByName('rim-horizontal-1-1') as Mesh<BufferGeometry, MeshBasicMaterial>;
+      expect(`#${rim.material.color.getHexString()}`).toBe(appearance.color);
+      expect(packet.getObjectByName('hologram-body')?.visible).toBe(true);
+      expect(packet.getObjectByName('hunter-rig')?.visible).toBe(false);
+      expect(packet.getObjectByName('death-effect')?.visible).toBe(false);
+      expect(packet.getObjectByName('packet-labels')?.visible).toBe(true);
+      expect(labelContexts[labelContexts.length - 2].fillText).toHaveBeenLastCalledWith('PLAYER', 256, 48, 480);
+      expect(labelContexts[labelContexts.length - 1].fillText).toHaveBeenLastCalledWith('12345', 256, 48, 480);
+
+      scene.select(entry('player-death'));
+      scene.sample(850, camera);
+      expect(solo.getObjectByName('hologram-body')?.visible).toBe(false);
+      return packet;
+    });
+    scene.select(entry(`player-multiplayer-${MULTIPLAYER_PACKET_APPEARANCES[0].character}`));
+    scene.sample(750, camera);
+    expect(scene.scene.children.filter((child) => child.name === 'packet' && child.visible)).toEqual([packets[0]]);
+
+    scene.select(entry('player-idle'));
+    scene.sample(0, camera);
+    expect(scene.scene.children.filter((child) => child.name === 'packet' && child.visible)).toEqual([solo]);
+    expect(solo.getObjectByName('character-detail')).toBeUndefined();
+    expect(solo.getObjectByName('packet-labels')).toBeUndefined();
+    expect(solo.getObjectByName('hologram-body')?.visible).toBe(true);
+    expect(solo.getObjectByName('hunter-rig')?.visible).toBe(false);
+    expect(solo.getObjectByName('death-effect')?.visible).toBe(false);
+    const disposers = packets.map((packet) => vi.spyOn(
+      (packet.getObjectByName('rim-horizontal-1-1') as Mesh<BufferGeometry, MeshBasicMaterial>).material, 'dispose'
+    ));
+    const labelDisposers = packets.map((packet) => vi.spyOn(
+      (packet.getObjectByName('packet-name-label') as Mesh<BufferGeometry, MeshBasicMaterial>).material.map!, 'dispose'
+    ));
+    scene.dispose();
+    labelDisposers.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
+    disposers.forEach((dispose) => expect(dispose).not.toHaveBeenCalled());
+    assets.dispose();
+    disposers.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
+  });
+
+  it('previews all ten Packet score steps and clears binary/glow effects when returning to a low score', () => {
+    mockLabelCanvases();
+    const { assets, scene, camera } = preview();
+    const score = vi.spyOn(assets, 'setPacketScore');
+    const steps = ASSET_CATALOG.filter((candidate) => candidate.id.startsWith('player-score-'));
+    expect(steps).toHaveLength(10);
+    expect(steps.every((candidate) => candidate.category === 'Packet')).toBe(true);
+    expect(steps[0]).toMatchObject({ name: 'Packet · 01 Quiet', state: 'Multiplayer · Step 1/10 · 0 points' });
+    expect(steps[9]).toMatchObject({ name: 'Packet · 10 Overload', state: 'Multiplayer · Step 10/10 · 10000 points' });
+    for (const selected of [...steps, steps[0]]) {
+      scene.select(selected);
+      scene.sample(750, camera);
+      const packet = scene.scene.children.find((child) => child.name === 'packet' && child.visible)!;
+      expect(score).toHaveBeenLastCalledWith(packet, selected.score);
+      if (selected.score === 0) {
+        expect(packet.getObjectByName('binary-000')?.visible).toBe(false);
+        expect(packet.getObjectByName('surface-binary-0')?.visible).toBe(false);
+        expect(packet.getObjectByName('score-glow')?.visible).toBe(false);
+      }
+    }
+    scene.select(entry('player-idle'));
+    const solo = scene.scene.getObjectByName('packet')!;
+    scene.sample(750, camera);
+    expect(solo.getObjectByName('surface-binary-0')?.visible).toBe(true);
+    scene.dispose();
+    assets.dispose();
+  });
 
   it('rewinds temporary walls and Trojan disguises without retaining them in the next preview', () => {
     const { assets, scene, camera } = preview();

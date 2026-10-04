@@ -26,7 +26,7 @@ vi.mock('../dev/assets/assetCatalog', () => ({
     ASSET_CATALOG: [
         {
             id: 'player',
-            category: 'Player',
+            category: 'Packet',
             name: 'Packet',
             state: 'Idle',
             source: 'player.ts',
@@ -141,9 +141,12 @@ describe('React asset gallery', () => {
         expect(preview.view.setTileGuide).toHaveBeenLastCalledWith(true);
         expect(preview.view.zoomBy).toHaveBeenLastCalledWith(1.25);
         await user.click(screen.getByRole('combobox', { name: 'Category' }));
-        await user.click(screen.getByRole('option', { name: 'Player' }));
+        await user.click(screen.getByRole('option', { name: 'Packet' }));
         expect(screen.getByText('No assets match this search.')).toBeDefined();
         expect(inspector.getByRole('heading', { name: 'Corner wall' })).toBeDefined();
+        await user.clear(screen.getByRole('searchbox'));
+        expect(screen.getByRole('button', { name: 'Packet, Idle' })).toBeDefined();
+        expect(screen.queryByRole('button', { name: 'Corner wall, Static' })).toBeNull();
         expect(getGameState()).toEqual({ score: 370, lives: 2 });
     });
 

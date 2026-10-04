@@ -19,6 +19,7 @@ export class InputManager {
   private readonly element: HTMLElement;
   private readonly keyDown = new Set<string>();
   private readonly keyDownListeners = new Set<KeyListener>();
+  private readonly keyUpListeners = new Set<KeyListener>();
   private readonly pointerMoveListeners = new Set<PointerListener>();
   private readonly pointerDownListeners = new Set<PointerListener>();
   private readonly pointerUpListeners = new Set<PointerListener>();
@@ -57,6 +58,12 @@ export class InputManager {
     };
   }
 
+  /** Publishes key releases after updating held intent so consumers can reveal another held direction. */
+  onKeyUp(listener: KeyListener): () => void {
+    this.keyUpListeners.add(listener);
+    return () => { this.keyUpListeners.delete(listener); };
+  }
+
   onPointerMove(listener: PointerListener): () => void {
     this.pointerMoveListeners.add(listener);
     return () => {
@@ -85,6 +92,7 @@ export class InputManager {
     };
   }
 
+  /** Removes platform listeners and releases all input subscriptions. */
   destroy(): void {
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
@@ -95,6 +103,7 @@ export class InputManager {
     window.removeEventListener('pointercancel', this.handlePointerCancel);
     this.keyDown.clear();
     this.keyDownListeners.clear();
+    this.keyUpListeners.clear();
     this.pointerMoveListeners.clear();
     this.pointerDownListeners.clear();
     this.pointerUpListeners.clear();
@@ -111,8 +120,10 @@ export class InputManager {
     });
   };
 
+  /** Releases the held key before notifying directional-intent consumers. */
   private readonly handleKeyUp = (event: KeyboardEvent): void => {
     this.keyDown.delete(event.code);
+    this.keyUpListeners.forEach((listener) => listener(event));
   };
 
   private readonly handleBlur = (): void => {

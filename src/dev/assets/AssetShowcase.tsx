@@ -75,7 +75,7 @@ export default function AssetShowcase() {
                             <input
                                 className={inputLayout}
                                 type="search"
-                                placeholder="Player, scared, wall…"
+                                placeholder="Packet, scared, wall…"
                                 value={search}
                                 onChange={(event) => setSearch(event.target.value)}
                             />
@@ -88,7 +88,7 @@ export default function AssetShowcase() {
                                 value={category}
                                 options={[
                                     { value: '', label: 'All assets' },
-                                    ...['Player', 'Enemies', 'Points', 'Walls', 'Other'].map(
+                                    ...['Packet', 'Enemies', 'Points', 'Walls', 'Other'].map(
                                         (value) => ({ value, label: value })
                                     ),
                                 ]}

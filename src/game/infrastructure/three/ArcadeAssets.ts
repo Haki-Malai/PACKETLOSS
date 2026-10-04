@@ -1,7 +1,6 @@
 import {
   AnimationMixer,
   BufferGeometry,
-  BufferGeometryLoader,
   Camera,
   Color,
   DataTexture,
@@ -19,11 +18,10 @@ import {
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { ENEMY_KEYS, type EnemyKey } from '../../domain/entities/EnemyEntity';
 import { SCORE_BONUS_TIERS, type ScoreBonusKind } from '../../domain/valueObjects/ScoreBonus';
-import { HologramPacket } from './HologramPacket';
+import { HologramPacket, type PacketAppearance } from './HologramPacket';
+import { createPointGeometry, createPointMaterial } from './PickupPresentation';
 import { ReturnEnemyPresentation } from './ReturnEnemyPresentation';
 import { StateTransition } from './StateTransition';
-import pointStarGeometry from './point-star.json';
-import powerStarGeometry from './power-star.json';
 
 type EnemyAppearance = EnemyKey | 'scared';
 type CharacterModel = Pick<GLTF, 'scene' | 'animations'>;
@@ -65,17 +63,10 @@ const SCARED_COLOR = new Color(ENEMY_COLORS.scared);
 
 /** Shared, simulation-driven models. Every model's root sits on the maze ground. */
 export class ArcadeAssets {
-  readonly pelletGeometry = new BufferGeometryLoader().parse(pointStarGeometry);
-  readonly powerPelletGeometry = new BufferGeometryLoader().parse(powerStarGeometry);
-  readonly pelletMaterial = new MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.9,
-  });
-  readonly powerPelletMaterial = new MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.45,
-    metalness: 0.2,
-  });
+  readonly pelletGeometry = createPointGeometry('base');
+  readonly powerPelletGeometry = createPointGeometry('power');
+  readonly pelletMaterial = createPointMaterial('base');
+  readonly powerPelletMaterial = createPointMaterial('power');
 
   private readonly shadowGeometry = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
   private readonly shadowTexture = createShadowTexture();
@@ -155,10 +146,16 @@ export class ArcadeAssets {
     return this.bonusModels?.[kind].scene.clone(true) ?? null;
   }
 
-  createPacket(): Group {
-    const packet = new HologramPacket();
+  /** Creates a solo or cosmetic Packet variant owned and disposed by this asset collection. */
+  createPacket(appearance?: PacketAppearance): Group {
+    const packet = new HologramPacket(appearance);
     this.packets.set(packet.group, packet);
     return packet.group;
+  }
+
+  /** Applies cosmetic score tiers, or restores original solo visuals when the score is null. */
+  setPacketScore(group: Group, score: number | null): void {
+    this.packets.get(group)?.setScore(score);
   }
 
   setPacketFrame(group: Group, frame: number): void {

@@ -1,4 +1,5 @@
-export type Direction = 'up' | 'down' | 'left' | 'right';
+export const CLOCKWISE_DIRECTIONS = ['up', 'right', 'down', 'left'] as const;
+export type Direction = typeof CLOCKWISE_DIRECTIONS[number];
 
 export type MovementActor = 'packet' | 'enemy' | 'enemyRelease';
 

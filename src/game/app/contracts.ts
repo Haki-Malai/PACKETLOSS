@@ -4,8 +4,10 @@ import { RendererViewport } from '../infrastructure/adapters/ThreeRendererAdapte
 import { TimerSchedulerAdapter } from '../infrastructure/adapters/TimerSchedulerAdapter';
 import type { TutorialController } from '../tutorial/TutorialController';
 import type { TutorialSnapshot } from '../tutorial/TutorialLesson';
+import type { GameStateStore } from '../../state/gameState';
+import type { RunMode } from '../simulation/modes';
 
-export type RunMode = 'classic' | 'endless';
+export type { RunMode } from '../simulation/modes';
 
 export interface RunResult {
   mode?: RunMode;
@@ -41,6 +43,7 @@ export interface PacketGame {
   resume(): void;
   continueLevel(): void;
   destroy(): void;
+  getGameStateStore?(): GameStateStore | null;
 }
 
 export interface RuntimeControl {
@@ -66,6 +69,7 @@ export interface RenderCapableSystem {
 
 export interface ComposedGame {
   world: WorldState;
+  gameState: GameStateStore;
   renderer: RendererViewport;
   input: BrowserInputAdapter;
   scheduler: TimerSchedulerAdapter;

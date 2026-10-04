@@ -1,7 +1,7 @@
 import { FixedStepLoop } from '../../engine/loop';
 import { LEVEL_MULTIPLIER_STEP } from '../../config/constants';
-import { MOVEMENT_STEP_MS } from '../domain/services/MovementRules';
-import { getGameState } from '../../state/gameState';
+import { LocalSimulation } from '../simulation/LocalSimulation';
+import type { GameStateStore } from '../../state/gameState';
 import { endlessSpeedMultiplier } from '../shared/endlessSettings';
 import {
   ComposedGame,
@@ -24,7 +24,7 @@ export class GameRuntime implements PacketGame {
   private focusListenersBound = false;
   private presentationReady = false;
   private starting: Promise<void> | null = null;
-  private elapsedMs = 0;
+  private simulation: LocalSimulation | null = null;
   private beforeSystems: UpdateCapableSystem[] = [];
   private simulationSystems: UpdateCapableSystem[] = [];
   private afterSystems: UpdateCapableSystem[] = [];
@@ -50,6 +50,11 @@ export class GameRuntime implements PacketGame {
     return this.starting;
   }
 
+  /** Returns the session-owned state after composition has completed. */
+  getGameStateStore(): GameStateStore | null {
+    return this.composed?.gameState ?? null;
+  }
+
   /** Composes the run once and groups its update systems by phase. */
   private async initialize(): Promise<void> {
     let composed: ComposedGame;
@@ -64,7 +69,6 @@ export class GameRuntime implements PacketGame {
       return;
     }
     this.composed = composed;
-    this.elapsedMs = 0;
     this.totalPoints = composed.getRemainingPointCount();
     this.currentLevel = 1;
     this.levelsCleared = 0;
@@ -74,6 +78,25 @@ export class GameRuntime implements PacketGame {
     this.beforeSystems = composed.updateSystems.filter((system) => system.updatePhase === 'beforeSimulation');
     this.simulationSystems = composed.updateSystems.filter((system) => !system.updatePhase || system.updatePhase === 'simulation');
     this.afterSystems = composed.updateSystems.filter((system) => system.updatePhase === 'afterSimulation');
+    let tutorialSnapshot = composed.tutorial?.getSnapshot();
+    this.simulation = new LocalSimulation({ mode: composed.tutorial ? 'tutorial' : composed.world.runMode,
+      before: this.beforeSystems, systems: this.simulationSystems, after: this.afterSystems,
+      active: () => this.composed === composed && composed.world.isMoving && !composed.world.debugFrozen,
+      beforeStep: () => {
+        tutorialSnapshot = composed.tutorial?.getSnapshot();
+        composed.tutorial?.beforeUpdate();
+        composed.world.nextTick();
+      },
+      advanceTimers: (sliceMs) => composed.scheduler.update(sliceMs),
+      afterStep: (sliceMs) => {
+        const tutorial = composed.tutorial;
+        tutorial?.update(sliceMs);
+        if (tutorial && tutorial.getSnapshot() !== tutorialSnapshot) {
+          if (tutorial.getSnapshot().phase === 'playing') this.notifyState();
+          else this.pause();
+        } else if (!tutorial) this.handleRunProgression();
+      },
+    });
 
     this.loop = new FixedStepLoop(this.update, this.render, this.recordActiveTime);
     this.started = true;
@@ -92,6 +115,8 @@ export class GameRuntime implements PacketGame {
     } catch (error) {
       this.loop.stop();
       this.loop = null;
+      this.simulation.destroy();
+      this.simulation = null;
       this.started = false;
       this.unbindFocusListeners();
       this.composed = null;
@@ -170,6 +195,8 @@ export class GameRuntime implements PacketGame {
 
     this.loop?.stop();
     this.loop = null;
+    this.simulation?.destroy();
+    this.simulation = null;
     this.beforeSystems = [];
     this.simulationSystems = [];
     this.afterSystems = [];
@@ -284,7 +311,7 @@ export class GameRuntime implements PacketGame {
     if (!this.composed) return;
     const active = this.composed.world.isMoving && !this.composed.world.debugFrozen && !document.hidden;
     this.composed.renderer.recordFrame?.(elapsedMs, active);
-    if (this.composed.world.isMoving && !this.composed.world.debugFrozen) this.elapsedMs += elapsedMs;
+    this.simulation?.recordTime(elapsedMs);
   };
 
   /** Advances scaled gameplay in bounded slices while frame-owned systems run once. */
@@ -307,33 +334,10 @@ export class GameRuntime implements PacketGame {
       system.capturePreviousState?.();
     });
     const simulationDeltaMs = deltaMs * this.composed.world.levelMultiplier
-      * (this.composed.world.runMode === 'endless' ? endlessSpeedMultiplier(getGameState().score) : 1);
-    this.beforeSystems.forEach((system) => system.update(deltaMs));
-
-    let remainingMs = simulationDeltaMs;
-    while (remainingMs > Number.EPSILON && this.composed?.world.isMoving) {
-      const maximumSliceMs = Math.min(remainingMs, MOVEMENT_STEP_MS);
-      const sliceMs = this.simulationSystems.reduce((boundaryMs, system) => {
-        const candidate = system.getSimulationBoundaryMs?.(boundaryMs) ?? boundaryMs;
-        return candidate > Number.EPSILON ? Math.min(boundaryMs, candidate) : boundaryMs;
-      }, maximumSliceMs);
-      const tutorial = this.composed.tutorial;
-      const tutorialSnapshot = tutorial?.getSnapshot();
-      tutorial?.beforeUpdate();
-      this.composed.world.nextTick();
-      this.composed.scheduler.update(sliceMs);
-      this.simulationSystems.forEach((system) => system.update(sliceMs));
-      tutorial?.update(sliceMs);
-      if (tutorial && tutorial.getSnapshot() !== tutorialSnapshot) {
-        if (tutorial.getSnapshot().phase === 'playing') this.notifyState();
-        else this.pause();
-      } else if (!tutorial) {
-        this.handleRunProgression();
-      }
-      remainingMs -= sliceMs;
-    }
+      * (this.composed.world.runMode === 'endless'
+        ? endlessSpeedMultiplier(this.composed.gameState.getSnapshot().score) : 1);
+    this.simulation?.advance(deltaMs, simulationDeltaMs);
     if (!this.composed) return;
-    this.afterSystems.forEach((system) => system.update(deltaMs));
     this.presentationReady = this.composed.world.isMoving;
   };
 
@@ -342,13 +346,13 @@ export class GameRuntime implements PacketGame {
     if (!this.composed || this.result || this.levelClear) return;
     const remaining = this.composed.getRemainingPointCount();
     const world = this.composed.world;
-    if (world.runMode !== 'endless' && !world.outcome && this.totalPoints > 0 && remaining === 0) {
+    if (this.simulation?.rules.pickupCompletion === 'checkpoint' && !world.outcome && this.totalPoints > 0 && remaining === 0) {
       world.outcome = 'cleared';
       this.levelsCleared += 1;
       this.levelClear = {
         level: this.currentLevel,
-        ...getGameState(),
-        elapsedMs: Math.round(this.elapsedMs),
+        ...this.composed.gameState.getSnapshot(),
+        elapsedMs: Math.round(this.simulation?.activeTimeMs ?? 0),
         pointsCollected: this.totalPoints,
         totalPoints: this.totalPoints,
         nextMultiplier: world.levelMultiplier * LEVEL_MULTIPLIER_STEP,
@@ -363,8 +367,8 @@ export class GameRuntime implements PacketGame {
     this.result = {
       outcome: world.outcome,
       mode: world.runMode ?? 'classic',
-      ...getGameState(),
-      elapsedMs: Math.round(this.elapsedMs),
+      ...this.composed.gameState.getSnapshot(),
+      elapsedMs: Math.round(this.simulation?.activeTimeMs ?? 0),
       pointsCollected: recovered,
       totalPoints: world.runMode === 'endless' ? recovered : this.totalPoints,
       levelsCleared: this.levelsCleared,

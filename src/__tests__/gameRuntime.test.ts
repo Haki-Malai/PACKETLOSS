@@ -13,7 +13,7 @@ import { CollectibleSystem } from '../game/systems/CollectibleSystem';
 import { EnemyMovementSystem } from '../game/systems/EnemyMovementSystem';
 import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
 import { TutorialController } from '../game/tutorial/TutorialController';
-import { addScore, getGameState, resetGameState } from '../state/gameState';
+import { addScore, getDefaultGameStateStore, getGameState, resetGameState } from '../state/gameState';
 import { createCollisionTile, createMapFixture } from './fixtures/pointLayoutFixtures';
 
 type EventCallback = (_event?: Event) => void;
@@ -47,6 +47,7 @@ function createComposedGame() {
 
   const composed: ComposedGame = {
     world: world as never,
+    gameState: getDefaultGameStateStore(),
     renderer: {} as never,
     input: input as never,
     scheduler: scheduler as never,

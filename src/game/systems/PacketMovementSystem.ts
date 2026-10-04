@@ -3,7 +3,7 @@ import { PortalService } from '../domain/services/PortalService';
 import { MovementRules } from '../domain/services/MovementRules';
 import { OPPOSITE_DIRECTION } from '../domain/valueObjects/Direction';
 import { WorldState } from '../domain/world/WorldState';
-import { resolveNextBlinkToggleAt } from '../shared/blinkCadence';
+import { sampleBlinkCadence } from '../shared/blinkCadence';
 
 export class PacketMovementSystem {
   constructor(
@@ -107,6 +107,7 @@ export class PacketMovementSystem {
     this.world.packet.portalBlinkElapsedMs = elapsed + safeDelta;
   }
 
+  /** Advances recovery and samples the shared solo/online blink cadence from simulation time. */
   private updateDeathRecovery(deltaMs: number): void {
     const remaining = this.world.packet.deathRecoveryRemainingMs ?? 0;
     if (remaining <= 0) {
@@ -131,17 +132,9 @@ export class PacketMovementSystem {
       return;
     }
 
-    let nextToggleAtMs = this.world.packet.deathRecoveryNextToggleAtMs;
-    if (!Number.isFinite(nextToggleAtMs) || nextToggleAtMs <= 0) {
-      nextToggleAtMs = resolveNextBlinkToggleAt(elapsedBefore, PACKET_DEATH_RECOVERY.durationMs, PACKET_DEATH_RECOVERY);
-    }
-
-    while (nextToggleAtMs > 0 && elapsedAfter >= nextToggleAtMs) {
-      this.world.packet.deathRecoveryVisible = !this.world.packet.deathRecoveryVisible;
-      nextToggleAtMs = resolveNextBlinkToggleAt(nextToggleAtMs, PACKET_DEATH_RECOVERY.durationMs, PACKET_DEATH_RECOVERY);
-    }
-
-    this.world.packet.deathRecoveryNextToggleAtMs = nextToggleAtMs;
+    const sample = sampleBlinkCadence(elapsedAfter, PACKET_DEATH_RECOVERY.durationMs, PACKET_DEATH_RECOVERY);
+    this.world.packet.deathRecoveryVisible = sample.visible;
+    this.world.packet.deathRecoveryNextToggleAtMs = sample.nextToggleAtMs;
   }
 
   private updateDirectionVisuals(): void {

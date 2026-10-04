@@ -3,6 +3,8 @@ import { Direction } from '../valueObjects/Direction';
 import { PortalPair } from '../world/WorldState';
 import { CollisionGrid } from '../world/CollisionGrid';
 
+export const PORTAL_TRAVEL_FRACTION = 0.5;
+
 interface PortalTrackedEntity {
   tile: TilePosition;
   moved: { x: number; y: number };
@@ -72,7 +74,7 @@ export class PortalService {
     const context = this.resolvePortalContext(entity);
     if (!context || this.isDestinationFullyBlocking(context.portalLink, collisionGrid)) return null;
     const safeTileSize = Number.isFinite(tileSize) && tileSize > 0 ? tileSize : 16;
-    return Math.max(0, safeTileSize / 2 - this.resolveOutwardOffset(entity.moved, context.direction));
+    return Math.max(0, safeTileSize * PORTAL_TRAVEL_FRACTION - this.resolveOutwardOffset(entity.moved, context.direction));
   }
 
   getTransition(tile: TilePosition, direction: Direction, collisionGrid: CollisionGrid): TilePosition | null {
@@ -166,7 +168,7 @@ export class PortalService {
     tileSize: number,
   ): boolean {
     const safeTileSize = Number.isFinite(tileSize) && tileSize > 0 ? tileSize : 16;
-    const threshold = safeTileSize / 2;
+    const threshold = safeTileSize * PORTAL_TRAVEL_FRACTION;
     return this.resolveOutwardOffset(moved, direction) >= threshold;
   }
 
