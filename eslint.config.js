@@ -6,14 +6,14 @@ import vitest from 'eslint-plugin-vitest';
 
 export default tseslint.config(
   {
-    ignores: ['dist', 'node_modules', 'public/**/*.tsx', '.codex/worktrees/**'],
+    ignores: ['dist', 'server-dist', 'backend-dist', '.packetloss-dev/**', 'node_modules', 'public/**/*.tsx', '.codex/worktrees/**'],
   },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
-        project: './tsconfig.json',
+        project: ['./tsconfig.json', './tsconfig.server.json', './backend/tsconfig.json'],
         tsconfigRootDir: import.meta.dirname,
       },
       ecmaVersion: 2022,

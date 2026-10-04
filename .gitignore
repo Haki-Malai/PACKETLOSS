@@ -82,6 +82,10 @@ typings/
 # Nuxt.js build / generate output
 .nuxt
 dist
+server-dist/
+backend-dist/
+packetloss-api.zip
+.packetloss-dev/
 
 # Gatsby files
 .cache/

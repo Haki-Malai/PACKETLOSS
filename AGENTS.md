@@ -2,6 +2,8 @@
 
 - Read `docs/PRODUCT.md` for gameplay and scope, and `docs/ARCHITECTURE.md` before changing runtime structure.
 - Keep changes small, readable, and limited to the request.
+- Use Node.js for application services, tests, and development tooling; do not add Python code or dependencies.
+- Do not retain one-off scripts after their task is complete. Keep a helper only when there is a concrete recurring use or a credible use elsewhere; otherwise remove it and retain any required outputs. Prefer existing shared tools over new single-purpose scripts. The enemy portrait renderer is a maintained asset tool.
 - Use strict TypeScript; avoid `any` and unnecessary abstractions.
 - Document new or changed non-JSX functions with JSDoc comments following `docs/CODING.md`.
 - Prefer Tailwind utilities for UI styling.

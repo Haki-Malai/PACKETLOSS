@@ -1,0 +1,8 @@
+.git
+node_modules
+.packetloss-dev
+.env*
+dist
+server-dist
+backend-dist
+*.log

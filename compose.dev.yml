@@ -1,0 +1,176 @@
+name: packetloss-dev
+
+x-local-environment: &local-environment
+  PACKETLOSS_LOCAL_DEVELOPMENT: "1"
+  PACKETLOSS_DEV_DYNAMODB_ENDPOINT: http://dynamodb:8000
+  PACKETLOSS_DEV_AUTH_KEY: ${PACKETLOSS_DEV_AUTH_KEY:?Use node scripts/dev-full.mjs}
+  PACKETLOSS_DEV_INTERNAL_TOKEN: ${PACKETLOSS_DEV_INTERNAL_TOKEN:?Use node scripts/dev-full.mjs}
+  PACKETLOSS_DEV_RUN_ID: ${PACKETLOSS_DEV_RUN_ID:?Use node scripts/dev-full.mjs}
+  PACKETLOSS_DEV_PROCESS_GENERATION: ${PACKETLOSS_DEV_PROCESS_GENERATION:?Use node scripts/dev-full.mjs}
+  PACKETLOSS_DEV_SITE_ORIGIN: http://127.0.0.1:${PACKETLOSS_DEV_WEB_PORT:-5173}
+  PACKETLOSS_DEV_WEBSOCKET_URL: ws://127.0.0.1:${PACKETLOSS_DEV_GAME_PORT:-8080}/ws
+  AWS_EC2_METADATA_DISABLED: "true"
+
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:3.3.0
+    user: root
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/data"]
+    volumes:
+      - dynamodb:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:8000 >/dev/null"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  init:
+    build:
+      context: .
+      dockerfile: dev/Lambda.Dockerfile
+    environment: *local-environment
+    entrypoint: ["node", "dev/lambda.mjs", "--bootstrap"]
+    volumes:
+      - ./.packetloss-dev/data:/data:ro
+    depends_on:
+      dynamodb:
+        condition: service_healthy
+
+  account-lambda:
+    init: true
+    build:
+      context: .
+      dockerfile: dev/Lambda.Dockerfile
+    environment: *local-environment
+    volumes:
+      - ./backend:/var/task/backend:ro
+      - ./src:/var/task/src:ro
+      - ./dev/lambda.mjs:/var/task/dev/lambda.mjs:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  multiplayer-lambda:
+    init: true
+    build:
+      context: .
+      dockerfile: dev/Lambda.Dockerfile
+    environment: *local-environment
+    volumes:
+      - ./backend:/var/task/backend:ro
+      - ./src:/var/task/src:ro
+      - ./dev/lambda.mjs:/var/task/dev/lambda.mjs:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  gateway:
+    init: true
+    build:
+      context: .
+      dockerfile: dev/Node.Dockerfile
+    command: ["nodemon", "--legacy-watch", "--signal", "SIGTERM", "--delay", "0.3", "--watch", "dev/gateway.mjs", "--ext", "mjs", "dev/gateway.mjs"]
+    environment:
+      ACCOUNT_LAMBDA_URL: http://account-lambda:8080
+      MULTIPLAYER_LAMBDA_URL: http://multiplayer-lambda:8080
+    volumes:
+      - ./dev:/app/dev:ro
+    ports:
+      - "127.0.0.1:${PACKETLOSS_DEV_API_PORT:-8787}:8787"
+      - "127.0.0.1:${PACKETLOSS_DEV_GAME_PORT:-8080}:8080"
+      - "127.0.0.1:${PACKETLOSS_DEV_ADMIN_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 20s
+      retries: 10
+    depends_on:
+      account-lambda:
+        condition: service_started
+      multiplayer-lambda:
+        condition: service_started
+
+  game:
+    init: true
+    build:
+      context: .
+      dockerfile: dev/Node.Dockerfile
+    command:
+      - nodemon
+      - --legacy-watch
+      - --signal
+      - SIGTERM
+      - --delay
+      - "0.3"
+      - --watch
+      - server
+      - --watch
+      - backend
+      - --watch
+      - src/game/simulation
+      - --watch
+      - src/game/protocol
+      - --watch
+      - src/game/domain
+      - --watch
+      - src/game/shared
+      - --watch
+      - src/game/infrastructure/map
+      - --watch
+      - src/engine
+      - --watch
+      - src/state
+      - --watch
+      - src/config
+      - --watch
+      - public/assets/mazes/default
+      - --watch
+      - dev/game.mjs
+      - --ext
+      - ts,json,mjs
+      - dev/game.mjs
+    # Keep the private API on loopback from the game's perspective.
+    network_mode: service:gateway
+    environment:
+      <<: *local-environment
+      PACKETLOSS_DEV_API_URL: http://127.0.0.1:8787
+      PACKETLOSS_DEV_OUTBOX: /data/outbox
+      PACKETLOSS_DEV_CONTAINER: "1"
+      PACKETLOSS_DEV_MAXIMUM_UPTIME_MS: "604800000"
+      PACKETLOSS_DEV_BOTS: ${PACKETLOSS_DEV_BOTS:-2}
+    volumes:
+      - ./.packetloss-dev/data:/data
+      - ./server:/app/server:ro
+      - ./backend:/app/backend:ro
+      - ./src:/app/src:ro
+      - ./public:/app/public:ro
+      - ./dev:/app/dev:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: dev/Node.Dockerfile
+    command: ["pnpm", "dev", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]
+    environment:
+      VITE_API_URL: http://127.0.0.1:${PACKETLOSS_DEV_API_PORT:-8787}
+      VITE_LOCAL_DEVELOPMENT: "1"
+    ports:
+      - "127.0.0.1:${PACKETLOSS_DEV_WEB_PORT:-5173}:5173"
+    volumes:
+      - ./src:/app/src:ro
+      - ./public:/app/public:ro
+      - ./index.html:/app/index.html:ro
+    depends_on:
+      game:
+        condition: service_healthy
+
+volumes:
+  dynamodb:
