@@ -3,6 +3,24 @@ import { CAMERA } from '../config/constants';
 import { Camera2D } from '../engine/camera';
 
 describe('Camera2D', () => {
+  it('preserves smooth unrestricted follow across edges and shrinking bounds', () => {
+    const camera = new Camera2D({ clampToBounds: false });
+    const target = { x: 8, y: 8 };
+    camera.setBounds(784, 784);
+    camera.setViewport(100, 100);
+    camera.startFollow(target, 0.25, 0.25);
+    camera.snapToFollowTarget();
+    expect(camera.getRenderPosition()).toEqual({ x: -42, y: -42 });
+    target.x += 16;
+    target.y += 16;
+    camera.update();
+    expect(camera.getRenderPosition()).toEqual({ x: -38, y: -38 });
+    camera.setBounds(144, 144, 320, 320);
+    expect(camera.getRenderPosition()).toEqual({ x: -38, y: -38 });
+    camera.update();
+    expect(camera.getRenderPosition()).toEqual({ x: -35, y: -35 });
+  });
+
   it('clamps a retained subregion at its world-space origin', () => {
     const camera = new Camera2D();
     camera.setViewport(100, 100);

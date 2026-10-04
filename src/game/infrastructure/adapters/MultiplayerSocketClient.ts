@@ -243,6 +243,14 @@ export class MultiplayerSocketClient {
         this.send({ type: 'start' });
     }
 
+    /** Requests one authoritative closure; the server permits this only in instant local development. */
+    closeNextWall(): void {
+        const matchId = this.state.race?.matchId;
+        if (matchId && this.state.race?.phase === 'playing') {
+            this.send({ type: 'development-close-wall', matchId });
+        }
+    }
+
     rematch(): void {
         this.send({ type: 'rematch' });
     }

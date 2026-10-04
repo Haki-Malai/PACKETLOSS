@@ -32,6 +32,7 @@ export function GameShell(options: GameShellOptions) {
     const localPlaying = state.screen === 'playing';
     const multiplayerPlaying = state.screen === 'multiplayer-playing';
     const playing = localPlaying || multiplayerPlaying;
+    const developmentLoading = session.developmentMultiplayer && state.screen === 'loading';
     const tutorialPhase = state.tutorial?.phase;
 
     useLayoutEffect(() => {
@@ -172,12 +173,17 @@ export function GameShell(options: GameShellOptions) {
                 {state.ready && <Hud onPause={pause} gameState={state.gameState} />}
             </div>
             {multiplayerPlaying && <MultiplayerViewport session={session} />}
+            {developmentLoading && (
+                <p className="packet-copy absolute inset-0 flex items-center justify-center" role="status">
+                    {session.multiplayer.message || session.account.state.message || 'Starting Battle Royale with bots…'}
+                </p>
+            )}
             <MenuInteraction value={claimPause}>
                 <section
                     ref={ui}
                     className="packet-ui absolute inset-0 overflow-hidden"
                     aria-label="Game menu"
-                    hidden={playing}
+                    hidden={playing || developmentLoading}
                     data-screen={state.screen}
                     data-backdrop={state.hasGame ? 'scene' : 'title'}
                     onPointerDownCapture={claimPause}

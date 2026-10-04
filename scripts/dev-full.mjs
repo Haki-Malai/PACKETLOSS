@@ -24,6 +24,7 @@ export function parseOptions(arguments_) {
     let detached = false;
     let stop = false;
     let solo = false;
+    let multi = false;
     let bots = parseBotCount(process.env.PACKETLOSS_DEV_BOTS ?? '2');
     const names = new Map([
         ['--web-port', 'web'],
@@ -50,6 +51,10 @@ export function parseOptions(arguments_) {
             solo = true;
             continue;
         }
+        if (argument === '--multi') {
+            multi = true;
+            continue;
+        }
         if (argument === '--help' || argument === '-h') {
             help = true;
             continue;
@@ -68,8 +73,10 @@ export function parseOptions(arguments_) {
     if (new Set(Object.values(ports)).size !== Object.keys(ports).length) {
         throw new Error('Development services must use four distinct ports.');
     }
+    if (multi && solo) throw new Error('--multi and --solo cannot be combined.');
+    if (multi && bots === 0) throw new Error('--multi requires at least one bot.');
     if (solo) bots = 0;
-    return { ports, bots, solo, reset, help, detached, stop };
+    return { ports, bots, solo, multi, reset, help, detached, stop };
 }
 
 /** Runs the Docker stack without requiring host Node 24 or AWS credentials. */
@@ -111,6 +118,7 @@ async function main() {
         PACKETLOSS_DEV_PROCESS_GENERATION: randomUUID(),
         PACKETLOSS_DEV_BOTS: String(options.bots),
         PACKETLOSS_DEV_SOLO: options.solo ? '1' : '0',
+        PACKETLOSS_DEV_MULTI: options.multi ? '1' : '0',
         ...Object.fromEntries(
             Object.entries(options.ports).map(([name, port]) => [
                 `PACKETLOSS_DEV_${name.toUpperCase()}_PORT`,
@@ -141,12 +149,14 @@ async function main() {
         const url = `http://127.0.0.1:${options.ports.web}`;
         await waitFor(url, 30000, lifecycle.signal);
         ready = true;
-        console.log(`\nPACKETLOSS ready at ${url} — enter a name and Play as guest.`);
+        console.log(`\nPACKETLOSS ready at ${url}${options.multi ? '' : ' — enter a name and Play as guest.'}`);
         console.log(
             'DynamoDB Local + Node 22 Lambda emulators + Node 24 game server. Multiplayer is ready automatically.'
         );
         console.log('Seed login: owner@packetloss.local / packetloss-dev. Recovery code: 000000.');
-        console.log(options.solo
+        console.log(options.multi
+            ? `Instant Battle Royale: ${options.bots} bots, a fresh match on every refresh. Press C to close the next wall.`
+            : options.solo
             ? 'Solo Battle Royale: create a room to start immediately without bots or saved results.'
             : `Local bots: ${options.bots}. Create a room; bots join and ready automatically. You start the match.`);
         console.log('Code reloads automatically: frontend, game server, gateway, and Node Lambdas. Game reloads interrupt local matches.');
@@ -298,6 +308,7 @@ export function helpText() {
         `  --admin-port PORT Game admin port (default ${DEFAULT_PORTS.admin})\n` +
         `  --bots COUNT      Automatic local opponents, 0–3 (default 2; 0 disables)\n` +
         `  --solo            Start new rooms immediately with one player and no bots\n` +
+        `  --multi           Skip menus, start with bots, reset on refresh; C closes the next wall\n` +
         `  --reset           Clear persistent local accounts, records, results, and auth state\n` +
         `  --detach          Leave the Docker stack running in the background\n` +
         `  --stop            Stop containers, retaining database and outbox\n` +

@@ -7,7 +7,6 @@ import type { MultiplayerConnectionSnapshot } from '../infrastructure/adapters/M
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { TiledMapRepository } from '../infrastructure/map/TiledMapRepository';
 import { HologramPacket } from '../infrastructure/three/HologramPacket';
-import { BattleArenaPresentation } from '../infrastructure/three/BattleArenaPresentation';
 import { MazeScene } from '../infrastructure/three/MazeScene';
 import { MULTIPLAYER_PACKET_APPEARANCES } from '../infrastructure/three/PacketAppearances';
 import { PacketLabels } from '../infrastructure/three/PacketLabels';
@@ -21,6 +20,7 @@ import { resolveMapPathsForVariant } from '../app/mapRuntimeConfig';
 import { position } from '../simulation/movement';
 import {
     battleArenaMapAtStage,
+    battleArenaOuterBounds,
     createBattleArenaWorldMap,
 } from '../simulation/BattleArenaMap';
 import { sampleBlinkCadence } from '../shared/blinkCadence';
@@ -327,20 +327,21 @@ function createThreeStage({
     try {
         const renderer = new ThreeRendererAdapter(canvas, true);
         cleanups.push(() => renderer.dispose());
-        const camera = new Camera3D();
+        const camera = new Camera3D({ clampToBounds: !map.arena });
         const scene = new Scene();
         cleanups.push(() => scene.clear());
-        let maze = new MazeScene({ map: sourceMap });
+        let maze = new MazeScene({
+            map: sourceMap,
+            pulsingPerimeter: map.arena ? battleArenaOuterBounds(0) : undefined,
+            nextMap: map.arena ? createBattleArenaWorldMap(map, 1) : undefined,
+        });
         cleanups.push(() => maze.dispose());
         let stagedMap = battleArenaMapAtStage(map, 0);
         let renderedStage = 0;
-        const arena = map.arena ? new BattleArenaPresentation() : null;
-        if (arena) cleanups.push(() => arena.dispose());
         const resources = new Set<{ dispose(): void }>();
         cleanups.push(() => resources.forEach((resource) => resource.dispose()));
         addGameplayLighting(scene);
         scene.add(maze.group);
-        if (arena) scene.add(arena.group);
 
         const players = MULTIPLAYER_PACKET_APPEARANCES.map((appearance, slot) => {
             const { color } = appearance;
@@ -402,32 +403,32 @@ function createThreeStage({
                     stagedMap = battleArenaMapAtStage(map, renderedStage);
                     scene.remove(maze.group);
                     maze.dispose();
-                    maze = new MazeScene({ map: createBattleArenaWorldMap(map, renderedStage, false) });
+                    maze = new MazeScene({
+                        map: createBattleArenaWorldMap(map, renderedStage),
+                        pulsingPerimeter: map.arena ? battleArenaOuterBounds(renderedStage) : undefined,
+                        nextMap: map.arena && renderedStage < RACE.maxShrinkStage
+                            ? createBattleArenaWorldMap(map, renderedStage + 1) : undefined,
+                    });
                     scene.add(maze.group);
-                    const ring = renderedStage;
-                    const origin = ring * TILE_SIZE;
-                    const size = (49 - ring * 2) * TILE_SIZE;
-                    camera.setBounds(size, size, origin, origin);
                     lastPickupKey = '';
                 }
-                const arenaTick = race.shrinkStage < RACE.maxShrinkStage
-                    ? Math.min(
-                        presentationTick,
-                        (race.shrinkStage + 1) * RACE.shrinkEveryTicks - 0.001
-                    )
-                    : presentationTick;
-                arena?.sync(
-                    race.shrinkStage,
-                    arenaTick,
-                    reducedMotion
-                );
+                if (map.arena) {
+                    const warningActive = race.phase === 'playing' && race.shrinkStage < RACE.maxShrinkStage;
+                    const cycleTicks = race.playTicks - race.shrinkStage * RACE.shrinkEveryTicks
+                        + Math.max(0, presentationTick - race.tick);
+                    maze.syncPerimeterWarning(
+                        warningActive ? cycleTicks * RACE.stepMs : null,
+                        RACE.shrinkEveryTicks * RACE.stepMs,
+                        reducedMotion
+                    );
+                }
                 const nextFollowedPlayerId = battleRoyaleFollowPlayerId(
                     race,
                     connection.playerId
                 );
                 let discontinuity = nextFollowedPlayerId !== followedPlayerId;
                 followedPlayerId = nextFollowedPlayerId;
-                discontinuity ||= syncActors(
+                discontinuity = syncActors(
                     connection.race,
                     connection.raceHistory,
                     stagedMap,
@@ -440,7 +441,7 @@ function createThreeStage({
                     pendingInputs,
                     players,
                     cameraTarget
-                );
+                ) || discontinuity;
                 const acknowledgedInput = connection.race.players.find(
                     (player) => player.id === connection.playerId
                 )?.acknowledgedInput;
@@ -612,7 +613,7 @@ function abortError(signal: AbortSignal): Error {
 
 const browserDependencies: MultiplayerPresentationDependencies = {
     loadMap: (map, signal) => map.arena
-        ? Promise.resolve(createBattleArenaWorldMap(map, 0, false))
+        ? Promise.resolve(createBattleArenaWorldMap(map, 0))
         : new TiledMapRepository().loadMap(
             resolveMapPathsForVariant('default').mapJsonPath,
             signal

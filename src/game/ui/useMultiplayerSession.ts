@@ -237,6 +237,7 @@ export function useMultiplayerSession(
         },
         setReady: (ready: boolean) => socket.setReady(ready),
         startMatch: () => socket.startMatch(),
+        closeNextWall: () => socket.closeNextWall(),
         rematch: () => socket.rematch(),
         sendDirection: (direction: 'up' | 'right' | 'down' | 'left') =>
             socket.sendDirection(direction),

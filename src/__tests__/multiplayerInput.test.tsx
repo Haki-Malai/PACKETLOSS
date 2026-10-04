@@ -19,16 +19,18 @@ vi.mock('../game/ui/MultiplayerPresentation', () => ({
 afterEach(cleanup);
 
 /** Mounts only the input boundary, leaving Three.js presentation stubbed. */
-function mount() {
+function mount(developmentMultiplayer = false) {
   const map = dataRaceFixture();
   const race = new DataRace(map, 'input', [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], 4).snapshot();
   const connection = { map, race, playerId: race.players[0].id,
     phase: 'connected', latencyMs: null, warning: null };
   const sendDirection = vi.fn<(_direction: Direction) => number>(() => 1);
-  const session = { multiplayer: { connection, sendDirection, getConnectionSnapshot: () => connection },
+  const closeNextWall = vi.fn();
+  const session = { developmentMultiplayer,
+    multiplayer: { connection, sendDirection, closeNextWall, getConnectionSnapshot: () => connection },
     leaveMultiplayer: vi.fn() } as unknown as GameSession;
   const mounted = render(<MultiplayerViewport session={session} />);
-  return { ...mounted, canvas: mounted.container.querySelector('canvas')!, sendDirection };
+  return { ...mounted, canvas: mounted.container.querySelector('canvas')!, sendDirection, closeNextWall };
 }
 
 /** Dispatches complete touch-pointer state in jsdom, which does not implement PointerEvent. */
@@ -39,6 +41,25 @@ function pointer(target: Element | Window, type: string, x: number, y: number): 
 }
 
 describe('multiplayer shared input', () => {
+  it('closes one wall per C press only in instant development and ignores repeats or focused controls', () => {
+    const regular = mount();
+    fireEvent.keyDown(window, { code: 'KeyC' });
+    expect(regular.closeNextWall).not.toHaveBeenCalled();
+    regular.unmount();
+    const development = mount(true);
+    fireEvent.keyDown(window, { code: 'KeyC' });
+    fireEvent.keyDown(window, { code: 'KeyC', repeat: true });
+    fireEvent.keyUp(window, { code: 'KeyC' });
+    fireEvent.keyDown(window, { code: 'KeyC', ctrlKey: true });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Leave' }), { code: 'KeyC' });
+    expect(development.closeNextWall).toHaveBeenCalledTimes(1);
+    fireEvent.keyUp(window, { code: 'KeyC' });
+    fireEvent.keyDown(window, { code: 'KeyC' });
+    expect(development.closeNextWall).toHaveBeenCalledTimes(2);
+    development.unmount();
+    fireEvent.keyDown(window, { code: 'KeyC' });
+    expect(development.closeNextWall).toHaveBeenCalledTimes(2);
+  });
   it('commits one axis-locked swipe before release and drops cancelled or blurred gestures', () => {
     const { canvas, sendDirection, unmount } = mount();
     pointer(canvas, 'pointerdown', 0, 0);

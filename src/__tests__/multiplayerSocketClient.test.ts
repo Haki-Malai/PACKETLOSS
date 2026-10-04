@@ -148,6 +148,9 @@ describe('MultiplayerSocketClient', () => {
         });
         expect(inputMessage).not.toContain('score');
         expect(inputMessage).not.toContain('position');
+        client.closeNextWall();
+        expect(parseClientMessage(socket.sent[socket.sent.length - 1]))
+            .toEqual({ type: 'development-close-wall', matchId: 'match-1' });
         client.disconnect();
         expect(client.getSnapshot()).toMatchObject({
             phase: 'closed',

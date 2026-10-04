@@ -131,6 +131,15 @@ export class DataRace {
     if (this.state.playTicks >= RACE.matchTicks) this.finish();
   }
 
+  /** Skips only the remaining closure time for development controls, preserving actor movement and effect timers. */
+  advanceToNextClosure(): boolean {
+    if (!this.map.arena || this.state.phase !== 'playing' || this.outcomeLocked()
+      || this.state.shrinkStage >= RACE.maxShrinkStage) return false;
+    this.state.playTicks = (this.state.shrinkStage + 1) * RACE.shrinkEveryTicks;
+    this.shrinkIfDue();
+    return true;
+  }
+
   /** Produces session-local seeded randomness; snapshots include its complete state. */
   private random(): number {
     this.state.randomState = (this.state.randomState + 0x6d2b79f5) >>> 0;

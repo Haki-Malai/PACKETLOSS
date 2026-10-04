@@ -1,5 +1,5 @@
 import { OrthographicCamera, Plane, Raycaster, Vector2, Vector3 } from 'three';
-import { Camera2D, CameraFollowTarget } from './camera';
+import { Camera2D, type CameraFollowTarget, type CameraOptions } from './camera';
 import { clamp } from './math';
 
 const TILT = (20 * Math.PI) / 180;
@@ -11,7 +11,8 @@ const SIDE_LEAN_COS = Math.cos(SIDE_LEAN);
 export class Camera3D {
   readonly camera = new OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0.1, 4000);
 
-  private readonly tracker = new Camera2D();
+  private readonly tracker: Camera2D;
+  private readonly boundsClamping: boolean;
   private readonly raycaster = new Raycaster();
   private readonly pointer = new Vector2();
   private readonly ground = new Plane(new Vector3(0, 1, 0), 0);
@@ -23,6 +24,12 @@ export class Camera3D {
   private worldMinX = 0;
   private worldMinY = 0;
   private distance = 1000;
+
+  /** Applies the same bounds policy to tracking and pixel-aligned presentation. */
+  constructor({ clampToBounds = true }: CameraOptions = {}) {
+    this.boundsClamping = clampToBounds;
+    this.tracker = new Camera2D({ clampToBounds });
+  }
 
   /** Sets the projected world rectangle, including an optional origin for retained subregions. */
   setBounds(width: number, height: number, minX = 0, minY = 0): void {
@@ -110,6 +117,7 @@ export class Camera3D {
     this.camera.updateMatrixWorld();
   }
 
+  /** Aligns the view to drawing-buffer pixels, retaining boundary stops only for bounded cameras. */
   private alignToPixel(
     value: number,
     pixelsPerUnit: number,
@@ -117,11 +125,13 @@ export class Camera3D {
     visibleSize: number,
     origin: number,
   ): number {
+    const aligned = Math.round(value * pixelsPerUnit) / pixelsPerUnit;
+    if (!this.boundsClamping) return aligned;
     const min = origin + (visibleSize >= worldSize ? (worldSize - visibleSize) / 2 : 0);
     const max = Math.max(min, origin + worldSize - visibleSize);
     // Preserve exact boundary stops and small-world centering.
     if (value <= min || value >= max) return clamp(value, min, max);
-    return clamp(Math.round(value * pixelsPerUnit) / pixelsPerUnit, min, max);
+    return clamp(aligned, min, max);
   }
 
   screenToWorld(screenX: number, screenY: number): { x: number; y: number } {

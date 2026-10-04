@@ -21,6 +21,43 @@ function project(camera: Camera3D, x: number, z: number, width = 800, height = 6
 }
 
 describe('Camera3D', () => {
+  it.each([[8, 8], [776, 8], [8, 776], [776, 776], [344, 360]])(
+    'keeps unrestricted follow and pixel alignment at (%i, %i) through shrinking and resizing', (x, y) => {
+      const camera = new Camera3D({ clampToBounds: false });
+      const target = { x, y };
+      camera.setBounds(784, 784);
+      camera.setViewport(800, 600);
+      camera.setZoom(5);
+      camera.startFollow(target, 1, 1);
+      camera.snapToFollowTarget();
+      camera.present(1, 1.25);
+      const center = camera.screenToWorld(400, 300);
+      expect(center.x).toBeCloseTo(x, 0);
+      expect(center.y).toBeCloseTo(y, 0);
+      camera.setBounds(144, 144, 320, 320);
+      camera.present(1, 1.25);
+      expect(camera.screenToWorld(400, 300).x).toBeCloseTo(center.x, 8);
+      expect(camera.screenToWorld(400, 300).y).toBeCloseTo(center.y, 8);
+      camera.setViewport(1200, 900);
+      camera.setZoom(4);
+      camera.update();
+      camera.present(1, 1.25);
+      const resized = camera.screenToWorld(600, 450);
+      expect(resized.x).toBeCloseTo(x, 0);
+      expect(resized.y).toBeCloseTo(y, 0);
+      const fixed = project(camera, 400, 400, 1200, 900);
+      target.x += 0.27;
+      target.y += 0.39;
+      camera.update();
+      camera.present(1, 1.25);
+      const shifted = project(camera, 400, 400, 1200, 900);
+      for (const axis of ['x', 'y'] as const) {
+        const delta = (shifted[axis] - fixed[axis]) * 1.25;
+        expect(delta).toBeCloseTo(Math.round(delta), 8);
+      }
+    },
+  );
+
   it('starts centered on Packet with north up, the same horizontal scale, and a slight tilt', () => {
     const camera = createCamera();
     const center = project(camera, 400, 300);

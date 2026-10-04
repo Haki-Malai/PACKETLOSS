@@ -29,7 +29,7 @@ async function listen(server: Server): Promise<number> {
 }
 
 /** Uses real HTTP guest/ticket calls and WebSockets with a controllable simulation clock. */
-async function fixture(count = 2) {
+async function fixture(count = 2, instantMultiplayer = false) {
     let now = 0,
         serial = 0;
     const results = new MemoryResultStore(),
@@ -44,6 +44,7 @@ async function fixture(count = 2) {
         randomId: () => `match-${++serial}`,
         randomCode: () => 'ABC234',
         randomSeed: () => 4,
+        multiDevelopment: instantMultiplayer ? { botCount: count } : undefined,
     });
     const messages = vi.spyOn(rooms, 'handle');
     const game = createGameServer({
@@ -127,6 +128,23 @@ async function fixture(count = 2) {
 }
 
 describe('local automated network players', () => {
+    it('starts instantly with network bots and replaces them after the human refreshes', async () => {
+        const game = await fixture(2, true);
+        game.create();
+        await vi.waitFor(() => expect(game.rooms.roomStates()[0]?.phase).toBe('playing'), { timeout: 4000 });
+        const first = game.rooms.roomStates()[0];
+        expect(first.players).toHaveLength(3);
+        game.ticks(90);
+        game.rooms.disconnect('human-peer', 'human');
+        game.create();
+        await vi.waitFor(() => expect(game.rooms.roomStates()[0]?.phase).toBe('playing'), { timeout: 4000 });
+        const second = game.rooms.roomStates()[0];
+        expect(second.matchId).not.toBe(first.matchId);
+        expect(second.players).toHaveLength(3);
+        expect(second.players.slice(1).every((player) => !first.players.some((old) => old.id === player.id))).toBe(true);
+        expect(game.results.starts.get(second.matchId!)).toMatchObject({ tick: 0, playTicks: 0, shrinkStage: 0 });
+        expect(game.rooms.status().rooms).toBe(1);
+    });
     it('joins and readies as separate guests, sends movement, rematches, and leaves with the human', async () => {
         const game = await fixture(3);
         await new Promise((resolve) => setTimeout(resolve, 250));

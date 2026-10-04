@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
     AccountApi,
@@ -14,7 +15,9 @@ import type {
 import { useGameSession, type GameSession } from '../game/ui/useGameSession';
 import { useMultiplayerAvailability } from '../game/ui/useMultiplayerAvailability';
 import { useMultiplayerSession } from '../game/ui/useMultiplayerSession';
-import { PROTOCOL_VERSION } from '../game/protocol/version';
+import { encodeRaceSnapshot, parseClientMessage, PROTOCOL_VERSION } from '../game/protocol/messages';
+import { DataRace } from '../game/simulation/DataRace';
+import { dataRaceFixture } from './fixtures/dataRaceFixture';
 
 class FakeSocket {
     readyState = 1;
@@ -119,11 +122,63 @@ function multiplayerApi(credential: Promise<JoinCredential>) {
 afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     globalThis.sessionStorage?.clear();
     sockets.length = 0;
 });
 
 describe('useMultiplayerAvailability', () => {
+    it('skips menus and creates a fresh development room on every mount, including refresh with an existing guest', async () => {
+        vi.stubEnv('VITE_DEV_MULTI', '1');
+        vi.stubGlobal('WebSocket', FakeSocket);
+        const profile: CloudProfile = { accountId: 'developer', nickname: 'Developer', avatar: 'packet' };
+        let signedIn = false;
+        const account = { ...authenticatedAccount(profile), localDevelopment: true,
+            refresh: vi.fn(() => signedIn ? Promise.resolve()
+                : Promise.reject(Object.assign(new Error('Sign in'), { status: 401, code: 'UNAUTHORIZED', retryAfterMs: 0 }))),
+            guest: vi.fn(() => { signedIn = true; return Promise.resolve(); }),
+        };
+        const api = multiplayerApi(Promise.resolve({ ticket: 'ticket', websocketUrl: readyStatus.websocketUrl!,
+            processGeneration: 'generation-1', expiresAt: new Date(Date.now() + 60_000).toISOString() }));
+        const first = renderHook(() => useGameSession({ mapVariant: 'default', accountClient: account, multiplayerClient: api }),
+            { wrapper: StrictMode });
+        expect(first.result.current.state.screen).toBe('loading');
+        await waitFor(() => expect(sockets).toHaveLength(1));
+        expect(account.guest).toHaveBeenCalledExactlyOnceWith('Developer');
+        expect(api.createJoinCredential).toHaveBeenCalledExactlyOnceWith({ operation: 'create', region: 'eu' });
+        act(() => {
+            sockets[0].open();
+            sockets[0].message({ type: 'authenticated', version: PROTOCOL_VERSION, playerId: 'developer',
+                instanceRunId: 'run-1', processGeneration: 'generation-1' });
+            sockets[0].message({ type: 'room', room: { code: 'ABC234', ownerId: 'developer', phase: 'lobby',
+                matchId: null, canStart: false, players: [{ id: 'developer', name: 'Developer', color: '#38bdf8',
+                    ready: true, connected: true, reservedUntilMs: null }] } });
+        });
+        expect(first.result.current.state.screen).toBe('loading');
+        expect(sockets[0].sent.map((raw) => parseClientMessage(raw)?.type)).toContain('create');
+        const map = dataRaceFixture();
+        const race = new DataRace(map, 'instant', [{ id: 'developer', name: 'Developer' }, { id: 'bot', name: 'BOT' }], 4);
+        act(() => {
+            sockets[0].message({ type: 'map', map });
+            sockets[0].message({ type: 'snapshot', snapshot: encodeRaceSnapshot(map, race.snapshot()),
+                serverTimeMs: 0, instanceRunId: 'run-1', processGeneration: 'generation-1' });
+        });
+        expect(first.result.current.state.screen).toBe('multiplayer-playing');
+        first.unmount();
+        const refreshed = renderHook(() => useGameSession({ mapVariant: 'default', accountClient: account, multiplayerClient: api }),
+            { wrapper: StrictMode });
+        await waitFor(() => expect(sockets).toHaveLength(2));
+        expect(api.createJoinCredential).toHaveBeenLastCalledWith({ operation: 'create', region: 'eu' });
+        expect(refreshed.result.current.state.screen).toBe('loading');
+        expect(account.guest).toHaveBeenCalledTimes(1);
+        refreshed.unmount();
+        const deployed = renderHook(() => useGameSession({ mapVariant: 'default',
+            accountClient: { ...account, localDevelopment: false }, multiplayerClient: api }));
+        await waitFor(() => expect(deployed.result.current.state.screen).toBe('title'));
+        expect(sockets).toHaveLength(2);
+        deployed.unmount();
+    });
+
     it('refuses a version-one server before issuing a ticket or opening a socket', async () => {
         vi.stubGlobal('WebSocket', FakeSocket);
         const api = multiplayerApi(deferred<JoinCredential>().promise);

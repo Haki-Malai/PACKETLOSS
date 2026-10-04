@@ -144,6 +144,7 @@ services:
       PACKETLOSS_DEV_MAXIMUM_UPTIME_MS: "604800000"
       PACKETLOSS_DEV_BOTS: ${PACKETLOSS_DEV_BOTS:-2}
       PACKETLOSS_DEV_SOLO: ${PACKETLOSS_DEV_SOLO:-0}
+      PACKETLOSS_DEV_MULTI: ${PACKETLOSS_DEV_MULTI:-0}
     volumes:
       - ./.packetloss-dev/data:/data
       - ./server:/app/server:ro
@@ -168,6 +169,7 @@ services:
     environment:
       VITE_API_URL: http://127.0.0.1:${PACKETLOSS_DEV_API_PORT:-8787}
       VITE_LOCAL_DEVELOPMENT: "1"
+      VITE_DEV_MULTI: ${PACKETLOSS_DEV_MULTI:-0}
     ports:
       - "127.0.0.1:${PACKETLOSS_DEV_WEB_PORT:-5173}:5173"
     volumes:

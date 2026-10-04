@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { IS_DEV } from '../../config/environment';
 import { RACE, type Direction } from '../simulation/types';
 import { buttonLayout } from './MenuPanel';
 import { MultiplayerPresentationSession } from './MultiplayerPresentation';
@@ -50,6 +51,13 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
             sentKeyboard = direction;
         }
         adapter.onKeyDown(keyboardIntent);
+        adapter.onKeyDown((event) => {
+            if (!IS_DEV || !sessionRef.current.developmentMultiplayer || document.hidden
+                || event.code !== 'KeyC' || event.repeat || event.altKey || event.ctrlKey
+                || event.metaKey || event.shiftKey) return;
+            event.preventDefault();
+            sessionRef.current.multiplayer.closeNextWall();
+        });
         adapter.onKeyUp(keyboardIntent);
         adapter.onPointerDown((pointer) => { if (!document.hidden) directions.start(pointer); });
         adapter.onPointerMove((pointer) => {

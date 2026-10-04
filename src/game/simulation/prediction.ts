@@ -178,7 +178,7 @@ export class LocalMovementPresentation {
   /** Clears presentation error after focus loss, reconnects, or a fresh match. */
   reset(): void { this.previous = null; this.offset = { x: 0, y: 0 }; }
 
-  /** Returns predicted movement, a corridor-safe correction, and whether camera state must snap. */
+  /** Resets corrections on topology changes while reserving camera snaps for actual discontinuities. */
   sample(map: RaceMap, race: RaceSnapshot, player: RacePlayer, predictedTick: number,
     pending: readonly PredictedInput[], nowMs: number): LocalMovementSample {
     const presentationTick = Math.max(race.tick, predictedTick);
@@ -187,12 +187,12 @@ export class LocalMovementPresentation {
       : projectMovement(map, player, race.tick, race.tick, []);
     const { movement, point } = projection;
     const previous = this.previous;
+    const topologyChanged = previous !== null && previous.race.shrinkStage !== race.shrinkStage;
     let discontinuity = previous === null;
     if (previous) {
       discontinuity ||= previous.race.matchId !== race.matchId
         || previous.race.mapId !== race.mapId || race.tick < previous.race.tick
         || previous.player.id !== player.id || previous.race.phase !== race.phase
-        || previous.race.shrinkStage !== race.shrinkStage
         || player.connected !== previous.player.connected
         || player.eliminatedAtTick !== previous.player.eliminatedAtTick
         || (player.deathMs > 0) !== (previous.player.deathMs > 0)
@@ -201,7 +201,7 @@ export class LocalMovementPresentation {
         || Math.hypot(point.x - previous.projection.point.x,
           point.y - previous.projection.point.y) > 2;
     }
-    if (!previous || discontinuity || !player.connected
+    if (!previous || discontinuity || topologyChanged || !player.connected
       || player.eliminatedAtTick !== null || player.deathMs > 0) {
       this.offset = { x: 0, y: 0 };
     }

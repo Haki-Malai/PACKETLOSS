@@ -19,6 +19,7 @@ interface Member {
 }
 interface Room {
   code: string;
+  creatorId: string;
   ownerId: string;
   members: Map<string, Member>;
   map: RaceMap | null;
@@ -48,6 +49,7 @@ export interface RoomServiceOptions {
   instanceRunId?: string;
   processGeneration?: string;
   soloDevelopment?: boolean;
+  multiDevelopment?: { botCount: number };
 }
 export interface RoomStatus {
   ready: boolean;
@@ -138,8 +140,18 @@ export class RoomService {
         case 'ready':
           if (room.race || room.starting) throw new Error('Readiness changes are only allowed in the lobby.');
           if (member.ready !== message.ready) room.touchedAt = this.options.now();
-          member.ready = message.ready; break;
+          member.ready = message.ready;
+          this.autoStartDevelopment(room);
+          break;
         case 'start': this.start(room, identity.playerId); break;
+        case 'development-close-wall':
+          if (!this.options.multiDevelopment || room.creatorId !== identity.playerId
+            || !room.race || room.race.matchId !== message.matchId) {
+            throw new Error('Wall closure controls require the local development match creator.');
+          }
+          this.pump();
+          if (room.race.advanceToNextClosure()) this.publishSnapshot(room);
+          return;
         case 'input':
           this.pump();
           if (!room.race || room.race.matchId !== message.matchId) throw new Error('Input belongs to another match.');
@@ -156,7 +168,7 @@ export class RoomService {
           room.mapSeed = nextMapSeed === room.mapSeed ? (nextMapSeed + 1) >>> 0 : nextMapSeed;
           room.rotation += 1; room.touchedAt = this.options.now();
           room.members.forEach((entry) => { entry.ready = false; });
-          this.autoStartSolo(room);
+          this.autoStartDevelopment(room);
           break;
         }
         default: throw new Error('Authentication is already complete.');
@@ -225,22 +237,29 @@ export class RoomService {
     }
   }
 
-  /** Creates one private room; the alpha defaults to one concurrent room. */
+  /** Creates a private room, replacing only the creator's own instant-development match on refresh. */
   private create(peerId: string, identity: AuthenticatedPlayer, send: SendMessage): void {
     if (!this.status().ready) throw new Error('The server is draining or unavailable.');
     if (identity.roomCode || identity.operation !== 'create') throw new Error('This ticket does not authorize creation.');
+    const previous = this.memberships.get(identity.playerId);
+    if (this.options.multiDevelopment && previous?.creatorId === identity.playerId) {
+      previous.race?.abort('development_reset');
+      this.broadcast(previous, { type: 'left' });
+      previous.members.forEach((_member, id) => this.memberships.delete(id));
+      this.rooms.delete(previous.code);
+    }
     if (this.memberships.has(identity.playerId)) throw new Error('Leave your existing room first.');
     if (this.rooms.size >= (this.options.maxRooms ?? 1)) throw new Error('The private server is full.');
     let code = this.options.randomCode();
     while (this.rooms.has(code)) code = this.options.randomCode();
     const seed = this.options.randomSeed() >>> 0;
-    const room: Room = { code, ownerId: identity.playerId, members: new Map(), map: null, race: null,
+    const room: Room = { code, creatorId: identity.playerId, ownerId: identity.playerId, members: new Map(), map: null, race: null,
       lastStep: this.options.now(), emptySince: null, saveState: 'none', nextSave: 0,
       touchedAt: this.options.now(), starting: false, seed, mapSeed: seed, rotation: 0, pendingResult: null,
       nextSnapshotTick: 60 / (this.options.snapshotHz ?? 20) };
     this.rooms.set(code, room);
     this.attach(room, peerId, identity, send);
-    this.autoStartSolo(room);
+    this.autoStartDevelopment(room);
   }
 
   /** Allows fresh lobby admission or a reserved reconnect, never active-match replacement. */
@@ -277,7 +296,7 @@ export class RoomService {
     this.publishRoom(room);
   }
 
-  /** Starts play after persisting a connected roster that unanimously readied. */
+  /** Starts play after persisting a connected roster, ignoring completion for a replaced development room. */
   private start(room: Room, playerId: string): void {
     if (room.ownerId !== playerId) throw new Error('Only the room creator can start.');
     const minimumPlayers = this.options.soloDevelopment ? 1 : 2;
@@ -294,6 +313,7 @@ export class RoomService {
       this.options.soloDevelopment === true);
     room.starting = true;
     void this.options.results.start(race.snapshot(), room.code).then(() => {
+      if (this.rooms.get(room.code) !== room) return;
       room.starting = false;
       const rosterChanged = room.members.size !== participantIds.size
         || [...participantIds].some((id) => {
@@ -334,12 +354,14 @@ export class RoomService {
     room.ownerId = [...room.members.values()].find((member) => member.peerId)?.identity.playerId ?? room.ownerId;
   }
 
-  /** Auto-readies and starts the sole owner only in the explicit local solo configuration. */
-  private autoStartSolo(room: Room): void {
-    if (!this.options.soloDevelopment || room.members.size !== 1 || room.starting || room.race) return;
+  /** Auto-readies the owner and starts explicit local practice after its requested roster has joined. */
+  private autoStartDevelopment(room: Room): void {
+    if ((!this.options.soloDevelopment && !this.options.multiDevelopment) || room.starting || room.race) return;
     const owner = room.members.get(room.ownerId);
     if (!owner?.peerId) return;
     owner.ready = true;
+    const size = this.options.multiDevelopment ? this.options.multiDevelopment.botCount + 1 : 1;
+    if (room.members.size !== size || [...room.members.values()].some((member) => !member.peerId || !member.ready)) return;
     this.start(room, room.ownerId);
   }
 

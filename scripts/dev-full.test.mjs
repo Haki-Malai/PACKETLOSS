@@ -25,6 +25,7 @@ describe('complete development launcher options', () => {
             ports: { web: 5173, api: 8787, game: 8080, admin: 8081 },
             bots: 2,
             solo: false,
+            multi: false,
             reset: false,
             help: false,
             detached: false,
@@ -48,6 +49,7 @@ describe('complete development launcher options', () => {
             ports: { web: 6001, api: 6002, game: 6003, admin: 6004 },
             bots: 2,
             solo: false,
+            multi: false,
             reset: true,
             help: false,
             detached: false,
@@ -69,6 +71,7 @@ describe('complete development launcher options', () => {
         expect(helpText()).toContain('--game-port');
         expect(helpText()).toContain('--admin-port');
         expect(helpText()).toContain('--solo');
+        expect(helpText()).toContain('--multi');
         expect(helpText()).toContain('--reset');
     });
 
@@ -91,5 +94,12 @@ describe('complete development launcher options', () => {
         expect(parseOptions(['--solo'])).toMatchObject({ solo: true, bots: 0 });
         expect(parseOptions(['--bots=3', '--solo'])).toMatchObject({ solo: true, bots: 0 });
         expect(parseOptions(['--solo', '--bots=3'])).toMatchObject({ solo: true, bots: 0 });
+    });
+
+    it('starts instant multiplayer with bots and rejects conflicting modes', () => {
+        expect(parseOptions(['--', '--multi'])).toMatchObject({ multi: true, bots: 2, solo: false });
+        expect(parseOptions(['--multi', '--bots=3'])).toMatchObject({ multi: true, bots: 3 });
+        expect(() => parseOptions(['--multi', '--solo'])).toThrow('cannot be combined');
+        expect(() => parseOptions(['--multi', '--bots=0'])).toThrow('at least one bot');
     });
 });

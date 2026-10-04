@@ -19,6 +19,48 @@ import { buildPacketSignGeometry } from './PacketSignGeometry';
 import { createMazeFloorMaterial } from './ScenePresentation';
 
 const PEN_SHEET_HEIGHT = 0.2;
+const PULSING_WALL_COLOR = '#b846ff';
+const WALL_PULSE_RADIANS_PER_MS = 0.012;
+
+/** Inclusive tile bounds of a wall ring surrounding playable corridors. */
+interface MazePerimeterBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+/** Keeps surviving interiors static; retiring walls own their complete caps, including pixels reused by the next map. */
+function retainedWallFootprint(
+  map: WorldMapData, footprint: MazeFootprint, bounds: MazePerimeterBounds, nextMap?: WorldMapData,
+): MazeFootprint {
+  const minX = (bounds.minX + 1) * map.tileWidth + 2;
+  const maxX = bounds.maxX * map.tileWidth - 2;
+  const minY = (bounds.minY + 1) * map.tileHeight + 2;
+  const maxY = bounds.maxY * map.tileHeight - 2;
+  const next = nextMap ? buildMazeWallFootprint(nextMap) : undefined;
+  const solid = footprint.solid.map((pixel, index) => {
+    const x = index % footprint.width;
+    const y = Math.floor(index / footprint.width);
+    const retained = !next || next.solid[y * next.width + x];
+    return retained && x >= minX && x < maxX && y >= minY && y < maxY ? pixel : 0;
+  });
+  /** Samples retiring rail pixels just outside a four-pixel junction cap. */
+  const retires = (x: number, y: number): boolean => x >= 0 && x < footprint.width
+    && y >= 0 && y < footprint.height
+    && Boolean(footprint.solid[y * footprint.width + x] && !solid[y * footprint.width + x]);
+  for (let y = 0; y <= footprint.height; y += map.tileHeight) {
+    for (let x = 0; x <= footprint.width; x += map.tileWidth) {
+      // Probe outside the cap so assigning one tip cannot spread ownership to another.
+      if (![-2, -1, 0, 1].some((offset) => retires(x - 3, y + offset) || retires(x + 2, y + offset)
+        || retires(x + offset, y - 3) || retires(x + offset, y + 2))) continue;
+      for (let row = Math.max(0, y - 2); row < Math.min(footprint.height, y + 2); row += 1) {
+        solid.fill(0, row * footprint.width + Math.max(0, x - 2), row * footprint.width + Math.min(footprint.width, x + 2));
+      }
+    }
+  }
+  return { ...footprint, solid };
+}
 
 export class MazeScene {
   readonly group = new Group();
@@ -28,12 +70,15 @@ export class MazeScene {
   private readonly penFootprint: MazeFootprint | undefined;
   private readonly walls: Mesh<BufferGeometry, MeshStandardMaterial>;
   private wallEdges: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
-  private quarantineEdges: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
+  private pulsingEdges: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
   private wallTopologyKey = '';
   private readonly clipPlanes?: [Plane, Plane];
 
-  /** Builds the authored maze from one contour pass shared by its wall mesh and outlines. */
-  constructor(world: { map: WorldMapData }, clipBounds?: { minZ: number; maxZ: number }) {
+  /** Builds joined walls and assigns the outer ring and disappearing segments to the shared warning pulse. */
+  constructor(
+    world: { map: WorldMapData; pulsingPerimeter?: MazePerimeterBounds; nextMap?: WorldMapData },
+    clipBounds?: { minZ: number; maxZ: number },
+  ) {
     this.group.name = 'maze';
     if (clipBounds) {
       this.clipPlanes = [new Plane(new Vector3(0, 0, 1), -clipBounds.minZ),
@@ -65,17 +110,18 @@ export class MazeScene {
     this.walls = new Mesh(wallGeometry, wallMaterial);
     this.walls.name = 'walls';
     this.group.add(this.walls);
-    this.wallEdges = this.createOutlineStrips(
-      buildMazeWallEdgeGeometry(this.wallFootprint, this.penFootprint, true, contours),
-      new Color('#b579a1'),
-    );
+    const edges = buildMazeWallEdgeGeometry(this.wallFootprint, this.penFootprint, true, contours);
+    const split = world.pulsingPerimeter
+      ? splitMazeWallEdgesByOwnership(edges, retainedWallFootprint(map, this.wallFootprint, world.pulsingPerimeter, world.nextMap))
+      : { authored: edges, temporary: new BufferGeometry().setAttribute('position', new Float32BufferAttribute([], 3)) };
+    if (world.pulsingPerimeter) edges.dispose();
+    this.wallEdges = this.createOutlineStrips(split.authored, new Color('#b579a1'));
     this.wallEdges.name = 'wall-edges';
-    this.quarantineEdges = this.createOutlineStrips(
-      new BufferGeometry().setAttribute('position', new Float32BufferAttribute([], 3)), new Color('#b846ff'),
-    );
-    this.quarantineEdges.name = 'quarantine-wall-edges';
-    this.quarantineEdges.material.transparent = true;
-    this.group.add(this.wallEdges, this.quarantineEdges);
+    this.pulsingEdges = this.createOutlineStrips(split.temporary, new Color(PULSING_WALL_COLOR));
+    this.pulsingEdges.name = world.pulsingPerimeter ? 'perimeter-wall-edges' : 'quarantine-wall-edges';
+    this.pulsingEdges.material.transparent = true;
+    if (world.pulsingPerimeter) this.pulsingEdges.material.color.copy(this.wallEdges.material.color);
+    this.group.add(this.wallEdges, this.pulsingEdges);
 
     if (this.penFootprint) {
       this.addPen(this.penFootprint);
@@ -100,13 +146,32 @@ export class MazeScene {
       const split = splitMazeWallEdgesByOwnership(edges, this.wallFootprint);
       edges.dispose();
       this.wallEdges = this.replaceOutlineStrips(this.wallEdges, split.authored, new Color('#b579a1'));
-      this.quarantineEdges = this.replaceOutlineStrips(this.quarantineEdges, split.temporary, new Color('#b846ff'));
-      this.quarantineEdges.material.transparent = true;
+      this.pulsingEdges = this.replaceOutlineStrips(this.pulsingEdges, split.temporary, new Color(PULSING_WALL_COLOR));
+      this.pulsingEdges.material.transparent = true;
     }
     let youngestAge = Infinity;
     for (const record of active) youngestAge = Math.min(youngestAge, record.ageMs);
-    this.quarantineEdges.material.opacity = active.length > 0
-      ? 0.82 + 0.18 * Math.sin(youngestAge * 0.012) : 1;
+    this.syncWallPulse(active.length > 0 ? youngestAge : 0, active.length === 0);
+  }
+
+  /** Samples the shared Quarantine/perimeter outline pulse without changing geometry or wall bodies. */
+  syncWallPulse(ageMs: number, reducedMotion = false): void {
+    this.pulsingEdges.material.color.set(PULSING_WALL_COLOR);
+    this.pulsingEdges.material.opacity = reducedMotion
+      ? 1 : 0.82 + 0.18 * Math.sin(ageMs * WALL_PULSE_RADIANS_PER_MS);
+  }
+
+  /** Accelerates the countdown pulse from 0.5 to 2.5 Hz; null restores the normal steady wall outline. */
+  syncPerimeterWarning(elapsedMs: number | null, durationMs: number, reducedMotion = false): void {
+    if (elapsedMs === null) {
+      this.pulsingEdges.material.color.copy(this.wallEdges.material.color);
+      this.pulsingEdges.material.opacity = 1;
+      return;
+    }
+    const seconds = Math.max(0, Math.min(durationMs, elapsedMs)) / 1000;
+    // Integrating the changing frequency keeps phase continuous throughout the countdown.
+    const phase = 2 * Math.PI * (0.5 * seconds + seconds ** 2 / (durationMs / 1000));
+    this.syncWallPulse(phase / WALL_PULSE_RADIANS_PER_MS, reducedMotion);
   }
 
   dispose(): void {

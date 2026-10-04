@@ -101,9 +101,12 @@ export function useGameSession(options: GameShellOptions) {
         options.accountClient === undefined ? createAccountClient() : options.accountClient
     );
     const account = useAccountSession(accountClient, store);
+    const developmentMultiplayer = IS_DEV && isDev && import.meta.env.VITE_DEV_MULTI === '1'
+        && accountClient?.localDevelopment === true;
+    const developmentStartup = useRef({ guestRequested: false, roomRequested: false });
     const [debug] = useState(() => (IS_DEV && isDev ? createDebugStore() : null));
     const [state, setState] = useState<ShellState>({
-        screen: accountClient ? 'account' : 'title',
+        screen: developmentMultiplayer ? 'loading' : accountClient ? 'account' : 'title',
         parentScreen: 'title',
         confirmation: null,
         hasGame: false,
@@ -148,6 +151,23 @@ export function useGameSession(options: GameShellOptions) {
     }, [debug]);
 
     useEffect(() => {
+        if (!developmentMultiplayer || account.state.checking) return;
+        const startup = developmentStartup.current;
+        if (!account.state.profile) {
+            if (!startup.guestRequested) {
+                startup.guestRequested = true;
+                void account.guest('Developer');
+            }
+        } else if (!startup.roomRequested) {
+            startup.roomRequested = true;
+            // Creation deliberately replaces this developer's previous match instead of reconnecting.
+            void multiplayer.createRoom();
+        }
+        // These actions read current refs; one startup belongs to one mounted shell.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [developmentMultiplayer, account.state.checking, account.state.profile]);
+
+    useEffect(() => {
         if (
             accountClient &&
             !account.state.checking &&
@@ -164,7 +184,7 @@ export function useGameSession(options: GameShellOptions) {
         const race = multiplayer.connection.race;
         const room = multiplayer.connection.room;
         const view = current.current.screen;
-        if (!view.startsWith('multiplayer')) return;
+        if (!view.startsWith('multiplayer') && !(developmentMultiplayer && view === 'loading')) return;
         if (
             multiplayer.connection.phase === 'closed' &&
             [
@@ -187,12 +207,13 @@ export function useGameSession(options: GameShellOptions) {
             if (view !== 'multiplayer-playing') show('multiplayer-playing');
         } else if (race?.phase === 'finished' || race?.phase === 'aborted') {
             if (view !== 'multiplayer-result') show('multiplayer-result');
-        } else if (room?.phase === 'lobby' && view !== 'multiplayer-room') {
+        } else if (room?.phase === 'lobby' && view !== 'multiplayer-room' && !developmentMultiplayer) {
             show('multiplayer-room');
         }
         // `show` operates on refs and intentionally does not need to restart this effect.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
+        developmentMultiplayer,
         multiplayer.connection.phase,
         multiplayer.connection.race,
         multiplayer.connection.room,
@@ -534,6 +555,7 @@ export function useGameSession(options: GameShellOptions) {
         store,
         account,
         multiplayer,
+        developmentMultiplayer,
         debug,
         mapVariant: options.mapVariant,
         startRun,

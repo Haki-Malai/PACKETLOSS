@@ -36,6 +36,30 @@ function steps(game: DataRace, count: number): void {
 }
 
 describe('Battle Royale authority', () => {
+  it('advances one closure without moving actors or aging effects, and stops at the final ring', () => {
+    const game = new DataRace(arenaMap(), 'dev-closures', IDENTITIES.slice(0, 2), 4);
+    const scenario = game.snapshot();
+    scenario.players.forEach((player, index) => {
+      player.movement = createMovement(arenaCell(game.map, 23 + index, 25));
+      player.huntMs = 2000;
+    });
+    scenario.playTicks = 123;
+    scenario.tick = 123;
+    game.restore(scenario);
+    expect(game.advanceToNextClosure()).toBe(true);
+    expect(game.snapshot()).toMatchObject({ tick: 123, playTicks: 600, shrinkStage: 1 });
+    expect(game.snapshot().players).toEqual(scenario.players);
+    for (let stage = 2; stage <= RACE.maxShrinkStage; stage += 1) {
+      expect(game.advanceToNextClosure()).toBe(true);
+      expect(game.snapshot().shrinkStage).toBe(stage);
+    }
+    const final = game.snapshot();
+    expect(game.advanceToNextClosure()).toBe(false);
+    expect(game.snapshot()).toEqual(final);
+    game.abort('test');
+    expect(game.advanceToNextClosure()).toBe(false);
+    expect(race().advanceToNextClosure()).toBe(false);
+  });
   it('keeps explicit development solo play active until death while rejecting accidental solo matches', () => {
     expect(() => new DataRace(dataRaceFixture(), 'invalid-solo', [IDENTITIES[0]], 4))
       .toThrow('A match requires 2–4 distinct players.');

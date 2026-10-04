@@ -364,6 +364,31 @@ describe('multiplayer prediction under network delay', () => {
     expect(nextMatch.discontinuity).toBe(true);
   });
 
+  it('clears correction on a shrink without snapping unless the player also teleports', () => {
+    const map = dataRaceFixture();
+    const first = new DataRace(map, 'shrink-camera',
+      [{ id: 'alice', name: 'Alice' }, { id: 'bob', name: 'Bob' }], 11).snapshot();
+    first.phase = 'playing'; first.tick = 597;
+    first.players[0].movement = { cell: 0, to: 1, progress: 0.5, direction: 'right', queued: 'right' };
+    const presenter = new LocalMovementPresentation();
+    presenter.sample(map, first, first.players[0], 599, [], 0);
+    const corrected = structuredClone(first);
+    corrected.tick = 599;
+    corrected.players[0].movement.progress = 0.55;
+    const beforeShrink = presenter.sample(map, corrected, corrected.players[0], 599, [], 16);
+    expect(beforeShrink.point.x).toBeCloseTo(0.625);
+    const shrunk = structuredClone(corrected);
+    shrunk.tick = 600; shrunk.shrinkStage = 1;
+    shrunk.players[0].movement.progress = 0.6125;
+    const afterShrink = presenter.sample(map, shrunk, shrunk.players[0], 600, [], 32);
+    expect(afterShrink.point.x).toBeCloseTo(0.6125);
+    expect(afterShrink.discontinuity).toBe(false);
+    const teleported = structuredClone(shrunk);
+    teleported.tick = 601; teleported.shrinkStage = 2;
+    teleported.players[0].movement = { cell: 8, to: null, progress: 0, direction: 'right', queued: 'right' };
+    expect(presenter.sample(map, teleported, teleported.players[0], 601, [], 48).discontinuity).toBe(true);
+  });
+
   it('clamps correction at a wall and clears it through a continuous perpendicular turn', () => {
     const map = dataRaceFixture();
     const first = new DataRace(map, 'corridor-correction',

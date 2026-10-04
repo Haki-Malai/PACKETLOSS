@@ -163,6 +163,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('join'), code: z.string().regex(/^[A-Z2-9]{6}$/) }).strict(),
   z.object({ type: z.literal('ready'), ready: z.boolean() }).strict(),
   z.object({ type: z.literal('start') }).strict(),
+  z.object({ type: z.literal('development-close-wall'), matchId: identifier }).strict(),
     z
         .object({ type: z.literal('input'), matchId: identifier, sequence: integer, direction })
         .strict(),

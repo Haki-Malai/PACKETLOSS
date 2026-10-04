@@ -3,6 +3,7 @@ import { MemoryResultStore, MemoryTickets, RoomService, type AuthenticatedPlayer
 import type { ClientMessage, ServerMessage } from '../game/protocol/messages';
 import { RACE, type RaceMap } from '../game/simulation/types';
 import { dataRaceFixture } from './fixtures/dataRaceFixture';
+import { createBattleArenaMap } from '../game/simulation/BattleArenaMap';
 
 const TERMINAL_PRESENTATION_TICKS = Math.ceil(RACE.deathMs / RACE.stepMs)
   + RACE.shrinkTransitionTicks;
@@ -14,12 +15,12 @@ function last<T>(items: readonly T[]): T {
 /** Builds a room service with explicit virtual time, randomness, and a captured public transport. */
 function fixture(seed = 4,
   createMap: (mapSeed: number) => RaceMap = () => dataRaceFixture(),
-  soloDevelopment = false) {
+  soloDevelopment = false, developmentBots?: number) {
   let now = 0, counter = 0;
   const messages: ServerMessage[] = [], results = new MemoryResultStore();
   const rooms = new RoomService({ createMap, results, now: () => now, epochNow: () => now,
     randomId: () => `match-${++counter}`, randomCode: () => 'ABC234', randomSeed: () => seed,
-    soloDevelopment });
+    soloDevelopment, multiDevelopment: developmentBots === undefined ? undefined : { botCount: developmentBots } });
   const alice: AuthenticatedPlayer = { playerId: 'alice', name: 'Alice', operation: 'create' };
   const bob: AuthenticatedPlayer = { playerId: 'bob', name: 'Bob', operation: 'join', roomCode: 'ABC234' };
   /** Delivers one validated operation through the same identity binding as WebSockets. */
@@ -43,6 +44,44 @@ function playerColors(players: readonly { id: string; color: string }[]): Record
 }
 
 describe('authoritative private rooms', () => {
+  it('gates closure controls, auto-starts the full development roster, and resets the creator on refresh', async () => {
+    const regular = fixture();
+    await regular.start();
+    regular.send(regular.alice, { type: 'development-close-wall', matchId: 'match-1' });
+    expect(last(regular.messages)).toMatchObject({ type: 'error' });
+
+    const game = fixture(4, createBattleArenaMap, false, 2);
+    const carol: AuthenticatedPlayer = { playerId: 'carol', name: 'Carol', operation: 'join', roomCode: 'ABC234' };
+    game.send(game.alice, { type: 'create' });
+    expect(game.rooms.roomStates()[0].players[0].ready).toBe(true);
+    game.send(game.bob, { type: 'join', code: 'ABC234' });
+    game.send(game.bob, { type: 'ready', ready: true });
+    await Promise.resolve();
+    expect(game.rooms.roomStates()[0].phase).toBe('lobby');
+    game.send(carol, { type: 'join', code: 'ABC234' });
+    game.send(carol, { type: 'ready', ready: true });
+    await Promise.resolve();
+    expect(game.rooms.roomStates()[0]).toMatchObject({ phase: 'playing', matchId: 'match-1' });
+    game.send(game.bob, { type: 'development-close-wall', matchId: 'match-1' });
+    expect(last(game.messages)).toMatchObject({ type: 'error' });
+    game.send(game.alice, { type: 'development-close-wall', matchId: 'stale' });
+    expect(last(game.messages)).toMatchObject({ type: 'error' });
+    game.send(game.alice, { type: 'development-close-wall', matchId: 'match-1' });
+    expect(last(game.messages.filter((message) => message.type === 'snapshot')).snapshot)
+      .toMatchObject({ playTicks: 600, shrinkStage: 1 });
+
+    game.rooms.disconnect('alice', 'alice');
+    game.send(game.alice, { type: 'create' }, 'refreshed');
+    expect(game.rooms.roomStates()).toMatchObject([{ phase: 'lobby', players: [{ id: 'alice', ready: true }] }]);
+    expect(game.messages.some((message) => message.type === 'left')).toBe(true);
+    for (const player of [game.bob, carol]) {
+      game.send(player, { type: 'join', code: 'ABC234' });
+      game.send(player, { type: 'ready', ready: true });
+    }
+    await Promise.resolve();
+    expect(last(game.messages.filter((message) => message.type === 'snapshot')).snapshot)
+      .toMatchObject({ matchId: 'match-2', tick: 0, playTicks: 0, shrinkStage: 0, phase: 'playing' });
+  });
   it('auto-starts only explicit development solo rooms and locks their async roster', async () => {
     const regular = fixture();
     regular.send(regular.alice, { type: 'create' });

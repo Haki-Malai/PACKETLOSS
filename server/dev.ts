@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 import { DevelopmentAdapters } from './DevelopmentAdapters';
 import { DevelopmentPlayers } from './DevelopmentPlayers';
 import { createGameServer } from './httpServer';
-import { RoomService } from './RoomService';
+import { MemoryResultStore, RoomService } from './RoomService';
 
 const LOOPBACK = '127.0.0.1';
 
@@ -16,7 +16,11 @@ export async function main(): Promise<void> {
     const siteOrigin = required('PACKETLOSS_DEV_SITE_ORIGIN');
     const apiOrigin = required('PACKETLOSS_DEV_API_URL');
     const soloDevelopment = booleanSetting('PACKETLOSS_DEV_SOLO', false);
+    const multiDevelopment = booleanSetting('PACKETLOSS_DEV_MULTI', false);
     const botCount = soloDevelopment ? 0 : numberSetting('PACKETLOSS_DEV_BOTS', 2, 0, 3);
+    if (multiDevelopment && (soloDevelopment || botCount === 0)) {
+        throw new Error('Instant multiplayer requires bots and cannot use solo mode.');
+    }
     const gamePort = numberSetting('PACKETLOSS_DEV_GAME_PORT', 8080, 1, 65535);
     const adapters = new DevelopmentAdapters({
         apiOrigin,
@@ -28,13 +32,14 @@ export async function main(): Promise<void> {
     await adapters.register();
     await adapters.recover();
     const rooms = new RoomService({
-        results: adapters,
+        results: multiDevelopment ? new MemoryResultStore() : adapters,
         now: () => performance.now(),
         epochNow: () => Date.now(),
         snapshotHz: numberSetting('PACKETLOSS_DEV_SNAPSHOT_HZ', 20, 1, 30),
         instanceRunId,
         processGeneration,
         soloDevelopment,
+        multiDevelopment: multiDevelopment ? { botCount } : undefined,
         randomId: randomUUID,
         randomSeed: () => randomBytes(4).readUInt32LE(),
         randomCode: () => {

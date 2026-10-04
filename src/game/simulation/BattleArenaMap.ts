@@ -605,30 +605,7 @@ function voidTile(x: number, y: number): WorldTile {
     };
 }
 
-/** Keeps the retired ring's floor visible without contributing authored wall pixels. */
-function presentationFloorTile(x: number, y: number): WorldTile {
-    return {
-        x,
-        y,
-        rawGid: 15,
-        gid: 15,
-        localId: null,
-        rotation: 0,
-        flipX: false,
-        flipY: false,
-        collision: {
-            collides: false,
-            penGate: false,
-            portal: false,
-            up: false,
-            right: false,
-            down: false,
-            left: false,
-        },
-    };
-}
-
-/** Builds a fully blocking perimeter tile with its visible rail facing the playable interior. */
+/** Builds inward-facing rails with Classic's corner caps and open portal tips. */
 function perimeterTile(x: number, y: number, bounds: BattleArenaBounds): WorldTile {
     const left = x === bounds.minX;
     const right = x === bounds.maxX;
@@ -640,15 +617,16 @@ function perimeterTile(x: number, y: number, bounds: BattleArenaBounds): WorldTi
     let localId = portalTip ? 23 : 0;
     let rotation = 0;
     let flipX = false;
-    if (left && top) localId = 10;
-    else if (right && top) {
-        localId = 10;
+    if (left && top) {
+        localId = 15;
+    } else if (right && top) {
+        localId = 15;
         rotation = Math.PI / 2;
     } else if (right && bottom) {
-        localId = 10;
+        localId = 15;
         rotation = Math.PI;
     } else if (left && bottom) {
-        localId = 10;
+        localId = 15;
         rotation = (3 * Math.PI) / 2;
     } else if (left) flipX = !portalTip;
     else if (right) flipX = portalTip;
@@ -676,11 +654,9 @@ function perimeterTile(x: number, y: number, bounds: BattleArenaBounds): WorldTi
 }
 
 /** Converts directional walls to the authored silhouettes shared by maze rendering. */
-function corridorTile(cell: Cell, presentationOpenings: readonly Direction[] = []): WorldTile {
+function corridorTile(cell: Cell): WorldTile {
     const blocked = DIRECTIONS.map(
-        (direction) =>
-            !presentationOpenings.includes(direction) &&
-            !cell.edges.some((edge) => edge.direction === direction)
+        (direction) => !cell.edges.some((edge) => edge.direction === direction)
     );
     const count = blocked.filter(Boolean).length;
     let localId = 14;
@@ -770,8 +746,7 @@ function stagePortalPairs(bounds: BattleArenaBounds): PortalPair[] {
  */
 export function createBattleArenaWorldMap(
     map: RaceMap,
-    stage: number,
-    renderPerimeter = true
+    stage: number
 ): WorldMapData {
     const bounds = battleArenaBounds(stage);
     const outer = battleArenaOuterBounds(stage);
@@ -789,17 +764,10 @@ export function createBattleArenaWorldMap(
                 map.arena &&
                 (x === outer.minX || x === outer.maxX || y === outer.minY || y === outer.maxY)
             ) {
-                return renderPerimeter ? perimeterTile(x, y, outer) : presentationFloorTile(x, y);
+                return perimeterTile(x, y, outer);
             }
             if (map.arena && isLogoCoordinate(x, y)) return logoTile(x, y);
-            const presentationOpenings: Direction[] = [];
-            if (map.arena && !renderPerimeter) {
-                if (x === bounds.minX) presentationOpenings.push('left');
-                if (x === bounds.maxX) presentationOpenings.push('right');
-                if (y === bounds.minY) presentationOpenings.push('up');
-                if (y === bounds.maxY) presentationOpenings.push('down');
-            }
-            return corridorTile(staged.cells[cell], presentationOpenings);
+            return corridorTile(staged.cells[cell]);
         })
     );
     return {

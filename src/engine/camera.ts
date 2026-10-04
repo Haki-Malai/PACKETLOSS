@@ -5,6 +5,10 @@ export interface CameraFollowTarget {
   y: number;
 }
 
+export interface CameraOptions {
+  readonly clampToBounds?: boolean;
+}
+
 export class Camera2D {
   x = 0;
   y = 0;
@@ -23,6 +27,12 @@ export class Camera2D {
   private followTarget?: CameraFollowTarget;
   private followLerpX = 1;
   private followLerpY = 1;
+  private readonly boundsClamping: boolean;
+
+  /** Keeps normal bounded tracking unless the caller explicitly permits following into empty space. */
+  constructor({ clampToBounds = true }: CameraOptions = {}) {
+    this.boundsClamping = clampToBounds;
+  }
 
   setViewport(width: number, height: number): void {
     this.viewportWidth = Math.max(1, width);
@@ -31,7 +41,7 @@ export class Camera2D {
     this.syncPreviousPosition();
   }
 
-  /** Sets the clamped world rectangle, including an optional origin for retained subregions. */
+  /** Sets the world rectangle, applied to tracking only when bounds clamping is enabled. */
   setBounds(width: number, height: number, minX = 0, minY = 0): void {
     this.worldWidth = Math.max(1, width);
     this.worldHeight = Math.max(1, height);
@@ -125,7 +135,9 @@ export class Camera2D {
     };
   }
 
+  /** Applies the configured bounds policy without changing unrestricted follow positions. */
   private clampToBounds(): void {
+    if (!this.boundsClamping) return;
     const viewportWorldWidth = this.viewportWidth / this.zoom;
     const viewportWorldHeight = this.viewportHeight / this.zoom;
     const minX = this.worldMinX + (viewportWorldWidth >= this.worldWidth

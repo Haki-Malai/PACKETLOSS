@@ -336,15 +336,8 @@ describe('seeded Battle Royale arena', () => {
             expect(world.tiles[24].slice(22, 27).map((tile) => tile.localId)).toEqual([
                 17, 18, 19, 20, 21,
             ]);
-            const presentationWorld = createBattleArenaWorldMap(generated, stage, false);
-            expect(presentationWorld.tiles[outer.minY][outer.minX]).toMatchObject({
-                gid: 15,
-                localId: null,
-                collision: { collides: false },
-            });
-            expect(presentationWorld.tiles[bounds.minY + 1][bounds.minX].collision.left).toBe(
-                false
-            );
+            expect(world.tiles[outer.minY][outer.minX].collision.collides).toBe(true);
+            expect(world.tiles[bounds.minY + 1][bounds.minX].collision.left).toBe(true);
         }
         expect(portalMouthsWithOnePhysicalExit).toBeGreaterThan(0);
     });
