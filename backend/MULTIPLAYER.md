@@ -1,7 +1,10 @@
 # Multiplayer control and storage contracts
 
-`packetloss_api.multiplayer_lambda_handler.handler` is a separate Lambda application.
-The existing account Lambda and its Cognito/password/solo-record routes remain unchanged.
+`backend/multiplayer.ts` exports the independent multiplayer Lambda handler.
+`backend/account.ts` owns accounts, Cognito, profiles, and solo records. Both compile
+to self-contained Node.js 22 bundles with `pnpm build:backend`: `backend-dist/account.mjs`
+and `backend-dist/multiplayer.mjs`, exporting `handler`. Local development uses
+`backend-dist/development.mjs`; `backend-dist/bootstrap.mjs` initializes local data once.
 
 Environment: `CONTROL_TABLE`, `TICKETS_TABLE`, `RESULTS_TABLE`, `PROFILE_TABLE_NAME`,
 `MULTIPLAYER_CONTROL_REGION` (default `us-east-1`), `MULTIPLAYER_OWNER_SUB`, `SITE_ORIGIN`,
@@ -23,7 +26,7 @@ The `x-test-user` header is accepted only by explicitly test-configured applicat
 - Status: `{phase,activeRegion,instanceRunId,processGeneration,websocketUrl,protocolVersion,regions}`.
   Each region contains `{region,phase,ready,hostname,updatedAt}`. `updatedAt` is the
   time the API observed EC2 state. Phases are stopped, starting, ready, failed,
-  draining, or stopping. Readiness requires a fresh process heartbeat and protocol 1.
+  draining, or stopping. Readiness requires a fresh process heartbeat and the shared protocol version in `src/game/protocol/version.ts` (currently 2).
 - Capabilities: `{canStart}`. The configured immutable owner subject is never returned.
 - Start request: `{region:"eu"|"na"}`; response 202 `{phase,region,operationId}`.
   `operationId` is the new `instanceRunId`. Regional starts require both real EC2
@@ -76,7 +79,7 @@ The instance IAM role uses the AWS SDK directly. These are not public HTTP endpo
 
 **Control** has `pk="SERVER"`, numeric `revision`, `lifecycle`, `activeRegion` (`eu`/`na`),
 `instanceId`, `instanceRunId`, `processGeneration`, `startedAt`, `uptimeDeadline`,
-`heartbeatAt`, and `protocolVersion=1`. Control times are integer epoch seconds.
+`heartbeatAt`, and `protocolVersion` (the shared current version). Control times are integer epoch seconds.
 Startup creates `processGeneration=null`, `heartbeatAt=0`, and a four-hour deadline.
 On boot, the service must confirm its actual instance ID and region match this row,
 then conditionally claim a fresh process generation for that run. Each heartbeat
@@ -133,9 +136,9 @@ the three-second countdown plus 180-second match can cross the fixed uptime dead
 
 ## Full local development contract
 
-`pnpm dev:full` runs `compose.dev.yml`: DynamoDB Local, account/control Python Lambda runtime emulators, a gateway at `http://127.0.0.1:8787`, and the authoritative game server at `ws://127.0.0.1:8080/ws`. Public requests use the same handlers and DynamoDB repositories as deployment; local Cognito replacement supplies simpler accounts and name-only guests. The production entrypoints retain their AWS adapters.
+`pnpm dev:full` runs `compose.dev.yml`: DynamoDB Local, account/control Node.js 22 Lambda runtime emulators, a gateway at `http://127.0.0.1:8787`, and the authoritative game server at `ws://127.0.0.1:8080/ws`. Public requests use the same handlers and DynamoDB repositories as deployment; local Cognito replacement supplies simpler accounts and name-only guests. The production entrypoints retain their AWS adapters.
 
-DynamoDB stores profiles/solo records, control state, hashed tickets, and multiplayer results in separate production-shaped tables. Development identities and refresh sessions use an additional local-only table. Data persists in the `packetloss-dev_dynamodb` volume; the Node outbox and auth signing key persist in `.packetloss-dev/data`. Bootstrap imports any existing SQLite data once without changing the source file. Lambda cold starts never reset runtime state. A launcher restart creates a new generation and replays the outbox, aborting unfinished matches without winners.
+DynamoDB stores profiles/solo records, control state, hashed tickets, and multiplayer results in separate production-shaped tables. Development identities and refresh sessions use an additional local-only table. Data persists in the `packetloss-dev_dynamodb` volume; the Node outbox and auth signing key persist in `.packetloss-dev/data`. Bootstrap uses Node's built-in SQLite module to import existing data once without changing the source file. Lambda cold starts never reset runtime state. A launcher restart creates a new generation and replays the outbox, aborting unfinished matches without winners.
 
 The game automatically becomes ready under the local `eu` identifier. Local account/control HTTP cooldowns are disabled; ticket expiry/consumption and WebSocket input limits remain enforced. `--stop` preserves data, while explicit `--reset` deletes the database volume and data directory. See the root README for Docker prerequisites, ports, logs, and development commands.
 
@@ -153,6 +156,7 @@ and send no email.
 The Node development adapter authenticates to these loopback-only routes with a
 per-launch bearer secret:
 
+- `POST /internal/dev/process/register`
 - `POST /internal/dev/heartbeat`
 - `POST /internal/dev/tickets/consume`
 - `POST /internal/dev/matches/start`
@@ -169,8 +173,15 @@ Local status preserves the regional response shape while describing one loopback
 
 ## Local checks
 
-From `backend`, install `requirements-dev.txt` in an isolated Python 3.12 environment,
-then run `ruff check .` and `PYTHONDONTWRITEBYTECODE=1 python -m pytest`.
-The multiplayer repository tests use Moto's in-process DynamoDB emulator; they do not
-contact AWS. Remote IAM, API Gateway authorizer wiring, EC2 startup, DNS, TLS, and Node
-adapter parity still require the reviewed integration deployment and lifecycle checks.
+From the repository root, run `pnpm typecheck:backend`, `pnpm lint`,
+`pnpm test backend/tests-node`, and `pnpm build:backend`. Tests cover the actual API
+Gateway envelopes, credential/cookie compatibility, account and record isolation,
+DynamoDB command serialization and conditional failures, lifecycle/operator fencing,
+local process registration, and non-destructive SQLite migration. AWS clients are
+injected and never contact AWS during these tests. The same backend tests also run
+on Node.js 22, matching the deployed Lambda runtime.
+
+Full DynamoDB transaction execution and Lambda emulator reloads require the explicit
+local Docker smoke workflow in `docs/TESTING.md`; mocked SDK tests do not establish
+those integration outcomes. Remote IAM, API Gateway authorizer wiring, EC2 startup,
+DNS, TLS, and regional lifecycle behavior require reviewed deployed verification.
