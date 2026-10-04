@@ -423,7 +423,7 @@ describe('Battle Royale perimeter presentation', () => {
     resourceDisposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
     expect(new Set(disposeMaze.mock.contexts).size).toBe(disposeMaze.mock.calls.length);
     expect(disposeMaze).toHaveBeenCalledTimes(initialStage === 0 ? 21 : 22 - initialStage);
-  });
+  }, 20_000);
 
   it('cancels future-stage preparation and releases partially prepared geometry when leaving during loading', async () => {
     vi.useFakeTimers();

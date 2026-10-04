@@ -360,10 +360,10 @@ function createThreeStage({
                 if (map.arena && race.shrinkStage !== renderedStage) {
                     const animateContraction = hasPresentedArena && !reducedMotion
                         && race.shrinkStage === renderedStage + 1;
+                    const previousMaze = maze;
+                    maze = prepareMaze(race.shrinkStage);
                     mazes.delete(renderedStage);
                     renderedStage = race.shrinkStage;
-                    const previousMaze = maze;
-                    maze = prepareMaze(renderedStage);
                     if (animateContraction) maze.startPerimeterContraction(now);
                     else maze.syncPerimeterContraction(now, true);
                     scene.remove(previousMaze.group);
