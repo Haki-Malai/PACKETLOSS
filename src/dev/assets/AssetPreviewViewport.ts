@@ -6,6 +6,7 @@ import { ThreeRendererAdapter } from '../../game/infrastructure/adapters/ThreeRe
 import { ArcadeAssets } from '../../game/infrastructure/three/ArcadeAssets';
 import { AssetPreviewScene } from './AssetPreviewScene';
 import type { AssetPreviewEntry } from './assetCatalog';
+import type { PowerupPreviewAssets } from './PowerupPreviewAssets';
 
 export type PreviewCameraMode = 'game' | 'orbit';
 export interface PreviewTransform {
@@ -31,12 +32,13 @@ export class AssetPreviewViewport {
   private lastTimeMs = -1;
   private disposed = false;
 
-  constructor(private readonly canvas: HTMLCanvasElement, assets: ArcadeAssets) {
+  /** Creates the shared preview renderer while borrowing the session's character and powerup assets. */
+  constructor(private readonly canvas: HTMLCanvasElement, assets: ArcadeAssets, powerups?: PowerupPreviewAssets) {
     this.renderer = new ThreeRendererAdapter(canvas);
     let preview: AssetPreviewScene | undefined;
     let orbit: OrbitControls | undefined;
     try {
-      preview = new AssetPreviewScene(assets);
+      preview = new AssetPreviewScene(assets, powerups);
       this.preview = preview;
       orbit = new OrbitControls(this.orbitCamera, canvas);
       this.orbit = orbit;

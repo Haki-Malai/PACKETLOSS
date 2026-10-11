@@ -45,6 +45,16 @@ vi.mock('../dev/assets/assetCatalog', () => ({
             loop: false,
             transformable: true,
         },
+        {
+            id: 'powerup-magnet-pickup',
+            category: 'Powerups',
+            name: 'Magnet',
+            state: 'Pickup idle',
+            source: 'public/assets/models/powerups/magnet-pickup.glb',
+            durationMs: 6000,
+            thumbnailMs: 750,
+            loop: true,
+        },
     ],
 }));
 vi.mock('../dev/assets/AssetPreviewSession', () => ({
@@ -76,6 +86,7 @@ async function loadGallery() {
     });
     await frame(0);
     await frame(16);
+    await frame(32);
 }
 
 beforeEach(() => {
@@ -108,6 +119,20 @@ afterEach(() => {
 });
 
 describe('React asset gallery', () => {
+    it('filters and selects the Powerups category with the existing inspector controls', async () => {
+        const user = userEvent.setup();
+        render(<AssetShowcase />);
+        await loadGallery();
+        await user.click(screen.getByRole('combobox', { name: 'Category' }));
+        await user.click(screen.getByRole('option', { name: 'Powerups' }));
+        expect(screen.queryByRole('button', { name: 'Packet, Idle' })).toBeNull();
+        await user.click(screen.getByRole('button', { name: 'Magnet, Pickup idle' }));
+        const inspector = within(screen.getByRole('region', { name: 'Asset inspector' }));
+        expect(inspector.getByRole('heading', { name: 'Magnet' })).toBeDefined();
+        expect(preview.view.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'powerup-magnet-pickup' }));
+        expect(inspector.getByRole('button', { name: 'Pause' })).toBeDefined();
+    });
+
     it('filters assets, preserves selection, and exposes preview controls without changing gameplay state', async () => {
         resetGameState(370, 2);
         const user = userEvent.setup();
@@ -116,7 +141,7 @@ describe('React asset gallery', () => {
             screen.getByRole<HTMLButtonElement>('button', { name: 'Packet, Idle' }).disabled
         ).toBe(true);
         await loadGallery();
-        expect(preview.view.snapshot).toHaveBeenCalledTimes(2);
+        expect(preview.view.snapshot).toHaveBeenCalledTimes(3);
         await user.type(screen.getByRole('searchbox'), 'corner');
         expect(screen.queryByRole('button', { name: 'Packet, Idle' })).toBeNull();
         await user.click(screen.getByRole('button', { name: 'Corner wall, Static' }));

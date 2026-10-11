@@ -1,15 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssetPreviewSession } from '../dev/assets/AssetPreviewSession';
 import { AssetPreviewViewport } from '../dev/assets/AssetPreviewViewport';
 import { ArcadeAssets } from '../game/infrastructure/three/ArcadeAssets';
 import { createCharacterAssets } from './fixtures/characterFixtures';
+import { PowerupPreviewAssets } from '../dev/assets/PowerupPreviewAssets';
 
 const viewport = vi.hoisted(() => ({ construct: vi.fn(), dispose: vi.fn() }));
 
 vi.mock('../dev/assets/AssetPreviewViewport', () => ({
   AssetPreviewViewport: class {
-    constructor(canvas: HTMLCanvasElement, assets: ArcadeAssets) {
-      viewport.construct(canvas, assets);
+    constructor(canvas: HTMLCanvasElement, assets: ArcadeAssets, powerups: PowerupPreviewAssets) {
+      viewport.construct(canvas, assets, powerups);
     }
 
     dispose(): void {
@@ -19,6 +20,11 @@ vi.mock('../dev/assets/AssetPreviewViewport', () => ({
 }));
 
 describe('Asset preview session', () => {
+  let powerups: PowerupPreviewAssets;
+  beforeEach(() => {
+    powerups = new PowerupPreviewAssets();
+    vi.spyOn(PowerupPreviewAssets, 'load').mockResolvedValue(powerups);
+  });
   afterEach(() => {
     vi.restoreAllMocks();
     viewport.construct.mockReset();
@@ -28,6 +34,7 @@ describe('Asset preview session', () => {
   it('shares startup and disposes the viewport before its borrowed assets exactly once', async () => {
     const assets = createCharacterAssets();
     const dispose = vi.spyOn(assets, 'dispose');
+    const disposePowerups = vi.spyOn(powerups, 'dispose');
     const load = vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(assets);
     const canvas = {} as HTMLCanvasElement;
     const session = new AssetPreviewSession(canvas);
@@ -37,12 +44,14 @@ describe('Asset preview session', () => {
     expect(result).toBeInstanceOf(AssetPreviewViewport);
     expect(session.start()).toBe(starting);
     expect(load).toHaveBeenCalledOnce();
-    expect(viewport.construct).toHaveBeenCalledExactlyOnceWith(canvas, assets);
+    expect(viewport.construct).toHaveBeenCalledExactlyOnceWith(canvas, assets, powerups);
 
     session.dispose();
     session.dispose();
     expect(viewport.dispose).toHaveBeenCalledOnce();
     expect(dispose).toHaveBeenCalledOnce();
+    expect(disposePowerups).toHaveBeenCalledOnce();
+    expect(viewport.dispose.mock.invocationCallOrder[0]).toBeLessThan(disposePowerups.mock.invocationCallOrder[0]);
     expect(viewport.dispose.mock.invocationCallOrder[0]).toBeLessThan(dispose.mock.invocationCallOrder[0]);
     await expect(session.start()).resolves.toBeNull();
   });
@@ -84,6 +93,36 @@ describe('Asset preview session', () => {
     session.dispose();
     failLoad(new DOMException('Gallery closed', 'AbortError'));
     await expect(starting).resolves.toBeNull();
+    expect(viewport.construct).not.toHaveBeenCalled();
+  });
+
+  it('releases late powerup models when the gallery closes during their load', async () => {
+    const assets = createCharacterAssets();
+    const dispose = vi.spyOn(assets, 'dispose');
+    const disposePowerups = vi.spyOn(powerups, 'dispose');
+    vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(assets);
+    let finishLoad!: (_assets: PowerupPreviewAssets) => void;
+    vi.spyOn(PowerupPreviewAssets, 'load').mockReturnValue(new Promise((resolve) => { finishLoad = resolve; }));
+    const session = new AssetPreviewSession({} as HTMLCanvasElement);
+    const starting = session.start();
+    await Promise.resolve();
+    session.dispose();
+    finishLoad(powerups);
+    await expect(starting).resolves.toBeNull();
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(disposePowerups).toHaveBeenCalledOnce();
+    expect(viewport.construct).not.toHaveBeenCalled();
+  });
+
+  it('releases character assets when powerup loading fails before viewport creation', async () => {
+    const assets = createCharacterAssets();
+    const dispose = vi.spyOn(assets, 'dispose');
+    vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(assets);
+    const failure = new Error('Unable to load laser-beam.glb');
+    vi.spyOn(PowerupPreviewAssets, 'load').mockRejectedValue(failure);
+    const session = new AssetPreviewSession({} as HTMLCanvasElement);
+    await expect(session.start()).rejects.toBe(failure);
+    expect(dispose).toHaveBeenCalledOnce();
     expect(viewport.construct).not.toHaveBeenCalled();
   });
 

@@ -8,10 +8,11 @@ import { ENEMY_KEYS } from '../../game/domain/entities/EnemyEntity';
 import type { PacketAppearance } from '../../game/infrastructure/three/HologramPacket';
 import { MULTIPLAYER_PACKET_APPEARANCES } from '../../game/infrastructure/three/PacketAppearances';
 import { PACKET_SCORE_TIERS } from '../../game/infrastructure/three/PacketScoreEffects';
+import powerupManifest from '../../../public/assets/models/powerups/manifest.json';
 
 export interface AssetPreviewEntry {
   id: string;
-  category: 'Packet' | 'Enemies' | 'Points' | 'Walls' | 'Other';
+  category: 'Packet' | 'Enemies' | 'Powerups' | 'Points' | 'Walls' | 'Other';
   name: string;
   state: string;
   source: string;
@@ -27,6 +28,23 @@ export const ENEMY_IDENTITIES = ENEMY_KEYS;
 export const WALL_TILE_IDS = [0, 1, 2, 5, 6, 7, 10, 14, 15, 23] as const;
 const PLAYER_SOURCE = 'src/game/infrastructure/three/HologramPacket.ts';
 const MAZE_SOURCE = 'src/game/infrastructure/three/MazeGeometry.ts';
+const POWERUP_NAMES: Record<string, string> = {
+  magnet: 'Magnet', blast: 'Blast', 'reverse-blast': 'Reverse blast', laser: 'Laser', missile: 'Homing missile',
+};
+const POWERUP_STATES: Record<string, string> = {
+  pickup: 'Pickup idle', collection: 'Collection', effect: 'Activation effect',
+  projectile: 'Flight loop', launch: 'Launch effect', impact: 'Impact effect', 'packet-companion': 'Packet animation',
+};
+
+/** Lists the authored GLBs with their manifest timing and a visible thumbnail pose. */
+export const POWERUP_CATALOG = powerupManifest.assets.map((asset) => ({
+  id: `powerup-${asset.file.replace('.glb', '')}`, category: 'Powerups' as const,
+  name: POWERUP_NAMES[asset.kind], state: asset.file === 'magnet-field.glb' ? 'Point attraction' : POWERUP_STATES[asset.role],
+  source: `public/assets/models/powerups/${asset.file}`, file: asset.file, clip: asset.clip,
+  durationMs: asset.durationSeconds * 1000, loop: asset.loop,
+  thumbnailMs: asset.role === 'collection' ? 90 : asset.role === 'pickup' ? 750
+    : Math.min(asset.durationSeconds * 650, ((asset.releaseSeconds ?? 0) + 0.25) * 1000),
+}));
 
 /** Builds a Packet category preview while retaining the animation's stable player ID. */
 const player = (state: string, name: string, durationMs = 6000, loop = true, thumbnailMs = 750): AssetPreviewEntry => ({
@@ -81,6 +99,7 @@ export const ASSET_CATALOG: readonly AssetPreviewEntry[] = [
     id: `enemy-${key}-${state}`, category: 'Enemies', name: key[0].toUpperCase() + key.slice(1),
     state: name, source: `public/assets/models/enemies/${key}.glb`, durationMs, loop, thumbnailMs,
   })),
+  ...POWERUP_CATALOG,
   staticEntry('point-base', 'Points', 'Regular silver star', 'src/game/infrastructure/three/point-star.json'),
   {
     id: 'point-power', category: 'Points', name: 'Power silver star', state: 'Rotate and hover',

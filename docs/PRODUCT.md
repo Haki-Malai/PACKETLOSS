@@ -166,6 +166,8 @@ The Packet category groups the solo animations, four multiplayer color variants,
 
 Select an asset, then use play/pause, replay, seeking, and playback speed to inspect its animation. Switch between the game camera and an orbit camera to inspect its shape. Gallery playback does not start a game or change score, lives, or gameplay state. The gallery route and link are omitted from production builds.
 
+The Powerups category includes all 22 authored GLBs for magnet, blast, reverse blast, laser, and homing missile: pickup loops, collection, activation effects, Packet companion animations, and missile flight/launch/impact. Each has a thumbnail and uses the same playback and camera controls. Framing covers the complete animation, including the laser's length and the blast's expanded radius. These are asset previews; powerup collection, activation buttons, targeting, and damage are not connected to gameplay.
+
 ## Current scope
 
 The playable Classic and Endless maze loops include scoring, lives, enemy recovery, portals, desktop/mobile controls, title and pause menus, terminal loss results, and device-local profiles and separate records. Classic also has compounding level progression and clear checkpoints. There is no audio, backend, authentication, cloud synchronization, or saved unfinished run. Development hotkeys still need a release review before public shipping.

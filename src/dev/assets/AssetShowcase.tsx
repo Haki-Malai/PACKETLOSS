@@ -88,7 +88,7 @@ export default function AssetShowcase() {
                                 value={category}
                                 options={[
                                     { value: '', label: 'All assets' },
-                                    ...['Packet', 'Enemies', 'Points', 'Walls', 'Other'].map(
+                                    ...['Packet', 'Enemies', 'Powerups', 'Points', 'Walls', 'Other'].map(
                                         (value) => ({ value, label: value })
                                     ),
                                 ]}

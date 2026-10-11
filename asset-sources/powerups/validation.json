@@ -1,0 +1,1038 @@
+{
+  "directory": "public/assets/models/powerups",
+  "files": 22,
+  "errors": 0,
+  "results": [
+    {
+      "file": "blast-burst.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 334760,
+      "root": "blast-burst-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 41,
+      "triangles": 7368,
+      "clips": [
+        {
+          "name": "blast_activate",
+          "duration": 1.600000023841858,
+          "loop": false,
+          "tracks": 92,
+          "sampledPoses": 50,
+          "bounds": {
+            "min": [
+              -33.5124,
+              0.3119,
+              -33.5124
+            ],
+            "max": [
+              33.512,
+              9.9813,
+              33.5124
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -33.5124,
+          0.3119,
+          -33.5124
+        ],
+        "max": [
+          33.512,
+          9.9813,
+          33.5124
+        ]
+      }
+    },
+    {
+      "file": "blast-collect.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 68660,
+      "root": "blast-collect-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 4,
+      "triangles": 2440,
+      "clips": [
+        {
+          "name": "pickup_collect",
+          "duration": 0.30000001192092896,
+          "loop": false,
+          "tracks": 4,
+          "sampledPoses": 13,
+          "bounds": {
+            "min": [
+              -3.3838,
+              2.93,
+              -3.3838
+            ],
+            "max": [
+              3.3833,
+              8.7893,
+              3.3838
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -3.3838,
+          2.93,
+          -3.3838
+        ],
+        "max": [
+          3.3833,
+          8.7893,
+          3.3838
+        ]
+      }
+    },
+    {
+      "file": "blast-pickup.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 62124,
+      "root": "blast-pickup-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 3,
+      "triangles": 1856,
+      "clips": [
+        {
+          "name": "pickup_idle",
+          "duration": 6,
+          "loop": true,
+          "tracks": 2,
+          "sampledPoses": 181,
+          "bounds": {
+            "min": [
+              -2.7367,
+              2.5725,
+              -2.7291
+            ],
+            "max": [
+              2.7731,
+              4.2627,
+              2.7291
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -2.7367,
+          2.5725,
+          -2.7291
+        ],
+        "max": [
+          2.7731,
+          4.2627,
+          2.7291
+        ]
+      }
+    },
+    {
+      "file": "laser-beam.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 255944,
+      "root": "laser-beam-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 23,
+      "triangles": 9904,
+      "clips": [
+        {
+          "name": "laser_activate",
+          "duration": 1.7999999523162842,
+          "loop": false,
+          "tracks": 59,
+          "sampledPoses": 57,
+          "bounds": {
+            "min": [
+              -8,
+              -1.85,
+              -67.0577
+            ],
+            "max": [
+              8,
+              14.15,
+              0.317
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -8,
+          -1.85,
+          -67.0577
+        ],
+        "max": [
+          8,
+          14.15,
+          0.317
+        ]
+      }
+    },
+    {
+      "file": "laser-collect.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 79104,
+      "root": "laser-collect-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 4,
+      "triangles": 2264,
+      "clips": [
+        {
+          "name": "pickup_collect",
+          "duration": 0.30000001192092896,
+          "loop": false,
+          "tracks": 4,
+          "sampledPoses": 13,
+          "bounds": {
+            "min": [
+              -3.3838,
+              2.88,
+              -3.3838
+            ],
+            "max": [
+              3.3833,
+              8.7893,
+              3.3838
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -3.3838,
+          2.88,
+          -3.3838
+        ],
+        "max": [
+          3.3833,
+          8.7893,
+          3.3838
+        ]
+      }
+    },
+    {
+      "file": "laser-pickup.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 72568,
+      "root": "laser-pickup-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 3,
+      "triangles": 1680,
+      "clips": [
+        {
+          "name": "pickup_idle",
+          "duration": 6,
+          "loop": true,
+          "tracks": 2,
+          "sampledPoses": 181,
+          "bounds": {
+            "min": [
+              -2.7367,
+              2.4942,
+              -2.7291
+            ],
+            "max": [
+              2.7539,
+              4.0234,
+              2.7291
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -2.7367,
+          2.4942,
+          -2.7291
+        ],
+        "max": [
+          2.7539,
+          4.0234,
+          2.7291
+        ]
+      }
+    },
+    {
+      "file": "magnet-collect.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 90512,
+      "root": "magnet-collect-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 4,
+      "triangles": 3148,
+      "clips": [
+        {
+          "name": "pickup_collect",
+          "duration": 0.30000001192092896,
+          "loop": false,
+          "tracks": 4,
+          "sampledPoses": 13,
+          "bounds": {
+            "min": [
+              -3.3838,
+              2.95,
+              -3.3838
+            ],
+            "max": [
+              3.3833,
+              8.7893,
+              3.3838
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -3.3838,
+          2.95,
+          -3.3838
+        ],
+        "max": [
+          3.3833,
+          8.7893,
+          3.3838
+        ]
+      }
+    },
+    {
+      "file": "magnet-field.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 161088,
+      "root": "magnet-field-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 19,
+      "triangles": 5048,
+      "clips": [
+        {
+          "name": "magnet_active",
+          "duration": 2.4000000953674316,
+          "loop": true,
+          "tracks": 49,
+          "sampledPoses": 74,
+          "bounds": {
+            "min": [
+              -32.0532,
+              0.2061,
+              -31.3188
+            ],
+            "max": [
+              30.5833,
+              6.0821,
+              32.0636
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -32.0532,
+          0.2061,
+          -31.3188
+        ],
+        "max": [
+          30.5833,
+          6.0821,
+          32.0636
+        ]
+      }
+    },
+    {
+      "file": "magnet-pickup.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 83976,
+      "root": "magnet-pickup-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 3,
+      "triangles": 2564,
+      "clips": [
+        {
+          "name": "pickup_idle",
+          "duration": 6,
+          "loop": true,
+          "tracks": 2,
+          "sampledPoses": 181,
+          "bounds": {
+            "min": [
+              -2.7395,
+              2.556,
+              -2.7291
+            ],
+            "max": [
+              2.7491,
+              3.9636,
+              2.7291
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -2.7395,
+          2.556,
+          -2.7291
+        ],
+        "max": [
+          2.7491,
+          3.9636,
+          2.7291
+        ]
+      }
+    },
+    {
+      "file": "missile-collect.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 97532,
+      "root": "missile-collect-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 7,
+      "triangles": 2940,
+      "clips": [
+        {
+          "name": "pickup_collect",
+          "duration": 0.30000001192092896,
+          "loop": false,
+          "tracks": 8,
+          "sampledPoses": 13,
+          "bounds": {
+            "min": [
+              -3.3838,
+              2.2101,
+              -3.3838
+            ],
+            "max": [
+              3.3833,
+              8.7893,
+              3.3838
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -3.3838,
+          2.2101,
+          -3.3838
+        ],
+        "max": [
+          3.3833,
+          8.7893,
+          3.3838
+        ]
+      }
+    },
+    {
+      "file": "missile-flight.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 102732,
+      "root": "missile-flight-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 12,
+      "triangles": 2852,
+      "clips": [
+        {
+          "name": "missile_flight",
+          "duration": 0.800000011920929,
+          "loop": true,
+          "tracks": 15,
+          "sampledPoses": 26,
+          "bounds": {
+            "min": [
+              -1.6147,
+              4.5353,
+              -2.4
+            ],
+            "max": [
+              1.6147,
+              7.7647,
+              9.3866
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -1.6147,
+          4.5353,
+          -2.4
+        ],
+        "max": [
+          1.6147,
+          7.7647,
+          9.3866
+        ]
+      }
+    },
+    {
+      "file": "missile-impact.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 144416,
+      "root": "missile-impact-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 18,
+      "triangles": 3032,
+      "clips": [
+        {
+          "name": "missile_impact",
+          "duration": 0.699999988079071,
+          "loop": false,
+          "tracks": 50,
+          "sampledPoses": 25,
+          "bounds": {
+            "min": [
+              -10,
+              0.7567,
+              -10
+            ],
+            "max": [
+              10,
+              8.1738,
+              10
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -10,
+          0.7567,
+          -10
+        ],
+        "max": [
+          10,
+          8.1738,
+          10
+        ]
+      }
+    },
+    {
+      "file": "missile-launch.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 80300,
+      "root": "missile-launch-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 10,
+      "triangles": 2416,
+      "clips": [
+        {
+          "name": "missile_launch",
+          "duration": 0.6000000238418579,
+          "loop": false,
+          "tracks": 22,
+          "sampledPoses": 21,
+          "bounds": {
+            "min": [
+              -3.0106,
+              3.1394,
+              -10
+            ],
+            "max": [
+              3.0104,
+              9.1606,
+              6
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -3.0106,
+          3.1394,
+          -10
+        ],
+        "max": [
+          3.0104,
+          9.1606,
+          6
+        ]
+      }
+    },
+    {
+      "file": "missile-pickup.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 90036,
+      "root": "missile-pickup-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 6,
+      "triangles": 2356,
+      "clips": [
+        {
+          "name": "pickup_idle",
+          "duration": 6,
+          "loop": true,
+          "tracks": 2,
+          "sampledPoses": 181,
+          "bounds": {
+            "min": [
+              -2.7367,
+              1.9259,
+              -2.7291
+            ],
+            "max": [
+              2.7112,
+              4.4741,
+              2.7291
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -2.7367,
+          1.9259,
+          -2.7291
+        ],
+        "max": [
+          2.7112,
+          4.4741,
+          2.7291
+        ]
+      }
+    },
+    {
+      "file": "packet-blast.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 354960,
+      "root": "packet-blast-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 15,
+      "triangles": 6236,
+      "clips": [
+        {
+          "name": "packet-blast-cast",
+          "duration": 1.600000023841858,
+          "loop": false,
+          "tracks": 34,
+          "sampledPoses": 50,
+          "bounds": {
+            "min": [
+              -5.8662,
+              3.8225,
+              -4.3648
+            ],
+            "max": [
+              5.8662,
+              9.384,
+              4.3841
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -5.8662,
+          3.8225,
+          -4.3648
+        ],
+        "max": [
+          5.8662,
+          9.384,
+          4.3841
+        ]
+      }
+    },
+    {
+      "file": "packet-laser.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 357548,
+      "root": "packet-laser-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 15,
+      "triangles": 6236,
+      "clips": [
+        {
+          "name": "packet-laser-cast",
+          "duration": 1.7999999523162842,
+          "loop": false,
+          "tracks": 34,
+          "sampledPoses": 57,
+          "bounds": {
+            "min": [
+              -6.3169,
+              3.7189,
+              -5.4893
+            ],
+            "max": [
+              6.3154,
+              8.7836,
+              5.8991
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -6.3169,
+          3.7189,
+          -5.4893
+        ],
+        "max": [
+          6.3154,
+          8.7836,
+          5.8991
+        ]
+      }
+    },
+    {
+      "file": "packet-magnet.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 357032,
+      "root": "packet-magnet-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 15,
+      "triangles": 6236,
+      "clips": [
+        {
+          "name": "packet-magnet-active",
+          "duration": 2.4000000953674316,
+          "loop": true,
+          "tracks": 27,
+          "sampledPoses": 74,
+          "bounds": {
+            "min": [
+              -6.115,
+              3.9105,
+              -6.0445
+            ],
+            "max": [
+              6.0866,
+              8.8121,
+              6.0457
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -6.115,
+          3.9105,
+          -6.0445
+        ],
+        "max": [
+          6.0866,
+          8.8121,
+          6.0457
+        ]
+      }
+    },
+    {
+      "file": "packet-missile.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 347196,
+      "root": "packet-missile-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 15,
+      "triangles": 6236,
+      "clips": [
+        {
+          "name": "packet-missile-cast",
+          "duration": 1,
+          "loop": false,
+          "tracks": 34,
+          "sampledPoses": 33,
+          "bounds": {
+            "min": [
+              -5.5019,
+              3.7808,
+              -4.0431
+            ],
+            "max": [
+              5.5019,
+              8.8378,
+              4.223
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -5.5019,
+          3.7808,
+          -4.0431
+        ],
+        "max": [
+          5.5019,
+          8.8378,
+          4.223
+        ]
+      }
+    },
+    {
+      "file": "packet-reverse-blast.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 362768,
+      "root": "packet-reverse-blast-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 15,
+      "triangles": 6236,
+      "clips": [
+        {
+          "name": "packet-vortex-cast",
+          "duration": 2.200000047683716,
+          "loop": false,
+          "tracks": 34,
+          "sampledPoses": 69,
+          "bounds": {
+            "min": [
+              -5.84,
+              3.8534,
+              -5.7629
+            ],
+            "max": [
+              5.8433,
+              9.3552,
+              5.8724
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -5.84,
+          3.8534,
+          -5.7629
+        ],
+        "max": [
+          5.8433,
+          9.3552,
+          5.8724
+        ]
+      }
+    },
+    {
+      "file": "reverse-blast-collect.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 106916,
+      "root": "reverse-blast-collect-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 4,
+      "triangles": 4704,
+      "clips": [
+        {
+          "name": "pickup_collect",
+          "duration": 0.30000001192092896,
+          "loop": false,
+          "tracks": 5,
+          "sampledPoses": 13,
+          "bounds": {
+            "min": [
+              -3.3838,
+              2.82,
+              -3.3838
+            ],
+            "max": [
+              3.3833,
+              8.7893,
+              3.3838
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -3.3838,
+          2.82,
+          -3.3838
+        ],
+        "max": [
+          3.3833,
+          8.7893,
+          3.3838
+        ]
+      }
+    },
+    {
+      "file": "reverse-blast-pickup.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 100016,
+      "root": "reverse-blast-pickup-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 3,
+      "triangles": 4120,
+      "clips": [
+        {
+          "name": "pickup_idle",
+          "duration": 6,
+          "loop": true,
+          "tracks": 2,
+          "sampledPoses": 181,
+          "bounds": {
+            "min": [
+              -2.7367,
+              2.5406,
+              -2.7291
+            ],
+            "max": [
+              2.748,
+              4.0986,
+              2.7291
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -2.7367,
+          2.5406,
+          -2.7291
+        ],
+        "max": [
+          2.748,
+          4.0986,
+          2.7291
+        ]
+      }
+    },
+    {
+      "file": "reverse-blast-vortex.glb",
+      "errors": [],
+      "warnings": [],
+      "bytes": 378728,
+      "root": "reverse-blast-vortex-root",
+      "extensions": [
+        "KHR_materials_emissive_strength"
+      ],
+      "meshes": 35,
+      "triangles": 11840,
+      "clips": [
+        {
+          "name": "vortex_activate",
+          "duration": 2.200000047683716,
+          "loop": false,
+          "tracks": 93,
+          "sampledPoses": 69,
+          "bounds": {
+            "min": [
+              -36.7036,
+              0.0004,
+              -38.2538
+            ],
+            "max": [
+              36.7036,
+              6.5644,
+              38.2538
+            ]
+          }
+        }
+      ],
+      "bounds": {
+        "min": [
+          -36.7036,
+          0.0004,
+          -38.2538
+        ],
+        "max": [
+          36.7036,
+          6.5644,
+          38.2538
+        ]
+      }
+    }
+  ],
+  "method": "Three.js GLTFLoader parsing, binary accessor/track checks, animation sampling, loop seam checks and stationary-root checks.",
+  "limitations": [
+    "No browser/gameplay integration or device performance test."
+  ],
+  "sha256": {
+    "blast-burst.glb": "3517e3f5c44fbffbb72951e2a8b67c2614d48940c4f88562e342dd827630eb86",
+    "blast-collect.glb": "2dce73eb4f122b5d80b3bc26d379a69578a8864c9ab70dc3b83c932a859857de",
+    "blast-pickup.glb": "124801f4ee8514724188307d8596a143f12d7c6ec18db602f4e0372ec603a28a",
+    "laser-beam.glb": "ffdfad0ab5831e14556e7e194dadcdf2dd91ff90adca27f251d7fa8e5d8aba2b",
+    "laser-collect.glb": "874f24d355687432d705d8f5b71c30b1ba1e3c36400a4630ca2d3fca3266dc7e",
+    "laser-pickup.glb": "ee0f3be971b10584c6630ae3d3eb94d39430f023e00bcdf59b99b88e7ae1b2a3",
+    "magnet-collect.glb": "812d5958ed8d6538b1dd5ee039af09661c09732497e316e198fa8958bec6a49c",
+    "magnet-field.glb": "8f32a0e839adf7371be8af776877adf837940a56c0d6e3751ef9851b7c6e5800",
+    "magnet-pickup.glb": "7dca63708d72e8c965c83dd314065480e7aac484bf1f8aec93ab5c050a5fd72a",
+    "missile-collect.glb": "936efba14510840eb26c3c9c23e89b321ad2ede8cc1413a4e6eaad01a4ee9591",
+    "missile-flight.glb": "87a1bd9301afc49d0b34e74024043bf09aa7743b4edcfde0f6a7dc2360a1c0b4",
+    "missile-impact.glb": "2403a2320a1915beedb0d494c90b4a579d9f1c6028cf38363dc847386582a92d",
+    "missile-launch.glb": "2a4ba0e2806d1dee2924289772f833f168d214ac78bebd14096b1b4a934504a2",
+    "missile-pickup.glb": "4ae2b7c97ea5368df53be94495de920e817c923ab07470df3a5e3128323237bb",
+    "packet-blast.glb": "4539aac0772845c8f843c54c9e01f2ded6c26fd55ed9a17f20de8c258a3a007e",
+    "packet-laser.glb": "96ebc9609a1b54fc03b1ae706642d5cfdacfad0af2af5b2f1389a6b0aa645595",
+    "packet-magnet.glb": "93c1c78f91ae7e3ced931541cee102aca823d00eb16ceb11416ef907ec4982d2",
+    "packet-missile.glb": "3017dce3e2e22e5ec079ca729f6006c4ce1bc511c1b71c71b5336a14f1390de5",
+    "packet-reverse-blast.glb": "2cdfa1178bd5f969c4250cb55389730659459c04c0f42c82608a51d190a55a47",
+    "reverse-blast-collect.glb": "54248f4310e1fcdfd48294cfe74cdd5788211b9042005ed212b25239092fa302",
+    "reverse-blast-pickup.glb": "37b0933b3a253de1bc3d539169e8d8e9e1537b4ccd5fe35d14956d873aaffafc",
+    "reverse-blast-vortex.glb": "5fecb3fac09560d30dd0e13ce7e8eee3d20d961b00270fc25f276b54c7d73916"
+  },
+  "geometryAudit": {
+    "triangles": 101712,
+    "degenerateTriangles": 0,
+    "clips": 22,
+    "loopingClips": 8,
+    "externalResources": 0
+  },
+  "collectionAudit": {
+    "anchorY": 8.7,
+    "confirmationCenterY": 8.72,
+    "minimumConfirmationEdgeY": 8.656,
+    "neutralPacketTopY": 8.4125
+  }
+}

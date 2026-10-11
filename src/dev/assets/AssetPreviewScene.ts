@@ -26,6 +26,7 @@ import { resolveNextBlinkToggleAt } from '../../game/shared/blinkCadence';
 import { createEatEffect, samplePickupPulse, type CollectibleKind } from '../../game/shared/pickupEffects';
 import { ENEMY_EAT_DURATION_MS } from '../../game/shared/enemyEating';
 import { ASSET_CATALOG, ENEMY_IDENTITIES, type AssetPreviewEntry } from './assetCatalog';
+import type { PowerupPreviewAssets } from './PowerupPreviewAssets';
 
 export interface AssetPreviewTransform {
   rotation: number;
@@ -68,11 +69,12 @@ export class AssetPreviewScene {
   private effect: Mesh<BufferGeometry, MeshBasicMaterial> | undefined;
   private enemyEating: EnemyEatPresentation | undefined;
   private maze: MazeScene | undefined;
+  private powerup: Group | undefined;
   private entry = ASSET_CATALOG[0];
   private disposed = false;
 
   /** Allocates reusable preview actors and effects while leaving shared asset ownership with the caller. */
-  constructor(private readonly assets: ArcadeAssets) {
+  constructor(private readonly assets: ArcadeAssets, private readonly powerups?: PowerupPreviewAssets) {
     try {
       addGameplayLighting(this.scene);
       this.floor.name = 'preview-floor';
@@ -140,6 +142,17 @@ export class AssetPreviewScene {
     if (!ASSET_CATALOG.some((candidate) => candidate.id === entry.id)) throw new Error(`Unknown preview asset: ${entry.id}`);
     this.clearSelection();
     this.entry = entry;
+    if (entry.category === 'Powerups') {
+      const preview = this.powerups?.get(entry.id);
+      if (!preview) throw new Error(`Powerup assets have not loaded: ${entry.id}`);
+      this.powerup = preview.model.scene;
+      const center = preview.bounds.getCenter(new Vector3());
+      this.powerup.position.set(CENTER - center.x, 0, CENTER - center.z);
+      this.scene.add(this.powerup);
+      this.bounds.copy(preview.bounds).translate(this.powerup.position).expandByScalar(1);
+      this.updateStage();
+      return;
+    }
     const selectedPacket = this.packets.get(entry.appearance?.character ?? 'solo')!;
     this.packet = selectedPacket.packet;
     this.packetShadow = selectedPacket.shadow;
@@ -217,6 +230,10 @@ export class AssetPreviewScene {
     if (this.disposed) return;
     const duration = this.entry.durationMs;
     const elapsed = Math.min(duration, Math.max(0, timeMs));
+    if (this.entry.category === 'Powerups') {
+      this.powerups?.sample(this.entry.id, elapsed);
+      return;
+    }
     const id = this.entry.id;
     if (id === 'point-power') {
       const powerPoint = this.points.get('power')!;
@@ -314,6 +331,8 @@ export class AssetPreviewScene {
 
   /** Restores reusable actors and hides transient effects before selecting or seeking a sample. */
   private clearSelection(): void {
+    this.powerup?.removeFromParent();
+    this.powerup = undefined;
     this.packet.visible = false;
     this.packetShadow.visible = true;
     this.packet.rotation.set(0, 0, 0);
