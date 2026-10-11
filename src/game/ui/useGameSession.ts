@@ -602,6 +602,9 @@ export function useGameSession(options: GameShellOptions) {
         nextLesson,
         /** Requests an explicit pause from the active game. */
         pause: () => lifetime.current.game?.pause(),
+        /** Consumes a weapon only when the active solo surface owns gameplay input. */
+        activatePowerup: () => current.current.screen === 'playing' && !current.current.tutorialLesson
+            ? lifetime.current.game?.activatePowerup?.() ?? false : false,
         /** Leaves practice and returns focus to the title menu's Tutorial button. */
         exitTutorial: () => mainMenu('[data-action="tutorial"]'),
         /** Restarts the current practice lesson or normal run after a failed attempt. */

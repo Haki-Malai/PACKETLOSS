@@ -8,7 +8,7 @@ import { awardScore } from './awardScore';
 import { EnemyEntity } from '../domain/entities/EnemyEntity';
 import { CollisionBody } from '../domain/valueObjects/CollisionBody';
 import { EnemyCollisionCandidate, findFirstCollision } from '../domain/services/EnemyPacketCollisionService';
-import { clearEnemyScaredWindow } from '../domain/services/EnemyScaredStateService';
+import { defeatEnemy } from '../domain/services/EnemyDefeatService';
 import { MovementRules } from '../domain/services/MovementRules';
 import { WorldState } from '../domain/world/WorldState';
 import { ENEMY_EAT_DURATION_MS } from '../shared/enemyEating';
@@ -21,6 +21,7 @@ export class EnemyPacketCollisionSystem {
     private readonly movementRules: MovementRules,
     _defaultEnemySpeed: number = SPEED.enemy,
     private readonly onPacketRespawn?: () => void,
+    private readonly onPacketDeath?: () => void,
   ) {}
 
   /** Resolves collisions and advances death timing using scaled simulation time. */
@@ -77,6 +78,7 @@ export class EnemyPacketCollisionSystem {
     this.movementRules.discardPendingDistance(this.world.packet);
     this.world.packet.enemyEatRemainingMs = 0;
     this.world.packet.deathAnimationRemainingMs = PACKET_DEATH_ANIMATION.durationMs;
+    this.onPacketDeath?.();
   }
 
   /** Restores the Packet after a nonfinal death, then resets enemies through the owning composition. */
@@ -105,15 +107,7 @@ export class EnemyPacketCollisionSystem {
     awardScore(this.world, baseScore);
     this.world.enemyEatChainCount += 1;
 
-    this.world.enemiesExitingJail.delete(enemy);
-    this.movementRules.discardPendingDistance(enemy);
-    clearEnemyScaredWindow(this.world, enemy);
-    enemy.speed = enemy.baseSpeed;
-    enemy.state.free = false;
-    enemy.state.soonFree = false;
-    enemy.state.dead = true;
-    enemy.state.animation = 'default';
-    enemy.eatenElapsedMs = 0;
+    defeatEnemy(this.world, this.movementRules, enemy, 'contact');
     this.world.packet.enemyEatRemainingMs = ENEMY_EAT_DURATION_MS;
   }
 

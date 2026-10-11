@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { DataRace } from '../game/simulation/DataRace';
 import { createMovement, position, type MovementTeleport } from '../game/simulation/movement';
-import { reconcilePlayer, sampleRemoteActor } from '../game/simulation/prediction';
+import { powerupMovementLockTick, reconcilePlayer, sampleRemoteActor } from '../game/simulation/prediction';
 import { advanceBoost } from '../game/simulation/boost';
+import { POWERUP_RULES } from '../game/shared/offensivePowerups';
 import { createBattleArenaMap } from '../game/simulation/BattleArenaMap';
 import { RACE, type Direction, type RaceMap } from '../game/simulation/types';
 import { dataRaceFixture } from './fixtures/dataRaceFixture';
@@ -102,6 +103,25 @@ describe('Battle Royale paid boost', () => {
         game.step();
         expect(position(map, game.snapshot().players[0].movement)).toEqual({ x: 18.875, y: 0 });
         expect(game.snapshot().players[0]).toMatchObject({ score: 99, boostCostTicks: 0 });
+    });
+
+    it.each([false, true])('does not charge a laser-locked boost (held: %s), including predicted frames', (held) => {
+        const { game, map, id } = scenario();
+        expect(game.equipPowerup(id, 'laser')).toBe(true);
+        expect(game.activate(id, 1, 1)).toBe(true);
+        game.input(id, 1, undefined, 1, 'press');
+        if (!held) game.input(id, 2, undefined, 1, 'release');
+        game.step();
+        const confirmed = game.snapshot();
+        const predicted = reconcilePlayer(map, confirmed.players[0], 1, 9, [], powerupMovementLockTick(confirmed, id));
+        expect(position(map, predicted.movement)).toEqual({ x: 0, y: 0 });
+        expect(predicted).toMatchObject({ score: 100, boostCostTicks: 0, boostTicks: 0, boosting: held });
+        steps(game, Math.round(POWERUP_RULES.laser.durationMs / RACE.stepMs) - 1);
+        expect(position(map, game.snapshot().players[0].movement)).toEqual({ x: 0, y: 0 });
+        expect(game.snapshot().players[0]).toMatchObject({ score: 100, boostCostTicks: 0, boostTicks: 0, boosting: held });
+        game.step();
+        expect(position(map, game.snapshot().players[0].movement).x).toBeCloseTo(held ? 0.125 : 0.0625, 10);
+        expect(game.snapshot().players[0]).toMatchObject({ score: 100, boostCostTicks: held ? 1 : 0 });
     });
 
     it('keeps a confirmed remote held boost active at a wall without inventing score exhaustion', () => {

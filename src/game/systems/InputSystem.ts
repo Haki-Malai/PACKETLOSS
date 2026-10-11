@@ -3,6 +3,12 @@ import { WorldState } from '../domain/world/WorldState';
 import { BrowserInputAdapter, isInteractiveInputTarget, PointerState } from '../infrastructure/adapters/BrowserInputAdapter';
 import { handleDebugKeyDown } from './DebugInput';
 import { DirectionalInput } from '../infrastructure/adapters/DirectionalInput';
+import { POWERUP_DEVELOPMENT_KEYS, type PowerupKind } from '../shared/offensivePowerups';
+
+interface PowerupControls {
+  activate(): boolean;
+  equipDevelopment(kind: PowerupKind): boolean;
+}
 
 interface PauseController {
   togglePause(): void;
@@ -21,6 +27,7 @@ export class InputSystem {
     private readonly world: WorldState,
     private readonly pauseController: PauseController,
     private readonly allowPowerShortcut = true,
+    private readonly powerups?: PowerupControls,
   ) {
     this.directions = new DirectionalInput((code) => this.input.isKeyDown(code));
   }
@@ -64,6 +71,23 @@ export class InputSystem {
       event.preventDefault();
       this.pauseController.togglePause();
       return;
+    }
+
+    if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+      && this.allowPowerShortcut && this.world.packet.deathAnimationRemainingMs <= 0) {
+      if (event.code === 'KeyE') {
+        event.preventDefault();
+        this.powerups?.activate();
+        return;
+      }
+      if (IS_DEV) {
+        const kind = POWERUP_DEVELOPMENT_KEYS[event.code];
+        if (kind) {
+          event.preventDefault();
+          this.powerups?.equipDevelopment(kind);
+          return;
+        }
+      }
     }
 
     if (IS_DEV) handleDebugKeyDown(this.world, event, this.allowPowerShortcut);

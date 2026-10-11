@@ -1,5 +1,6 @@
 import { BufferGeometry, Group, Mesh, MeshBasicMaterial, PlaneGeometry, RingGeometry } from 'three';
 import type { EnemyEffect, LagZone } from '../../domain/world/WorldState';
+import { createPulseRingGeometry, samplePulseRing } from './PulseRing';
 
 interface PulseVisual {
   ring: Mesh<RingGeometry, MeshBasicMaterial>;
@@ -14,7 +15,7 @@ interface ZoneVisual {
 /** Presentation only: immutable simulation records and preview fixtures share this sampler. */
 export class EnemyEffects {
   readonly group = new Group();
-  private readonly ringGeometry = new RingGeometry(0.985, 1, 64).rotateX(-Math.PI / 2);
+  private readonly ringGeometry = createPulseRingGeometry();
   private readonly targetGeometry = new RingGeometry(0.72, 1, 4).rotateX(-Math.PI / 2);
   private readonly fillGeometry = new PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
   private readonly zoneGeometry = new RingGeometry(0.94, 1, 4, 1, Math.PI / 4)
@@ -27,7 +28,7 @@ export class EnemyEffects {
     this.group.name = 'enemy-effects';
   }
 
-  /** Reuses bounded effect slots for simulation records and seekable gallery demonstrations. */
+  /** Reuses bounded effect slots and the shared Ping pulse sampler for simulation and seekable previews. */
   sync(effects: readonly EnemyEffect[], zones: readonly LagZone[]): void {
     if (this.disposed) return;
     // Records are replaced as they age; reuse slots instead of keying allocation by object identity.
@@ -51,10 +52,8 @@ export class EnemyEffects {
       if (!effect) return;
       ring.name = `${effect.kind}-pulse`;
       ring.position.set(effect.x, 0.12, effect.y);
-      const radius = effect.radius * (0.04 + progress * 0.96);
-      ring.scale.set(radius, 1, radius);
-      ring.material.color.setHex({ ping: 0x68ff72, split: 0xb87cff, quarantine: 0xb846ff, trojan: 0xff3849 }[effect.kind]);
-      ring.material.opacity = (1 - progress) * 0.8;
+      samplePulseRing(ring, progress, effect.radius,
+        { ping: 0x68ff72, split: 0xb87cff, quarantine: 0xb846ff, trojan: 0xff3849 }[effect.kind]);
       if (effect.target) {
         target.position.set(effect.target.x, 0.14, effect.target.y);
         target.scale.set(7.5, 1, 7.5);

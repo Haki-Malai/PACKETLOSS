@@ -6,6 +6,7 @@ import {
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { resolvePacketScoreTier, type PacketScoreTier } from './PacketScoreEffects';
 import { StateTransition } from './StateTransition';
+import type { PowerupPose } from './PowerupAssets';
 
 interface FloatingPiece {
   mesh: Mesh<BufferGeometry, MeshBasicMaterial>;
@@ -78,6 +79,11 @@ export class HologramPacket {
   private scoreTier: PacketScoreTier | null = null;
   private boosting = false;
   private boostReducedMotion = false;
+  private castPose: PowerupPose | null = null;
+  private readonly castRotation = new Quaternion();
+  private readonly castOffset = new Vector3();
+  private readonly sampledPosition = new Vector3();
+  private readonly aimRotation = new Quaternion();
   private disposed = false;
 
   /** Creates independently owned visuals; omitting appearance preserves the solo Packet. */
@@ -269,7 +275,7 @@ export class HologramPacket {
     this.sample(0);
   }
 
-  /** Samples score-controlled binary details, boost glow and sparks, and power cosmetics without advancing gameplay or changing identity colors; angry eyes retain their placement and size. */
+  /** Samples score-controlled binary details, boost glow and sparks, power, and casting cosmetics without advancing gameplay or changing identity colors; angry eyes retain their placement and size. */
   sample(timeSeconds: number): void {
     if (this.disposed) return;
     const time = Math.max(0, timeSeconds);
@@ -291,6 +297,7 @@ export class HologramPacket {
     const warning = this.powerWarning ? MathUtils.lerp(1, 0.6 + Math.sin(time * 16) * 0.4, hunter) : 1;
     this.pickupColor.copy(this.pickupRimColor).lerp(HUNTER_RIM_COLOR, hunter);
     this.model.position.x = 0;
+    this.model.position.z = 0;
     this.model.position.y = 6.15 + Math.sin(time * 1.7) * 0.16;
     this.model.scale.setScalar(1.15 * (1 + Math.sin(time * 2.2) * 0.008));
     this.body.scale.set(1.2, 1, 1);
@@ -306,12 +313,15 @@ export class HologramPacket {
     const blink = blinkPhase > 5.3 && blinkPhase < 5.56 ? 1 - Math.sin((blinkPhase - 5.3) / 0.26 * Math.PI) : 1;
     for (const edge of this.eyeEdges) {
       if (edge.morphTargetInfluences) edge.morphTargetInfluences[0] = hunter;
+      edge.position.set(this.eyes[this.eyeEdges.indexOf(edge)].x, 0.04, 2.25);
       edge.scale.set(0.72, 1.83 * blink, 1);
       edge.material.color.copy(accent);
     }
     for (const eye of this.eyes) {
       if (eye.mesh.morphTargetInfluences) eye.mesh.morphTargetInfluences[0] = hunter;
+      eye.mesh.position.set(eye.x, eye.y, 2.27);
       eye.mesh.scale.set(eye.width, eye.height * blink, 1);
+      if (eye.glow) eye.glow.position.set(eye.x, eye.y, 2.24);
       eye.mesh.material.opacity = 0.96 + Math.sin(time * 2.8) * 0.04;
       if (eye.glow) {
         eye.glow.material.color.copy(accent);
@@ -356,23 +366,40 @@ export class HologramPacket {
       streak.mesh.material.color.copy(accent);
       streak.mesh.visible = envelope > 0.02;
     }
+    if (this.castPose && this.deathProgress === null) this.sampleCastPose(this.castPose);
     this.deathEffect.visible = this.deathProgress !== null;
     if (this.deathProgress !== null) this.sampleDeath(this.deathProgress);
+    this.sampledPosition.copy(this.model.position);
   }
 
+  /** Faces details toward the camera while applying aim-locked cast movement to the solid body. */
   faceCamera(camera: Camera): void {
+    this.model.position.copy(this.sampledPosition);
     this.group.getWorldQuaternion(this.inverseRoot).invert();
     camera.getWorldQuaternion(this.cameraRotation);
     this.model.quaternion.copy(this.inverseRoot).multiply(this.cameraRotation);
     this.cameraRotation.invert();
     // Keep the solid body aligned with the maze's world axes while details face the camera.
     this.body.quaternion.copy(this.cameraRotation);
+    if (this.castPose && this.deathProgress === null) {
+      this.aimRotation.setFromAxisAngle(new Vector3(0, 1, 0), -this.castPose.angle - Math.PI / 2);
+      this.castRotation.copy(this.aimRotation).multiply(this.castPose.rotation).multiply(this.aimRotation.clone().invert());
+      this.body.quaternion.multiply(this.castRotation);
+      this.castOffset.set(this.castPose.position.x, this.castPose.position.y - 6.15, this.castPose.position.z)
+        .applyQuaternion(this.aimRotation).applyQuaternion(this.inverseRoot);
+      this.model.position.add(this.castOffset);
+    }
     for (const echo of this.deathEchoes) echo.quaternion.copy(this.cameraRotation);
     this.model.getWorldPosition(this.viewCenter).applyMatrix4(camera.matrixWorldInverse);
     this.glitchCenter.value = this.viewCenter.y;
     // Project real ground movement into the same camera plane as the floating details.
     this.viewMotion.copy(this.motion).applyQuaternion(this.cameraRotation);
     this.trail.rotation.z = Math.atan2(this.viewMotion.y, this.viewMotion.x);
+  }
+
+  /** Selects authored cast transforms while retaining this Packet's geometry and identity materials. */
+  setCastPose(pose: PowerupPose | null): void {
+    this.castPose = pose;
   }
 
   setMotion(x: number, y: number, amount: number): void {
@@ -429,6 +456,29 @@ export class HologramPacket {
     for (const material of this.materials) material.dispose();
     this.halo.dispose();
     this.group.clear();
+  }
+
+  /** Applies relative companion eye curves after ordinary blink and hunter sampling. */
+  private sampleCastPose(pose: PowerupPose): void {
+    this.body.scale.multiply(pose.scale);
+    for (const [index, eye] of this.eyes.entries()) {
+      const authored = pose.eyes[index];
+      if (!authored) continue;
+      const dx = (authored.position.x - (index === 0 ? -1.1 : 1.1)) * (0.86 / 1.1);
+      const dy = -(authored.position.z + 0.06);
+      eye.mesh.position.x += dx;
+      eye.mesh.position.y += dy;
+      eye.mesh.scale.x *= authored.scale.x;
+      eye.mesh.scale.y *= authored.scale.z;
+      this.eyeEdges[index].position.x += dx;
+      this.eyeEdges[index].position.y += dy;
+      this.eyeEdges[index].scale.x *= authored.scale.x;
+      this.eyeEdges[index].scale.y *= authored.scale.z;
+      if (eye.glow) {
+        eye.glow.position.x += dx;
+        eye.glow.position.y += dy;
+      }
+    }
   }
 
   private sampleDeath(progress: number): void {

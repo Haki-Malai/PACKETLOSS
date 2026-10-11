@@ -2,6 +2,14 @@ import { TilePosition } from '../valueObjects/TilePosition';
 import { Direction } from '../valueObjects/Direction';
 import { PortalPair } from '../world/WorldState';
 import { CollisionGrid } from '../world/CollisionGrid';
+import type { PowerupPoint } from '../../shared/offensivePowerups';
+
+interface PortalMotion {
+  tick: number;
+  departure: PowerupPoint;
+  arrival: PowerupPoint;
+  fraction: number;
+}
 
 export const PORTAL_TRAVEL_FRACTION = 0.5;
 
@@ -28,6 +36,7 @@ interface ResolvedPortalContext {
 export class PortalService {
   private readonly portalPairs = new Map<string, PortalLink>();
   private readonly lastTeleportTick = new WeakMap<object, number>();
+  private readonly teleportMotions = new WeakMap<object, PortalMotion>();
 
   constructor(collisionGrid: CollisionGrid, explicitPortalPairs: PortalPair[] = []) {
     if (explicitPortalPairs.length > 0) {
@@ -104,11 +113,26 @@ export class PortalService {
     }
 
     const destination = context.portalLink.destination;
+    this.teleportMotions.set(entity, {
+      tick,
+      departure: { x: (entity.tile.x + 0.5) * tileSize + entity.moved.x,
+        y: (entity.tile.y + 0.5) * tileSize + entity.moved.y },
+      arrival: { x: (destination.x + 0.5) * tileSize, y: (destination.y + 0.5) * tileSize },
+      // Local simulation divides actor movement at this portal threshold before collision runs.
+      fraction: 1,
+    });
     entity.tile = { ...destination };
     entity.moved.x = 0;
     entity.moved.y = 0;
     this.lastTeleportTick.set(entity, tick);
     return true;
+  }
+
+  /** Returns physical departure and arrival only for an actor's current simulation slice. */
+  getTeleportMotion(entity: object, tick: number): Omit<PortalMotion, 'tick'> | undefined {
+    const motion = this.teleportMotions.get(entity);
+    if (!motion || motion.tick !== tick) return undefined;
+    return { departure: { ...motion.departure }, arrival: { ...motion.arrival }, fraction: motion.fraction };
   }
 
   private setPortalPair(from: TilePosition, to: TilePosition): void {

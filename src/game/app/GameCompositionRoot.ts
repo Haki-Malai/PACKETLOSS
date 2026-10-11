@@ -32,6 +32,7 @@ import { EnemyReleaseSystem } from '../systems/EnemyReleaseSystem';
 import type { DebugSnapshot } from '../shared/events/DebugSnapshot';
 import { InputSystem } from '../systems/InputSystem';
 import { PacketMovementSystem } from '../systems/PacketMovementSystem';
+import { PowerupSystem } from '../systems/PowerupSystem';
 import { RenderSystem } from '../systems/RenderSystem';
 import { ScoreBonusSystem } from '../systems/ScoreBonusSystem';
 import { EndlessBonusSystem } from '../systems/EndlessBonusSystem';
@@ -213,13 +214,15 @@ export class GameCompositionRoot {
       const gameplayRng = this.options.tutorialLesson ? new SeededRandom(1)
         : stream ? new SeededRandom(endlessSeed ^ 0x5dddc41b) : rng;
 
-      const inputSystem = new InputSystem(input, world, runtimeControl, !this.options.tutorialLesson);
       const enemyAbilitySystem = new EnemyAbilitySystem(world, movementRules, portalService, gameplayRng);
       const collectibleSystem = new CollectibleSystem(world, tutorialPoints, stream?.initialPickupSeed);
       const scoreBonusSystem = this.options.tutorialLesson
         ? undefined
         : stream ? new EndlessBonusSystem(world, stream, endlessSeed)
           : new ScoreBonusSystem(world, collectibleSystem, SCORE_BONUS_TILES[mapVariant]);
+      const powerupSystem = this.options.tutorialLesson ? undefined
+        : new PowerupSystem(world, movementRules, collectibleSystem, scoreBonusSystem, stream, portalService);
+      const inputSystem = new InputSystem(input, world, runtimeControl, !this.options.tutorialLesson, powerupSystem);
       const mazeHazardSystem = new MazeHazardSystem(world, movementRules, gameplayRng, collectibleSystem);
       const packetSystem = new PacketMovementSystem(world, movementRules, portalService);
       const enemyReleaseSystem = this.options.tutorialLesson || stream
@@ -230,6 +233,7 @@ export class GameCompositionRoot {
       let encounterSystem: EndlessEncounterSystem | undefined;
       /** Restores the jail roster, then chooses fresh routes before rerelease. */
       const resetEnemiesToJail = (): void => {
+        powerupSystem?.reset();
         if (encounterSystem) {
           encounterSystem.onPacketRespawn();
           enemyMovementSystem.reset();
@@ -243,6 +247,7 @@ export class GameCompositionRoot {
         movementRules,
         SPEED.enemy,
         enemyReleaseSystem || stream ? resetEnemiesToJail : undefined,
+        () => powerupSystem?.clearForDeath(),
       );
       const animationSystem = new AnimationSystem(world, SPEED.enemy);
       const cameraSystem = new CameraSystem(world, camera, renderer, canvas, !!this.options.tutorialLesson);
@@ -260,7 +265,7 @@ export class GameCompositionRoot {
       }
       const streamingSystem = stream && scoreBonusSystem instanceof EndlessBonusSystem
         ? new EndlessStreamingSystem(world, stream, portalService, camera, collectibleSystem,
-          scoreBonusSystem, enemyMovementSystem, mazeHazardSystem, renderSystem)
+          scoreBonusSystem, enemyMovementSystem, mazeHazardSystem, renderSystem, powerupSystem)
         : undefined;
       await renderer.prepare(renderSystem.scene, camera.camera);
       signal?.throwIfAborted();
@@ -272,7 +277,12 @@ export class GameCompositionRoot {
         packetSystem,
         ...(enemyReleaseSystem ? [enemyReleaseSystem] : []),
         enemyMovementSystem,
+        ...(powerupSystem ? [powerupSystem] : []),
         enemyPacketCollisionSystem,
+        ...(powerupSystem ? [{
+          /** Collects weapons after death-producing contact and before ordinary scored pickups. */
+          update: () => powerupSystem.collect(),
+        }] : []),
         animationSystem,
         renderSystem,
         cameraSystem,
@@ -302,8 +312,13 @@ export class GameCompositionRoot {
           resetEnemiesToJail();
           const count = collectibleSystem.refill();
           if (scoreBonusSystem instanceof ScoreBonusSystem) scoreBonusSystem.refill();
+          powerupSystem?.reset(true);
           return count;
         },
+        ...(powerupSystem ? {
+          /** Exposes the same active solo weapon action to the DOM inventory button. */
+          activatePowerup: () => powerupSystem.activate(),
+        } : {}),
         ...(tutorial ? { tutorial } : {}),
         destroy: () => {
           canvas?.remove();

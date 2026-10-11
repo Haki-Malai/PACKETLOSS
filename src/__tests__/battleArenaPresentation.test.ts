@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFile } from 'node:fs/promises';
 import {
   Box3, BufferGeometry, InstancedMesh, Material, Mesh, MeshBasicMaterial, Object3D, OrthographicCamera,
   Raycaster, Scene, Vector3,
@@ -268,6 +269,10 @@ describe('Battle Royale perimeter presentation', () => {
   });
 
   it.each([0, 18])('prepares closures before rendering from stage %i and preserves camera framing through every remaining shrink', async (initialStage) => {
+    vi.stubGlobal('fetch', async (url: string) => {
+      const file = await readFile(`${process.cwd()}/public${new URL(url, 'https://game.invalid').pathname}`);
+      return new Response(new Uint8Array(file));
+    });
     let now = 0;
     let reducedMotion = false;
     let frame: FrameRequestCallback = () => undefined;

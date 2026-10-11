@@ -25,6 +25,8 @@ export function createPacketGame(options: CreatePacketGameOptions = {}): PacketG
     /** Continues the active run from its current maze-clear checkpoint. */
     continueLevel: () => runtime.continueLevel(),
     getGameStateStore: () => runtime.getGameStateStore(),
+    /** Uses the same activation boundary as keyboard E and the touch HUD. */
+    activatePowerup: () => runtime.activatePowerup(),
     destroy: () => {
       runtime.destroy();
       if (activeGame === game) {

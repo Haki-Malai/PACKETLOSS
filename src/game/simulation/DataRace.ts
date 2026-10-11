@@ -1,16 +1,21 @@
-import { battleArenaBounds, battleArenaMapAtStage, isBattleArenaCellActive } from './BattleArenaMap';
+import { battleArenaBounds, battleArenaMapAtStage, createBattleArenaWorldMap, isBattleArenaCellActive } from './BattleArenaMap';
 import { createMovement, movementEdge, position } from './movement';
 import { advanceBoost, applyScheduledInput, cancelBoost } from './boost';
 import { cloneSnapshot } from './cloneSnapshot';
-import { DIRECTIONS, RACE, SYNCHRONIZATION, type BoostAction, type PlayerIdentity, type RaceMap, type RacePlayer, type RaceSnapshot, type ScheduledInput } from './types';
+import { DIRECTIONS, RACE, SYNCHRONIZATION, type BoostAction, type PlayerIdentity, type RaceMap, type RacePlayer, type RaceSnapshot, type ScheduledInput, type ScheduledPowerup } from './types';
 import { COLLECTIBLE_CONFIG, PACKET_PORTAL_BLINK, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { isBodyOverlap } from '../domain/valueObjects/CollisionBody';
+import { getPowerupMovementLockMs, isPowerupKind as isOffensivePowerup, POWERUP_PICKUP_RADIUS, type OffensivePowerupKind } from '../shared/offensivePowerups';
+import { activatePowerup, addPowerupCollection, cancelPowerupCast, createPowerupCombatState, stepPowerupCombat } from './PowerupCombat';
+import { createPowerupCollisionWorld } from '../domain/services/PowerupCollision';
 
 /** Owns all mutable state for one deterministic authoritative Battle Royale match. */
 export class DataRace {
   private state: RaceSnapshot;
   private activeMap: RaceMap;
   private readonly soloDevelopment: boolean;
+  private walls: ReturnType<typeof createPowerupCollisionWorld>;
+  private readonly powerupInputs = new Map<string, { sequence: number; targetTick: number; commands: Map<number, ScheduledPowerup> }>();
   private readonly inputs = new Map<string, { sequence: number; targetTick: number; commands: Map<number, ScheduledInput> }>();
 
   /** Starts play immediately with seeded spawn/pickup ordering and authoritative participant colors. */
@@ -24,9 +29,10 @@ export class DataRace {
     this.soloDevelopment = soloDevelopment && identities.length === 1;
     if (map.spawns.length !== 4 || map.pickups.length === 0) throw new Error('Map requires four spawns and pickups.');
     this.activeMap = battleArenaMapAtStage(map, 0);
+    this.walls = createPowerupCollisionWorld(createBattleArenaWorldMap(map, 0));
     this.state = { matchId, mapId: map.id, tick: 0, playTicks: 0, phase: 'playing', movementEnabled: true,
       players: [], enemies: [], pickups: map.pickups.map((point) => ({ ...point })), refill: 0,
-      randomState: seed >>> 0, shrinkStage: 0, rankings: [], abortReason: null };
+      randomState: seed >>> 0, shrinkStage: 0, rankings: [], abortReason: null, combat: createPowerupCombatState() };
     const participants = [...identities].sort((a, b) => a.id.localeCompare(b.id));
     for (let index = participants.length - 1; index > 0; index -= 1) {
       const other = Math.floor(this.random() * (index + 1));
@@ -38,7 +44,7 @@ export class DataRace {
       score: 0, connected: true, movement: createMovement(map.spawns[slot]), huntMs: 0,
       boosting: false, boostHeld: false, boostTicks: 0, boostCostTicks: 0,
       protectionMs: RACE.protectionMs, portalBlinkMs: 0, deathMs: 0, eliminatedAtTick: null,
-      chain: 0, acknowledgedInput: 0 };
+      chain: 0, acknowledgedInput: 0, acknowledgedPowerup: 0, heldPowerup: null, deathPosition: null };
     }).sort((a, b) => a.slot - b.slot);
   }
 
@@ -60,7 +66,9 @@ export class DataRace {
     if (snapshot.matchId !== this.state.matchId || snapshot.mapId !== this.map.id) throw new Error('Snapshot belongs to another session.');
     this.state = cloneSnapshot({ ...snapshot, enemies: [] });
     this.inputs.clear();
+    this.powerupInputs.clear();
     this.activeMap = battleArenaMapAtStage(this.map, this.state.shrinkStage);
+    this.walls = createPowerupCollisionWorld(createBattleArenaWorldMap(this.map, this.state.shrinkStage));
   }
 
   /** Queues bounded tick-stamped intent; late input waits for the next authoritative step. */
@@ -99,9 +107,49 @@ export class DataRace {
     }
   }
 
+  /** Queues activation separately from movement so same-tick direction coalescing cannot discard E. */
+  activate(playerId: string, sequence: number, targetTick = this.state.tick + 1): boolean {
+    const player = this.state.players.find((candidate) => candidate.id === playerId);
+    const queued = this.powerupInputs.get(playerId);
+    if (!player?.connected || player.eliminatedAtTick !== null || !this.movementEnabled
+      || !Number.isSafeInteger(sequence) || sequence <= (queued?.sequence ?? player.acknowledgedPowerup)
+      || !Number.isSafeInteger(targetTick) || targetTick < 0
+      || targetTick > this.state.tick + SYNCHRONIZATION.maxPredictionTicks
+      || targetTick < (queued?.targetTick ?? 0) || (queued?.commands.size ?? 0) >= 128) return false;
+    const commands = queued?.commands ?? new Map<number, ScheduledPowerup>();
+    commands.set(sequence, { sequence, targetTick: Math.max(this.state.tick + 1, targetTick) });
+    this.powerupInputs.set(playerId, { sequence, targetTick, commands });
+    return true;
+  }
+
+  /** Replaces only an active player's inventory; the transport owns the local-development capability gate. */
+  equipPowerup(playerId: string, kind: OffensivePowerupKind): boolean {
+    const player = this.state.players.find((candidate) => candidate.id === playerId);
+    if (!player?.connected || player.eliminatedAtTick !== null || !this.movementEnabled
+      || !isOffensivePowerup(kind)) return false;
+    player.heldPowerup = kind;
+    return true;
+  }
+
+  /** Acknowledges each due E edge once, consuming inventory only when a new cast can start. */
+  private consumePowerup(player: RacePlayer): void {
+    const queue = this.powerupInputs.get(player.id);
+    if (!queue) return;
+    for (const command of [...queue.commands.values()].sort((left, right) => left.sequence - right.sequence)) {
+      if (command.targetTick > this.state.tick) continue;
+      if (player.heldPowerup && activatePowerup(this.state.combat, player.id, player.heldPowerup, player.movement.direction)) {
+        player.heldPowerup = null;
+      }
+      player.acknowledgedPowerup = command.sequence;
+      queue.commands.delete(command.sequence);
+    }
+  }
+
   /** Removes a disconnected participant from play while retaining their authoritative score. */
   disconnect(playerId: string): void {
     this.inputs.delete(playerId);
+    this.powerupInputs.delete(playerId);
+    cancelPowerupCast(this.state.combat, playerId);
     const player = this.state.players.find((candidate) => candidate.id === playerId);
     if (player) { player.connected = false; cancelBoost(player); }
   }
@@ -130,12 +178,13 @@ export class DataRace {
     if (this.state.phase === 'finished' || this.state.phase === 'aborted') return;
     this.state.phase = 'aborted';
     this.inputs.clear();
+    this.powerupInputs.clear();
     this.state.players.forEach(cancelBoost);
     this.state.abortReason = reason;
     this.state.rankings = [];
   }
 
-  /** Advances exactly one 60 Hz step, independent of browser or platform clocks. */
+  /** Advances one authoritative 60 Hz step, holding laser casters still until their animation completes. */
   step(): void {
     if (this.state.phase === 'finished' || this.state.phase === 'aborted') return;
     this.state.tick += 1;
@@ -145,7 +194,9 @@ export class DataRace {
     }
     this.state.playTicks += 1;
     const outcomeLocked = this.outcomeLocked();
-    if (outcomeLocked) this.inputs.clear();
+    if (outcomeLocked) { this.inputs.clear(); this.powerupInputs.clear(); }
+    const previous = new Map(this.state.players.map((player) => [player.id, this.worldPosition(player)]));
+    const teleported = new Map<string, { departure: { x: number; y: number }; arrival: { x: number; y: number }; fraction: number }>();
     for (const player of this.state.players) {
       if (player.eliminatedAtTick !== null) {
         player.deathMs = Math.max(0, player.deathMs - RACE.stepMs);
@@ -157,16 +208,38 @@ export class DataRace {
       if (player.huntMs < 1e-6) { player.huntMs = 0; player.chain = 0; }
       if (!player.connected || outcomeLocked) { cancelBoost(player); continue; }
       this.consumeInput(player);
-      advanceBoost(this.activeMap, player, 1, false,
-        () => { player.portalBlinkMs = PACKET_PORTAL_BLINK.durationMs; });
+      this.consumePowerup(player);
+      advanceBoost(this.activeMap, player, 1, getPowerupMovementLockMs(this.state.combat, player.id) > 0,
+        (motion) => {
+          player.portalBlinkMs = PACKET_PORTAL_BLINK.durationMs;
+          teleported.set(player.id, { fraction: motion.fraction,
+            departure: { x: (motion.departure.x + 0.5) * TILE_SIZE, y: (motion.departure.y + 0.5) * TILE_SIZE },
+            arrival: { x: (motion.arrival.x + 0.5) * TILE_SIZE, y: (motion.arrival.y + 0.5) * TILE_SIZE } });
+        });
     }
     if (outcomeLocked) {
       if (this.state.playTicks >= RACE.matchTicks || this.terminalPresentationComplete()) this.finish();
       return;
     }
     this.shrinkIfDue();
+    const actors = this.state.players.map((player) => ({ id: player.id, ...this.worldPosition(player),
+      radius: SPRITE_SIZE.packet / 2, active: player.eliminatedAtTick === null,
+      protected: player.protectionMs > 0 || (player.portalBlinkMs ?? 0) > 0,
+      previous: previous.get(player.id), teleported: teleported.has(player.id), teleportMotion: teleported.get(player.id) }));
+    const hits = stepPowerupCombat(this.state.combat, RACE.stepMs, actors, this.walls, RACE.playerSpeed * TILE_SIZE);
+    for (const hit of hits) {
+      const player = this.state.players.find((candidate) => candidate.id === hit.targetId);
+      if (player) this.eliminatePlayer(player, this.activeMap, {
+        x: hit.position.x / TILE_SIZE - 0.5, y: hit.position.y / TILE_SIZE - 0.5 });
+    }
     this.collect();
     if (this.state.playTicks >= RACE.matchTicks) this.finish();
+  }
+
+  /** Converts authoritative tile-center positions to shared world pixels without moving dead actors. */
+  private worldPosition(player: RacePlayer): { x: number; y: number } {
+    const point = player.deathPosition ?? position(this.activeMap, player.movement);
+    return { x: (point.x + 0.5) * TILE_SIZE, y: (point.y + 0.5) * TILE_SIZE };
   }
 
   /** Skips only the remaining closure time for development controls, preserving actor movement and effect timers. */
@@ -193,18 +266,25 @@ export class DataRace {
     for (const pickup of this.state.pickups) {
       if (!isBattleArenaCellActive(this.map, pickup.cell, this.state.shrinkStage)) continue;
       const cell = this.activeMap.cells[pickup.cell];
+      const weapon = isOffensivePowerup(pickup.kind);
       const config = COLLECTIBLE_CONFIG[pickup.kind === 'core' ? 1 : 0];
       const collector = this.state.players.find((player) => {
         if (!player.connected || player.eliminatedAtTick !== null) return false;
         const current = position(this.activeMap, player.movement);
         return isBodyOverlap({ ...current, radius: SPRITE_SIZE.packet / 2 / TILE_SIZE },
-          { x: cell.x, y: cell.y, radius: config.size / 2 / TILE_SIZE });
+          { x: cell.x, y: cell.y, radius: (weapon ? POWERUP_PICKUP_RADIUS : config.size / 2) / TILE_SIZE });
       });
       if (!collector) { remaining.push(pickup); continue; }
+      if (isOffensivePowerup(pickup.kind)) {
+        collector.heldPowerup = pickup.kind;
+        addPowerupCollection(this.state.combat, collector.id, pickup.kind,
+          { x: (cell.x + 0.5) * TILE_SIZE, y: (cell.y + 0.5) * TILE_SIZE }, this.worldPosition(collector));
+        continue;
+      }
       collector.score += config.score;
       if (pickup.kind === 'core') { collector.huntMs = RACE.huntingMs; collector.chain = 0; }
     }
-    if (remaining.length === 0) {
+    if (!remaining.some((pickup) => pickup.kind === 'bit' || pickup.kind === 'core')) {
       const refill = this.map.pickups.filter((pickup) =>
         isBattleArenaCellActive(this.map, pickup.cell, this.state.shrinkStage));
       if (refill.length > 0) this.state.refill += 1;
@@ -226,6 +306,7 @@ export class DataRace {
     }
     this.state.shrinkStage = nextStage;
     this.activeMap = nextMap;
+    this.walls = createPowerupCollisionWorld(createBattleArenaWorldMap(this.map, nextStage));
     for (const [player, point] of samples) {
       if (point.x <= bounds.minX - 0.5 || point.x >= bounds.maxX + 0.5
         || point.y <= bounds.minY - 0.5 || point.y >= bounds.maxY + 0.5) {
@@ -258,6 +339,10 @@ export class DataRace {
   ): void {
     if (player.eliminatedAtTick !== null) return;
     this.inputs.delete(player.id);
+    this.powerupInputs.delete(player.id);
+    cancelPowerupCast(this.state.combat, player.id);
+    player.heldPowerup = null;
+    player.deathPosition = { ...sampled };
     cancelBoost(player);
     if (player.movement.to !== null) {
       const nearest = [player.movement.cell, player.movement.to].map((cell) => {
@@ -293,6 +378,7 @@ export class DataRace {
   /** Freezes play and assigns competition ranks across survivors and elimination cohorts. */
   private finish(): void {
     this.inputs.clear();
+    this.powerupInputs.clear();
     this.state.players.forEach(cancelBoost);
     this.state.phase = 'finished';
     const survivors = this.state.players.filter((player) => player.eliminatedAtTick === null)

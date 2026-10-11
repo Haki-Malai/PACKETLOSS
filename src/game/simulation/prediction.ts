@@ -1,6 +1,7 @@
 import { move, movementEdge, opposite, position } from './movement';
 import { advanceBoost, applyScheduledInput } from './boost';
 import { isBattleArenaCellActive } from './BattleArenaMap';
+import { getPowerupMovementLockMs } from '../shared/offensivePowerups';
 import { RACE, SYNCHRONIZATION, type Movement, type RaceMap, type RacePlayer, type RaceSnapshot, type ScheduledInput } from './types';
 
 export type Point = { x: number; y: number };
@@ -13,16 +14,21 @@ export function reconcileMovement(map: RaceMap, player: RacePlayer, authoritativ
   return reconcilePlayer(map, player, authoritativeTick, predictedTick, pending).movement;
 }
 
-/** Replays private movement/boost state without predicting pickup awards or exposing predicted scores. */
+/** Returns the last completed authoritative tick held by the confirmed laser animation. */
+export function powerupMovementLockTick(race: RaceSnapshot, playerId: string): number {
+  return race.tick + Math.ceil(getPowerupMovementLockMs(race.combat, playerId) / RACE.stepMs - EPSILON);
+}
+
+/** Replays movement/boost after a confirmed laser hold, without predicting pickups or exposing scores. */
 export function reconcilePlayer(map: RaceMap, player: RacePlayer, authoritativeTick: number,
-  predictedTick: number, pending: readonly ScheduledInput[]): RacePlayer {
+  predictedTick: number, pending: readonly ScheduledInput[], movementLockedUntilTick = authoritativeTick): RacePlayer {
   const predicted = { ...player, movement: { ...player.movement } };
   if (!player.connected || player.eliminatedAtTick !== null || player.deathMs > 0) return predicted;
   const target = Math.min(predictedTick, authoritativeTick + SYNCHRONIZATION.maxPredictionTicks);
   for (let tick = authoritativeTick; tick < target; tick += 1) {
     applyScheduledInput(predicted, pending, tick + 1);
     const fraction = Math.min(1, target - tick);
-    advanceBoost(map, predicted, fraction);
+    advanceBoost(map, predicted, fraction, tick < movementLockedUntilTick);
   }
   return predicted;
 }
@@ -129,7 +135,7 @@ function corridorPoint(map: RaceMap, first: Movement, second: Movement, alpha: n
     direction: travel < firstLength ? first.direction : second.direction };
 }
 
-/** Samples remote movement and effects at one buffered time; holds endpoints across unsafe gaps. */
+/** Samples remote motion after laser holds and keeps endpoints fixed across unsafe gaps. */
 export function sampleRemoteActor(history: readonly RaceSnapshot[], targetTick: number,
   id: string, map: RaceMap): ActorSample | null {
   let start = 0;
@@ -155,14 +161,19 @@ export function sampleRemoteActor(history: readonly RaceSnapshot[], targetTick: 
   if (!first || !second) return null;
   const tick = Math.max(before.tick, Math.min(targetTick, after.tick));
   const player = samplePlayerEffects(first, tick - before.tick);
+  const lockedUntilTick = powerupMovementLockTick(before, id);
+  const movementStartTick = Math.min(after.tick, lockedUntilTick);
+  const movementLocked = lockedUntilTick > before.tick && tick <= lockedUntilTick;
   const moving = before.movementEnabled && first.connected && first.eliminatedAtTick === null
-    && first.deathMs <= 0 && (first.movement.to !== null || first.movement.cell !== second.movement.cell
+    && !movementLocked && first.deathMs <= 0 && (first.movement.to !== null || first.movement.cell !== second.movement.cell
       || first.movement.progress !== second.movement.progress);
-  if (before.tick === after.tick) return { player, point: position(map, player.movement), discontinuity: false, moving };
-  const alpha = (tick - before.tick) / (after.tick - before.tick);
+  if (before.tick === after.tick || movementLocked) return {
+    player, point: player.deathPosition ?? position(map, player.movement), discontinuity: false, moving,
+  };
+  const alpha = (tick - movementStartTick) / (after.tick - movementStartTick);
   const travel = corridorPoint(map, first.movement, second.movement, alpha);
   if (!travel || first.eliminatedAtTick !== second.eliminatedAtTick || first.connected !== second.connected) {
-    return { player, point: position(map, first.movement), discontinuity: false, moving: false };
+    return { player, point: first.deathPosition ?? position(map, first.movement), discontinuity: false, moving: false };
   }
   return { player: { ...player, movement: { ...first.movement, direction: travel.direction } },
     point: travel.point, discontinuity: false, moving };

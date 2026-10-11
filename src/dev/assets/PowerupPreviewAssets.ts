@@ -1,7 +1,8 @@
 import {
-  AnimationAction, AnimationMixer, Box3, BufferGeometry, LoopOnce, Material, Mesh,
+  AnimationAction, AnimationMixer, Box3, LoopOnce,
 } from 'three';
-import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
+import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
+import { disposeGlbResources, loadGlbCollection } from '../../game/infrastructure/three/GlbResources';
 import { POWERUP_CATALOG } from './assetCatalog';
 
 interface PowerupPreview {
@@ -21,30 +22,7 @@ export class PowerupPreviewAssets {
 
   /** Loads the manifest's models and releases completed parses after cancellation or any failure. */
   static async load(signal: AbortSignal): Promise<PowerupPreviewAssets> {
-    signal.throwIfAborted();
-    const loader = new GLTFLoader();
-    const results = await Promise.allSettled(POWERUP_CATALOG.map(async (entry) => {
-      try {
-        const base = import.meta.env.DEV ? '/' : import.meta.env.BASE_URL;
-        const response = await fetch(`${base}assets/models/powerups/${entry.file}`, { signal });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const model = await loader.parseAsync(await response.arrayBuffer(), '');
-        return [entry.id, model] as const;
-      } catch (error) {
-        signal.throwIfAborted();
-        throw new Error(`Unable to load powerup ${entry.file}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }));
-    const models = new Map<string, GLTF>();
-    for (const result of results) if (result.status === 'fulfilled') models.set(...result.value);
-    const assets = new PowerupPreviewAssets(models);
-    const failed = results.find((result) => result.status === 'rejected');
-    if (failed || signal.aborted) {
-      assets.dispose();
-      signal.throwIfAborted();
-      throw failed?.reason;
-    }
-    return assets;
+    return new PowerupPreviewAssets(await loadGlbCollection('powerups', POWERUP_CATALOG, signal));
   }
 
   /** Caches a clip's full motion envelope so vanished starting poses and long beams frame correctly. */
@@ -85,17 +63,7 @@ export class PowerupPreviewAssets {
       mixer.stopAllAction();
       mixer.uncacheRoot(model.scene);
     }
-    const resources = new Set<BufferGeometry | Material>();
-    for (const model of this.models.values()) {
-      model.scene.removeFromParent();
-      model.scene.traverse((object) => {
-        if (!(object instanceof Mesh)) return;
-        const mesh = object as Mesh<BufferGeometry, Material | Material[]>;
-        resources.add(mesh.geometry);
-        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) resources.add(material);
-      });
-    }
-    for (const resource of resources) resource.dispose();
+    disposeGlbResources([...this.models.values()].map(({ scene }) => scene));
     this.previews.clear();
   }
 }

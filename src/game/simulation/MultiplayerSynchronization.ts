@@ -1,8 +1,10 @@
+import { clonePowerupCombatState } from './PowerupCombat';
+import type { PowerupCombatState } from '../shared/offensivePowerups';
 import { battleArenaMapAtStage } from './BattleArenaMap';
 import { position } from './movement';
-import { correctedPoint, crossedPortal, RacePresentationClock,
+import { correctedPoint, crossedPortal, powerupMovementLockTick, RacePresentationClock,
   reconcilePlayer, samplePlayerEffects, sampleRemoteActor, type ActorSample, type Point } from './prediction';
-import { RACE, SYNCHRONIZATION, type BoostAction, type Direction, type Movement, type RaceMap, type RacePlayer, type RaceSnapshot, type ScheduledInput } from './types';
+import { RACE, SYNCHRONIZATION, type BoostAction, type Direction, type Movement, type RaceMap, type RacePlayer, type RaceSnapshot, type ScheduledInput, type ScheduledPowerup } from './types';
 
 export interface SynchronizationDiagnostics {
   correctionMagnitude: number;
@@ -16,6 +18,8 @@ export interface MultiplayerRenderState {
   presentationTick: number;
   predictedTick: number;
   stalled: boolean;
+  combat: PowerupCombatState;
+  combatTimeMs: number;
 }
 
 /** Owns network time, input history, replay, and complete render samples without React or a renderer. */
@@ -31,6 +35,8 @@ export class MultiplayerSynchronization {
   private rtt: number | null = null;
   private sequence = 0;
   private pending: ScheduledInput[] = [];
+  private powerupSequence = 0;
+  private pendingPowerups: ScheduledPowerup[] = [];
   private predictedPlayer: RacePlayer | null = null;
   private simulatedTick = 0;
   private offset: Point = { x: 0, y: 0 };
@@ -57,7 +63,7 @@ export class MultiplayerSynchronization {
   /** Clears all connection-owned state; abandoned input never leaks into a new admission. */
   reset(): void {
     this.race = null; this.map = null; this.activeMap = null; this.playerId = null;
-    this.snapshots = []; this.publication = -1; this.pending = []; this.sequence = 0;
+    this.snapshots = []; this.publication = -1; this.pending = []; this.sequence = 0; this.pendingPowerups = []; this.powerupSequence = 0;
     this.rtt = null; this.predictedPlayer = null; this.previousMovement = null; this.remoteTick = 0;
     this.previousRemoteMovements.clear(); this.wasUnderrun = false;
     this.clock.reset(); this.offset = { x: 0, y: 0 }; this.lastSampleMs = null;
@@ -80,7 +86,7 @@ export class MultiplayerSynchronization {
     const oldRace = this.race;
     const old = sameMatch ? this.localPlayer(this.predictionTick(nowMs)) : null;
     if (!sameMatch) {
-      this.pending = []; this.snapshots = []; this.sequence = 0; this.previousMovement = null;
+      this.pending = []; this.snapshots = []; this.sequence = 0; this.pendingPowerups = []; this.powerupSequence = 0; this.previousMovement = null;
       this.previousRemoteMovements.clear(); this.wasUnderrun = false;
       this.offset = { x: 0, y: 0 }; this.clock.reset(); this.remoteTick = 0;
     }
@@ -92,8 +98,12 @@ export class MultiplayerSynchronization {
     this.snapshots = [...this.snapshots.filter((snapshot) => snapshot.tick >= race.tick - SYNCHRONIZATION.historyTicks), race].slice(-64);
     const player = race.players.find((candidate) => candidate.id === playerId);
     this.sequence = Math.max(this.sequence, player?.acknowledgedInput ?? 0);
+    this.powerupSequence = Math.max(this.powerupSequence, player?.acknowledgedPowerup ?? 0);
+    this.pendingPowerups = this.pendingPowerups.filter((input) => input.sequence > (player?.acknowledgedPowerup ?? 0));
     this.pending = this.pending.filter((input) => input.sequence > (player?.acknowledgedInput ?? 0));
-    if (!race.movementEnabled || !player?.connected || player.eliminatedAtTick !== null) this.pending = [];
+    if (!race.movementEnabled || !player?.connected || player.eliminatedAtTick !== null) {
+      this.pending = []; this.pendingPowerups = [];
+    }
     this.restoreMovement();
     const current = this.localPlayer(this.predictionTick(nowMs));
     this.diagnostics.correctionMagnitude = 0;
@@ -150,7 +160,24 @@ export class MultiplayerSynchronization {
     return input.sequence;
   }
 
-  /** Samples local fractional movement and remote buffered actors from the single clock. */
+  /** Sends one independently sequenced E edge without predicting server-owned targeting or damage. */
+  submitPowerup(nowMs: number, send: (_input: ScheduledPowerup & { matchId: string }) => boolean): number | null {
+    const race = this.race;
+    const player = race?.players.find((candidate) => candidate.id === this.playerId);
+    if (!race?.movementEnabled || !player?.connected || player.eliminatedAtTick !== null
+      || !player.heldPowerup || this.pendingPowerups.length > 0
+      || race.combat.casts.some((cast) => cast.ownerId === player.id)
+      || nowMs - this.receivedAt >= SYNCHRONIZATION.maxPredictionTicks * RACE.stepMs) return null;
+    const targetTick = Math.floor(this.predictionTick(nowMs)) + 2;
+    if (targetTick > race.tick + SYNCHRONIZATION.maxPredictionTicks) return null;
+    const command = { matchId: race.matchId, sequence: this.powerupSequence + 1, targetTick };
+    if (!send(command)) return null;
+    this.powerupSequence = command.sequence;
+    this.pendingPowerups.push(command);
+    return command.sequence;
+  }
+
+  /** Samples local prediction and remote actors, keeping laser holds fixed without smoothing drift. */
   sample(nowMs: number): MultiplayerRenderState | null {
     const race = this.race, map = this.activeMap;
     if (!race || !map) return null;
@@ -164,17 +191,20 @@ export class MultiplayerSynchronization {
     this.wasUnderrun = underrun;
     const actors = new Map<string, ActorSample>();
     const local = this.localPlayer(predictedTick);
+    const lockedUntilTick = powerupMovementLockTick(race, this.playerId ?? '');
+    const movementLocked = lockedUntilTick > race.tick && predictedTick <= lockedUntilTick;
+    if (movementLocked) this.offset = { x: 0, y: 0 };
     const decay = Math.exp(-Math.max(0, nowMs - (this.lastSampleMs ?? nowMs)) / 80);
     this.offset.x *= decay; this.offset.y *= decay;
     for (const player of race.players) {
       if (player.id === this.playerId && local) {
-        const raw = position(map, local.movement);
-        const point = correctedPoint(map, local.movement, raw, this.offset);
+        const raw = player.deathPosition ?? position(map, local.movement);
+        const point = player.deathPosition ? raw : correctedPoint(map, local.movement, raw, this.offset);
         const discontinuity = this.previousMovement === null || crossedPortal(map, this.previousMovement, local.movement);
         if (!point || discontinuity) this.offset = { x: 0, y: 0 };
         const sampled = samplePlayerEffects(player, Math.max(0, presentationTick - race.tick));
         actors.set(player.id, { player: { ...sampled, movement: local.movement, boosting: local.boosting }, point: discontinuity ? raw : point ?? raw, discontinuity,
-          moving: race.movementEnabled && player.connected && local.movement.to !== null
+          moving: race.movementEnabled && !movementLocked && player.connected && local.movement.to !== null
             && player.eliminatedAtTick === null && player.deathMs <= 0
             && nowMs - this.receivedAt < SYNCHRONIZATION.maxPredictionTicks * RACE.stepMs });
         this.previousMovement = { ...local.movement };
@@ -190,8 +220,36 @@ export class MultiplayerSynchronization {
     }
     this.lastSampleMs = nowMs;
     this.diagnostics.snapshotAgeMs = Math.max(0, nowMs - this.receivedAt);
-    return { actors, presentationTick, predictedTick, stalled: race.phase === 'playing'
+    const { combat, combatTimeMs } = this.sampleCombat(target);
+    return { actors, presentationTick, predictedTick, combat, combatTimeMs, stalled: race.phase === 'playing'
       && this.diagnostics.snapshotAgeMs >= SYNCHRONIZATION.maxPredictionTicks * RACE.stepMs };
+  }
+
+  /** Interpolates matching authoritative missile identities without inventing motion or damaging outcomes. */
+  private sampleCombat(target: number): { combat: PowerupCombatState; combatTimeMs: number } {
+    const before = [...this.snapshots].reverse().find((snapshot) => snapshot.tick <= target)
+      ?? this.snapshots[0] ?? this.race!;
+    const after = this.snapshots.find((snapshot) => snapshot.tick > target) ?? before;
+    const combatTimeMs = before.combat.clockMs + (before.movementEnabled
+      ? Math.max(0, target - before.tick) * RACE.stepMs : 0);
+    if (before === after || before.shrinkStage !== after.shrinkStage || !before.movementEnabled) {
+      return { combat: before.combat, combatTimeMs };
+    }
+    const alpha = Math.max(0, Math.min(1, (target - before.tick) / (after.tick - before.tick)));
+    const combat = clonePowerupCombatState(before.combat);
+    for (const projectile of combat.projectiles) {
+      const next = after.combat.projectiles.find((candidate) => candidate.id === projectile.id);
+      if (!next) continue;
+      projectile.x += (next.x - projectile.x) * alpha;
+      projectile.y += (next.y - projectile.y) * alpha;
+      const turn = Math.atan2(Math.sin(next.angle - projectile.angle), Math.cos(next.angle - projectile.angle));
+      projectile.angle += turn * alpha;
+    }
+    for (const effect of combat.effects) {
+      const next = after.combat.effects.find((candidate) => candidate.id === effect.id);
+      if (next && effect.kind === 'laser' && effect.role === 'attack') effect.length += (next.length - effect.length) * alpha;
+    }
+    return { combat, combatTimeMs };
   }
 
   /** Derives prediction lead without changing timestamps of already committed commands. */
@@ -208,19 +266,20 @@ export class MultiplayerSynchronization {
     this.simulatedTick = this.race?.tick ?? 0;
   }
 
-  /** Advances completed ticks incrementally and samples one disposable fractional step. */
+  /** Replays buffered intent through the confirmed laser hold and samples one fractional step. */
   private localPlayer(target: number): RacePlayer | null {
     const race = this.race, map = this.activeMap;
     let predicted = this.predictedPlayer;
     const player = race?.players.find((candidate) => candidate.id === this.playerId);
     if (!race || !map || !predicted || !player) return null;
     if (!race.movementEnabled || !player.connected || player.eliminatedAtTick !== null || player.deathMs > 0) return { ...player, boosting: false };
+    const lockedUntilTick = powerupMovementLockTick(race, player.id);
     const capped = Math.max(this.simulatedTick, Math.min(target, race.tick + SYNCHRONIZATION.maxPredictionTicks));
     if (this.simulatedTick < Math.floor(capped)) {
-      predicted = reconcilePlayer(map, predicted, this.simulatedTick, Math.floor(capped), this.pending);
+      predicted = reconcilePlayer(map, predicted, this.simulatedTick, Math.floor(capped), this.pending, lockedUntilTick);
       this.predictedPlayer = predicted;
       this.simulatedTick = Math.floor(capped);
     }
-    return reconcilePlayer(map, predicted, this.simulatedTick, capped, this.pending);
+    return reconcilePlayer(map, predicted, this.simulatedTick, capped, this.pending, lockedUntilTick);
   }
 }

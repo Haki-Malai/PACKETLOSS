@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DIRECTIONS, type RaceMap, type RaceSnapshot } from '../simulation/types';
 import { PROTOCOL_VERSION } from './version';
 import { BOOST } from '../simulation/boost';
+import { OFFENSIVE_POWERUPS } from '../shared/offensivePowerups';
 
 export { PROTOCOL_VERSION } from './version';
 const direction = z.enum(DIRECTIONS);
@@ -17,7 +18,21 @@ const movement = z
         queued: direction,
     })
     .strict();
-const pickup = z.object({ id: integer, cell: integer, kind: z.enum(['bit', 'core']) }).strict();
+const powerupKind = z.enum(OFFENSIVE_POWERUPS);
+const point = z.object({ x: finite, y: finite }).strict();
+const pickup = z.object({ id: integer, cell: integer, kind: z.enum(['bit', 'core', ...OFFENSIVE_POWERUPS]) }).strict();
+const combat = z.object({
+    clockMs: finite.nonnegative(),
+    nextId: integer,
+    casts: z.array(z.object({ id: integer, ownerId: identifier, kind: powerupKind, facing: direction,
+        elapsedMs: finite.nonnegative(), origin: point.nullable() }).strict()).max(4),
+    projectiles: z.array(z.object({ id: integer, ownerId: identifier, targetId: identifier.nullable(),
+        x: finite, y: finite, angle: finite, elapsedMs: finite.nonnegative() }).strict()).max(256),
+    effects: z.array(z.object({ id: integer, ownerId: identifier, kind: powerupKind,
+        role: z.enum(['attack', 'launch', 'impact', 'collection']), x: finite, y: finite, angle: finite,
+        elapsedMs: finite.nonnegative(), durationMs: finite.nonnegative(), radius: finite.nonnegative(),
+        length: finite.nonnegative(), source: point.optional() }).strict()).max(512),
+}).strict();
 const player = z
     .object({
         id: identifier,
@@ -38,6 +53,9 @@ const player = z
         eliminatedAtTick: integer.nullable(),
         chain: integer,
         acknowledgedInput: integer,
+        acknowledgedPowerup: integer,
+        heldPowerup: powerupKind.nullable(),
+        deathPosition: point.nullable(),
     })
     .strict();
 const ranking = z
@@ -114,6 +132,7 @@ const raceState = {
     randomState: integer,
     rankings: z.array(ranking).max(4),
     abortReason: z.string().max(128).nullable(),
+    combat,
 };
 export const raceSnapshotSchema: z.ZodType<RaceSnapshot> = z
     .object({
@@ -170,6 +189,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ready'), ready: z.boolean() }).strict(),
   z.object({ type: z.literal('start') }).strict(),
   z.object({ type: z.literal('development-close-wall'), matchId: identifier }).strict(),
+  z.object({ type: z.literal('activate-powerup'), matchId: identifier, sequence: integer, targetTick: integer }).strict(),
+  z.object({ type: z.literal('development-equip-powerup'), matchId: identifier, kind: powerupKind }).strict(),
     z
         .object({ type: z.literal('input'), matchId: identifier, sequence: integer, targetTick: integer,
           direction: direction.optional(), boost: z.enum(['press', 'release', 'cancel']).optional() })

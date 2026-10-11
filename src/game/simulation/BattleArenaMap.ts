@@ -1,4 +1,5 @@
 import { SeededRandom } from '../shared/random/SeededRandom';
+import { placePowerupPickups } from '../shared/offensivePowerups';
 import type { CollisionTile } from '../domain/world/CollisionGrid';
 import {
     carveMazeGraph,
@@ -519,7 +520,7 @@ export function createBattleArenaMap(seed: number): RaceMap {
     const initialBounds = battleArenaBounds(0);
     addStagePortals(cells, initialBounds);
     const cores = new Set(CORE_POSITIONS.map(([x, y]) => cellAt(x, y)));
-    const pickups = cells.flatMap((cell, id) =>
+    const ordinaryPickups = cells.flatMap((cell, id) =>
         isLogoCoordinate(cell.x, cell.y) ||
         cell.x < initialBounds.minX ||
         cell.x > initialBounds.maxX ||
@@ -528,12 +529,21 @@ export function createBattleArenaMap(seed: number): RaceMap {
             ? []
             : [{ id, cell: id, kind: cores.has(id) ? ('core' as const) : ('bit' as const) }]
     );
+    const spawns = SPAWN_POSITIONS.map(([x, y]) => cellAt(x, y));
+    const reserved = new Set([...spawns, ...cores, ...cells.flatMap((cell, id) =>
+      cell.edges.some((edge) => edge.portal) ? [id] : [])]);
+    const weapons = placePowerupPickups(ordinaryPickups.filter((pickup) => !reserved.has(pickup.cell))
+      .map((pickup) => ({ x: (cells[pickup.cell].x + 0.5) * 16, y: (cells[pickup.cell].y + 0.5) * 16 })),
+      normalizedSeed, 2, BATTLE_ARENA_SIZE * 16).map((pickup, index) => ({
+        id: cells.length + index, cell: cellAt(Math.floor(pickup.x / 16), Math.floor(pickup.y / 16)), kind: pickup.kind,
+      }));
+    const pickups = [...ordinaryPickups, ...weapons];
     return {
         id: `battle-arena-v${BATTLE_ARENA_GENERATION_VERSION}-${normalizedSeed.toString(16).padStart(8, '0')}`,
         width: BATTLE_ARENA_SIZE,
         height: BATTLE_ARENA_SIZE,
         cells,
-        spawns: SPAWN_POSITIONS.map(([x, y]) => cellAt(x, y)),
+        spawns,
         enemyHome: cellAt(BATTLE_ARENA_CENTER, BATTLE_ARENA_PORTAL_ROW),
         pickups,
         arena: {
@@ -751,6 +761,7 @@ export function createBattleArenaWorldMap(
     const bounds = battleArenaBounds(stage);
     const outer = battleArenaOuterBounds(stage);
     const staged = battleArenaMapAtStage(map, stage);
+    const coordinateCells = map.arena ? null : new Map(staged.cells.map((cell) => [`${cell.x},${cell.y}`, cell]));
     const tiles = Array.from({ length: map.height }, (_, y) =>
         Array.from({ length: map.width }, (_, x) => {
             const cell = y * map.width + x;
@@ -767,7 +778,8 @@ export function createBattleArenaWorldMap(
                 return perimeterTile(x, y, outer);
             }
             if (map.arena && isLogoCoordinate(x, y)) return logoTile(x, y);
-            return corridorTile(staged.cells[cell]);
+            const corridor = coordinateCells ? coordinateCells.get(`${x},${y}`) : staged.cells[cell];
+            return corridor ? corridorTile(corridor) : voidTile(x, y);
         })
     );
     return {

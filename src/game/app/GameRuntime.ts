@@ -136,6 +136,13 @@ export class GameRuntime implements PacketGame {
     this.setPaused(false);
   }
 
+  /** Activates the held weapon only while an ordinary solo run owns gameplay input. */
+  activatePowerup(): boolean {
+    if (!this.composed || this.destroyed || this.composed.tutorial || !this.composed.world.isMoving
+      || this.composed.world.outcome || this.composed.world.packet.deathAnimationRemainingMs > 0) return false;
+    return this.composed.activatePowerup?.() ?? false;
+  }
+
   /** Refills and resumes the same run after an acknowledged maze-clear checkpoint. */
   continueLevel(): void {
     if (!this.composed || this.destroyed || this.composed.tutorial || !this.levelClear || this.result) {

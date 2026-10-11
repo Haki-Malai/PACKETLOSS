@@ -10,6 +10,10 @@ import type { EnemyMovementSystem } from './EnemyMovementSystem';
 import type { MazeHazardSystem } from './MazeHazardSystem';
 import type { RenderSystem } from './RenderSystem';
 
+interface EndlessPowerupShift {
+  shiftEndlessSection(_section: ReturnType<EndlessMazeStream['getSections']>[number], _rows: number, _slot: number): void;
+}
+
 interface EndlessBonusShift {
   shiftSection(_evictedIndex: number, _addedIndex: number, _rows: number, _newSlot: number): void;
 }
@@ -28,6 +32,7 @@ export class EndlessStreamingSystem {
     private readonly movement: EnemyMovementSystem,
     private readonly hazards: MazeHazardSystem,
     private readonly render: RenderSystem,
+    private readonly powerups?: EndlessPowerupShift,
   ) {}
 
   /** Recenters the rolling map after the Packet crosses its middle section. */
@@ -76,6 +81,7 @@ export class EndlessStreamingSystem {
     const addedSlot = direction === 'up' ? 0 : ENDLESS_RESIDENT_SECTIONS - 1;
     this.collectibles.shiftEndlessSection(this.stream.getSections()[addedSlot], rows, addedSlot);
     this.bonuses.shiftSection(evictedIndex, addedIndex, rows, addedSlot);
+    this.powerups?.shiftEndlessSection(this.stream.getSections()[addedSlot], rows, addedSlot);
     this.camera.translateY(pixels);
     this.movement.onTopologyChanged();
     this.hazards.onTopologyChanged();

@@ -7,6 +7,9 @@ import type { MultiplayerConnectionSnapshot } from '../infrastructure/adapters/M
 import { ThreeRendererAdapter } from '../infrastructure/adapters/ThreeRendererAdapter';
 import { TiledMapRepository } from '../infrastructure/map/TiledMapRepository';
 import { HologramPacket } from '../infrastructure/three/HologramPacket';
+import { PowerupAssets } from '../infrastructure/three/PowerupAssets';
+import { PowerupPresentation, type PowerupActorPresentation } from '../infrastructure/three/PowerupPresentation';
+import { isPowerupKind, type PowerupCombatState, type PowerupPickup } from '../shared/offensivePowerups';
 import { MazeScene } from '../infrastructure/three/MazeScene';
 import { MULTIPLAYER_PACKET_APPEARANCES } from '../infrastructure/three/PacketAppearances';
 import { PacketLabels } from '../infrastructure/three/PacketLabels';
@@ -168,19 +171,17 @@ export class MultiplayerPresentationSession {
         this.drawFrame(this.dependencies.now());
     }
 
-    /** Reconciles one raw network sample before camera and renderer presentation. */
+    /** Reconciles actors from one predicted sample before camera presentation. */
     private syncStage(now: number): boolean {
         const stage = this.stage;
         if (!stage) return false;
         const connection = this.options.getConnectionSnapshot();
-        const race = connection.race;
-        if (!race) return false;
+        if (!connection.race) return false;
         const frame = this.options.synchronization.sample(now);
         if (!frame) return false;
-        return stage.sync(connection, frame, now,
-            this.options.isReducedMotion?.()
-                ?? globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-        ).discontinuity;
+        const reducedMotion = this.options.isReducedMotion?.()
+            ?? globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+        return stage.sync(connection, frame, now, reducedMotion).discontinuity;
     }
 
     /** Draws one frame and schedules exactly one successor while presentation is active. */
@@ -270,6 +271,14 @@ function createThreeStage({
 }): MultiplayerPresentationStage {
     const cleanups: Array<() => void> = [];
     let disposed = false;
+    const powerupAbort = new AbortController();
+    let powerupAssets: PowerupAssets | null = null;
+    let powerups: PowerupPresentation | null = null;
+    cleanups.push(() => {
+        powerupAbort.abort();
+        powerups?.dispose();
+        powerupAssets?.dispose();
+    });
     try {
         const renderer = new ThreeRendererAdapter(canvas, true);
         cleanups.push(() => renderer.dispose());
@@ -342,6 +351,8 @@ function createThreeStage({
         let followedPlayerId: string | null = null;
         const activeCores: Pickup[] = [];
         const instance = new Matrix4();
+        const powerupActors = new Map<string, PowerupActorPresentation>();
+        let powerupSample: { combat: PowerupCombatState; pickups: PowerupPickup[]; timeMs: number } | null = null;
 
         return {
             resize: (width, height) =>
@@ -388,7 +399,25 @@ function createThreeStage({
                 );
                 let discontinuity = nextFollowedPlayerId !== followedPlayerId;
                 followedPlayerId = nextFollowedPlayerId;
-                discontinuity = syncActors(frame, followedPlayerId, now, players, cameraTarget, reducedMotion) || discontinuity;
+                discontinuity = syncActors(frame, followedPlayerId, players, cameraTarget, reducedMotion) || discontinuity;
+                powerupActors.clear();
+                for (const { player } of frame.actors.values()) {
+                    const model = players.find((candidate) => candidate.color === player.color);
+                    if (model) powerupActors.set(player.id, {
+                        group: model.packet.group,
+                        setPose: (pose) => model.packet.setCastPose(pose),
+                    });
+                }
+                const weaponPickups: PowerupPickup[] = race.pickups.flatMap((pickup) => {
+                    if (!isPowerupKind(pickup.kind)) return [];
+                    const cell = map.cells[pickup.cell];
+                    return [{ id: pickup.id, kind: pickup.kind, x: (cell.x + 0.5) * TILE_SIZE, y: (cell.y + 0.5) * TILE_SIZE }];
+                });
+                powerupSample = { combat: frame.combat, pickups: weaponPickups, timeMs: frame.combatTimeMs };
+                powerups?.sync(frame.combat, weaponPickups, powerupActors, frame.combatTimeMs);
+                if (powerups) {
+                    for (const { packet } of players) packet.sample(presentationTick * RACE.stepMs / 1000);
+                }
                 const acknowledgedInput = connection.race.players.find(
                     (player) => player.id === connection.playerId
                 )?.acknowledgedInput;
@@ -402,6 +431,9 @@ function createThreeStage({
                             activeCores.push(pickup);
                             continue;
                         }
+                        if (isPowerupKind(pickup.kind)) continue;
+                        if (weaponPickups.some((weapon) => weapon.x === (map.cells[pickup.cell].x + 0.5) * TILE_SIZE
+                            && weapon.y === (map.cells[pickup.cell].y + 0.5) * TILE_SIZE)) continue;
                         const cell = map.cells[pickup.cell];
                         setPointTransform(
                             instance,
@@ -440,6 +472,12 @@ function createThreeStage({
                         prepareMaze(stage).preparePerimeterContraction(prepareMaze(stage - 1));
                     }
                 }
+                const loaded = await PowerupAssets.load(powerupAbort.signal);
+                if (disposed) { loaded.dispose(); return; }
+                powerupAssets = loaded;
+                powerups = new PowerupPresentation(loaded);
+                scene.add(powerups.group);
+                if (powerupSample) powerups.sync(powerupSample.combat, powerupSample.pickups, powerupActors, powerupSample.timeMs);
                 camera.present(1, renderer.pixelRatio);
                 await renderer.prepare(scene, camera.camera);
             },
@@ -484,7 +522,6 @@ function createThreeStage({
 function syncActors(
     frame: MultiplayerRenderState,
     followedPlayerId: string | null,
-    now: number,
     players: PlayerModel[],
     cameraTarget: { x: number; y: number },
     reducedMotion: boolean
@@ -496,7 +533,8 @@ function syncActors(
         if (!model) continue;
         const { packet } = model;
         const movement = player.movement;
-        packet.group.position.set((point.x + 0.5) * TILE_SIZE, 0, (point.y + 0.5) * TILE_SIZE);
+        const presentedPoint = player.eliminatedAtTick !== null && player.deathPosition ? player.deathPosition : point;
+        packet.group.position.set((presentedPoint.x + 0.5) * TILE_SIZE, 0, (presentedPoint.y + 0.5) * TILE_SIZE);
         packet.group.visible = player.eliminatedAtTick === null || player.deathMs > 0;
         model.labels.setIdentity(player.name, player.score);
         packet.setScore(player.score);
@@ -514,7 +552,7 @@ function syncActors(
             movement.direction === 'down' ? 1 : movement.direction === 'up' ? -1 : 0,
             moving ? 1 : 0
         );
-        packet.sample(now / 1000);
+        packet.sample(frame.presentationTick * RACE.stepMs / 1000);
         if (player.id === followedPlayerId) {
             cameraTarget.x = packet.group.position.x;
             cameraTarget.y = packet.group.position.z;

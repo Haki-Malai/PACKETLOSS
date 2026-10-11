@@ -4,6 +4,8 @@ import { IS_DEV } from '../../config/environment';
 import { RACE, type BoostAction, type Direction } from '../simulation/types';
 import { BOOST } from '../simulation/boost';
 import { buttonLayout } from './MenuPanel';
+import { PowerupInventory } from './GameOverlays';
+import { POWERUP_DEVELOPMENT_KEYS } from '../shared/offensivePowerups';
 import { MultiplayerPresentationSession } from './MultiplayerPresentation';
 import type { GameSession } from './useGameSession';
 import { BrowserInputAdapter } from '../infrastructure/adapters/BrowserInputAdapter';
@@ -38,6 +40,18 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
         if (!localPlayer || localPlayer.eliminatedAtTick !== null) return;
         multiplayer.sendDirection(direction);
     };
+
+    /** Requests activation only from a connected, living player with a held weapon. */
+    const activatePowerup = useCallback(() => {
+        const multiplayer = sessionRef.current.multiplayer;
+        const latest = multiplayer.getConnectionSnapshot();
+        const player = latest.race?.players.find((candidate) => candidate.id === latest.playerId);
+        if (document.hidden || latest.phase !== 'connected' || latest.stalled
+            || latest.race?.phase !== 'playing' || !latest.race.movementEnabled
+            || !player?.connected || player.eliminatedAtTick !== null || !player.heldPowerup
+            || latest.race.combat.casts.some((cast) => cast.ownerId === player.id)) return;
+        multiplayer.activatePowerup();
+    }, []);
 
     /** Reads current authority rather than a rendered HUD snapshot when publishing boost edges. */
     const sendBoost = useCallback((action: BoostAction) => {
@@ -141,6 +155,24 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
         }
         adapter.onKeyDown(keyboardIntent);
         adapter.onKeyDown((event) => {
+            if (document.hidden || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            if (event.code === 'KeyE') {
+                event.preventDefault();
+                activatePowerup();
+                return;
+            }
+            if (!IS_DEV) return;
+            const kind = POWERUP_DEVELOPMENT_KEYS[event.code];
+            if (!kind) return;
+            const multiplayer = sessionRef.current.multiplayer;
+            const latest = multiplayer.getConnectionSnapshot();
+            const player = latest.race?.players.find((candidate) => candidate.id === latest.playerId);
+            if (latest.phase !== 'connected' || latest.stalled || latest.race?.phase !== 'playing'
+                || !latest.race.movementEnabled || !player?.connected || player.eliminatedAtTick !== null) return;
+            event.preventDefault();
+            multiplayer.equipDevelopmentPowerup(kind);
+        });
+        adapter.onKeyDown((event) => {
             if (event.code !== 'Space' || document.hidden || event.altKey || event.ctrlKey || event.metaKey) return;
             event.preventDefault();
             if (!event.repeat) startBoost('space');
@@ -172,7 +204,7 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
             if (input.current === adapter) input.current = null;
             adapter.destroy();
         };
-    }, [startBoost, releaseBoost, cancelBoostControl]);
+    }, [startBoost, releaseBoost, cancelBoostControl, activatePowerup]);
 
     useEffect(() => {
         const targetCanvas = canvas.current;
@@ -282,6 +314,13 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
                     {Math.ceil(connection.warning.remainingMs / 60_000)} min
                 </p>
             )}
+            <div className="packet-race-inventory">
+                <PowerupInventory status={{ kind: localPlayer?.heldPowerup ?? null,
+                    casting: race?.combat.casts.some((cast) => cast.ownerId === localPlayer?.id) ?? false }}
+                    disabled={connection.phase !== 'connected' || connection.stalled || race?.phase !== 'playing'
+                        || !race.movementEnabled || !localPlayer?.connected || localPlayer.eliminatedAtTick !== null}
+                    onActivate={activatePowerup} />
+            </div>
             <button
                 type="button"
                 className={`packet-button packet-race-boost min-h-11 px-3 py-2 ${buttonLayout}`}

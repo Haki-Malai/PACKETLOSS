@@ -8,6 +8,7 @@ import { CollisionTiles } from '../game/domain/world/CollisionGrid';
 import { WorldState } from '../game/domain/world/WorldState';
 import { PacketMovementSystem } from '../game/systems/PacketMovementSystem';
 import { handleDebugKeyDown } from '../game/systems/DebugInput';
+import { createPowerupCombatState } from '../game/simulation/PowerupCombat';
 
 describe('PacketMovementSystem portal blink', () => {
   it('advances normal portal blinking and preserves a persistent V override through teleportation', () => {
@@ -19,6 +20,7 @@ describe('PacketMovementSystem portal blink', () => {
     const canAdvanceOutwardMock = vi.fn(() => false);
 
     const world = {
+      powerupCombat: createPowerupCombatState(),
       lagZones: [],
       packet: {
         tile: { x: 0, y: 0 },
@@ -88,6 +90,7 @@ describe('PacketMovementSystem portal blink', () => {
 
   it('advances death recovery blink state and clears it on expiry', () => {
     const world = {
+      powerupCombat: createPowerupCombatState(),
       lagZones: [],
       packet: {
         tile: { x: 0, y: 0 },
@@ -148,6 +151,7 @@ describe('PacketMovementSystem portal blink', () => {
     const advanceEntityMock = vi.fn();
 
     const world = {
+      powerupCombat: createPowerupCombatState(),
       lagZones: [],
       levelMultiplier: 1.25,
       packet: {
@@ -209,6 +213,7 @@ describe('PacketMovementSystem portal blink', () => {
 
   it('keeps current direction when buffered portal turn is unavailable', () => {
     const world = {
+      powerupCombat: createPowerupCombatState(),
       lagZones: [],
       packet: {
         tile: { x: 0, y: 0 },
@@ -254,6 +259,7 @@ describe('PacketMovementSystem portal blink', () => {
 
   it('treats legal buffered turns as normal movement, not portal overrides', () => {
     const world = {
+      powerupCombat: createPowerupCombatState(),
       lagZones: [],
       packet: {
         tile: { x: 0, y: 0 },

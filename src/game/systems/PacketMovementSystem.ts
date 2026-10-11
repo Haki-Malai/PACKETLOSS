@@ -4,6 +4,7 @@ import { MovementRules } from '../domain/services/MovementRules';
 import { OPPOSITE_DIRECTION } from '../domain/valueObjects/Direction';
 import { WorldState } from '../domain/world/WorldState';
 import { sampleBlinkCadence } from '../shared/blinkCadence';
+import { getPowerupMovementLockMs } from '../shared/offensivePowerups';
 
 export class PacketMovementSystem {
   constructor(
@@ -12,9 +13,10 @@ export class PacketMovementSystem {
     private readonly portalService: PortalService,
   ) {}
 
-  /** Returns the next center or portal threshold so the runtime can preserve the full movement budget. */
+  /** Returns the next movement threshold; a laser hold leaves cast boundaries to the combat system. */
   getSimulationBoundaryMs(maximumMs: number): number {
-    if (this.world.packet.deathAnimationRemainingMs > 0) return maximumMs;
+    if (this.world.packet.deathAnimationRemainingMs > 0
+      || getPowerupMovementLockMs(this.world.powerupCombat, 'packet') > 0) return maximumMs;
     const packet = this.world.packet;
     const direction = packet.direction.next === OPPOSITE_DIRECTION[packet.direction.current]
       ? packet.direction.next : packet.direction.current;
@@ -30,13 +32,17 @@ export class PacketMovementSystem {
     return Math.min(maximumMs, this.movementRules.timeForDistance(distance, speed));
   }
 
-  /** Advances Packet movement and protection effects using the current level multiplier. */
+  /** Advances protection during a laser hold; otherwise moves Packet using the current level multiplier. */
   update(deltaMs = 1000 / 60): void {
     if (this.world.packet.deathAnimationRemainingMs > 0) return;
     const previousX = this.world.packet.x;
     const previousY = this.world.packet.y;
     this.updatePortalBlink(deltaMs);
     this.updateDeathRecovery(deltaMs);
+    if (getPowerupMovementLockMs(this.world.powerupCombat, 'packet') > 0) {
+      this.movementRules.discardPendingDistance(this.world.packet);
+      return;
+    }
 
     const collisionTiles = this.world.collisionGrid.getTilesAt(this.world.packet.tile);
     this.movementRules.applyBufferedDirection(this.world.packet, collisionTiles, (direction) => {

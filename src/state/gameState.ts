@@ -1,6 +1,12 @@
 import { EventBus } from '../game/shared/events/EventBus';
 import { INITIAL_LIVES } from '../config/constants';
 import type { ScoreBonusKind } from '../game/domain/valueObjects/ScoreBonus';
+import type { PowerupKind } from '../game/shared/offensivePowerups';
+
+export interface PowerupStatus {
+  kind: PowerupKind | null;
+  casting: boolean;
+}
 
 export type GameState = {
   score: number;
@@ -16,18 +22,21 @@ export const GameEvent = {
   ScoreChanged: 'score-changed',
   LivesChanged: 'lives-changed',
   BonusChanged: 'bonus-changed',
+  PowerupChanged: 'powerup-changed',
 } as const;
 
 export type GameEventMap = {
   [GameEvent.ScoreChanged]: number;
   [GameEvent.LivesChanged]: number;
   [GameEvent.BonusChanged]: ScoreBonusStatus;
+  [GameEvent.PowerupChanged]: PowerupStatus;
 };
 
 /** Owns score, lives, bonus status, and subscriptions for exactly one game session. */
 export class GameStateStore {
   private readonly state: GameState;
   private scoreBonusStatus: ScoreBonusStatus = null;
+  private powerupStatus: PowerupStatus = { kind: null, casting: false };
   private readonly eventBus = new EventBus<GameEventMap>();
 
   constructor(initialScore = 0, initialLives = INITIAL_LIVES) {
@@ -48,6 +57,7 @@ export class GameStateStore {
     this.eventBus.emit(GameEvent.ScoreChanged, this.state.score);
     this.eventBus.emit(GameEvent.LivesChanged, this.state.lives);
     this.setScoreBonusStatus(null);
+    this.setPowerupStatus({ kind: null, casting: false });
   }
 
   /** Publishes only visible changes to the multiplier HUD snapshot. */
@@ -61,6 +71,18 @@ export class GameStateStore {
       && this.scoreBonusStatus.seconds === next.seconds) return;
     this.scoreBonusStatus = next;
     this.eventBus.emit(GameEvent.BonusChanged, next);
+  }
+
+  /** Publishes inventory or casting changes without notifying on every simulation tick. */
+  setPowerupStatus(next: PowerupStatus): void {
+    if (this.powerupStatus.kind === next.kind && this.powerupStatus.casting === next.casting) return;
+    this.powerupStatus = { ...next };
+    this.eventBus.emit(GameEvent.PowerupChanged, this.powerupStatus);
+  }
+
+  /** Returns the stable inventory snapshot observed by the HUD. */
+  getPowerupStatus(): PowerupStatus {
+    return this.powerupStatus;
   }
 
   getScoreBonusStatus(): ScoreBonusStatus {

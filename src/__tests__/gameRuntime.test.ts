@@ -195,6 +195,28 @@ describe('GameRuntime', () => {
     vi.restoreAllMocks();
   });
 
+  it('keeps the touch weapon action behind startup, pause, death, terminal outcome, and disposal guards', async () => {
+    const { composed, world } = createFinishingGame('pellet');
+    const activatePowerup = vi.fn(() => true);
+    composed.activatePowerup = activatePowerup;
+    const root = { compose: vi.fn().mockResolvedValue(composed) } as unknown as GameCompositionRoot;
+    const runtime = new GameRuntime(root);
+    expect(runtime.activatePowerup()).toBe(false);
+    await runtime.start();
+    expect(runtime.activatePowerup()).toBe(true);
+    runtime.pause();
+    expect(runtime.activatePowerup()).toBe(false);
+    runtime.resume();
+    world.packet.deathAnimationRemainingMs = 100;
+    expect(runtime.activatePowerup()).toBe(false);
+    world.packet.deathAnimationRemainingMs = 0;
+    world.outcome = 'cleared';
+    expect(runtime.activatePowerup()).toBe(false);
+    runtime.destroy();
+    expect(runtime.activatePowerup()).toBe(false);
+    expect(activatePowerup).toHaveBeenCalledOnce();
+  });
+
   it('starts composed systems and drives update/render during animation frames', async () => {
     const { composed, spies } = createComposedGame();
     const compositionRoot = {

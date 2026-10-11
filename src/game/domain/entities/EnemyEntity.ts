@@ -40,6 +40,7 @@ export class EnemyEntity implements RenderableEntity {
   ambushTarget: TilePosition | null = null;
   lastLagTile: TilePosition | null = null;
   eatenElapsedMs: number | null = null;
+  defeatCause: 'contact' | 'weapon' = 'contact';
   disguised = false;
   disguiseRemainingMs = 0;
   revealRemainingMs = 0;

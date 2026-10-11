@@ -29,6 +29,8 @@ import { CollectibleKind, CollectibleSystem, EatEffect } from './CollectibleSyst
 import { EntityPresentation } from './EntityPresentation';
 import { resolveEnemyAppearance } from './resolveEnemyAppearance';
 import type { ScoreBonusSystem } from './ScoreBonusSystem';
+import { PowerupPresentation } from '../infrastructure/three/PowerupPresentation';
+import type { PowerupActorPresentation } from '../infrastructure/three/PowerupPresentation';
 
 export class RenderSystem {
   readonly scene = new Scene();
@@ -37,6 +39,8 @@ export class RenderSystem {
   private debug: CollisionDebugScene | undefined;
   private readonly packet: Group;
   private readonly packetShadow: Mesh;
+  private readonly powerups: PowerupPresentation | undefined;
+  private readonly powerupActors = new Map<string, PowerupActorPresentation>();
   private readonly pickupTarget: Object3D;
   private readonly cancelledPickups = new WeakSet<EatEffect>();
   private readonly enemies = new Map<EnemyEntity, Group>();
@@ -54,6 +58,7 @@ export class RenderSystem {
   private lastPointCount = -1;
   private lastPointRevision = -1;
   private lastBonusCount = -1;
+  private lastPowerupCount = -1;
   private animationTime = 0;
   private previousAnimationTime = 0;
   private motionX = 0;
@@ -95,6 +100,11 @@ export class RenderSystem {
     this.packetShadow = this.assets.createContactShadow(world.packet.displayWidth);
     this.packet.add(this.packetShadow);
     this.scene.add(this.packet);
+    if (assets.powerups) {
+      this.powerups = new PowerupPresentation(assets.powerups);
+      this.scene.add(this.powerups.group);
+      this.powerupActors.set('packet', { group: this.packet, setPose: (pose) => assets.setPacketCastPose(this.packet, pose) });
+    }
     for (const enemy of world.enemies) {
       const model = this.assets.createEnemy(enemy.key);
       model.name = 'enemy-' + enemy.key;
@@ -240,6 +250,7 @@ export class RenderSystem {
       this.trojans.get(enemy)?.sync(enemy.disguised, enemy.revealRemainingMs, enemy.disguiseRemainingMs);
     });
     const presentationTime = lerp(this.previousAnimationTime, this.animationTime, animationAlpha);
+    this.powerups?.sync(this.world.powerupCombat, this.world.powerupPickups, this.powerupActors);
     this.assets.sampleAnimation(presentationTime);
     this.assets.facePacket(this.packet, this.camera.camera);
     this.syncPoints(presentationTime);
@@ -271,6 +282,7 @@ export class RenderSystem {
     this.quarantineWalls.dispose();
     this.trojans.clear();
     this.tutorialMarker?.dispose();
+    this.powerups?.dispose();
     this.assets.dispose();
     this.scene.clear();
     this.renderer.dispose();
@@ -282,9 +294,11 @@ export class RenderSystem {
     const pointRevision = this.collectibles.getRevision();
     const pickups = this.scoreBonuses?.getPickups();
     const bonusCount = pickups?.length ?? 0;
+    const powerupCount = this.world.powerupPickups.length;
     const power = this.points.get('power')!;
-    if (pointCount !== this.lastPointCount || pointRevision !== this.lastPointRevision || bonusCount !== this.lastBonusCount) {
+    if (pointCount !== this.lastPointCount || pointRevision !== this.lastPointRevision || bonusCount !== this.lastBonusCount || powerupCount !== this.lastPowerupCount) {
       this.lastBonusCount = bonusCount;
+      this.lastPowerupCount = powerupCount;
       this.lastPointCount = pointCount;
       this.lastPointRevision = pointRevision;
       this.powerPoints.length = 0;
@@ -294,7 +308,8 @@ export class RenderSystem {
         if (point.kind === 'power') {
           this.powerPoints.push(point);
         } else {
-          if (pickups?.some((pickup) => pickup.x === point.x && pickup.y === point.y)) continue;
+          if (pickups?.some((pickup) => pickup.x === point.x && pickup.y === point.y)
+            || this.world.powerupPickups.some((pickup) => pickup.x === point.x && pickup.y === point.y)) continue;
           setPointTransform(this.pointMatrix, point.kind, point.x, point.y);
           base.setMatrixAt(base.count++, this.pointMatrix);
         }
@@ -363,10 +378,11 @@ export class RenderSystem {
     }
   }
 
+  /** Plays intake only for contact defeats; weapon casualties collapse into their return bug in place. */
   private syncEnemyEating(): void {
     for (const [enemy, model] of this.enemies) {
       const elapsed = enemy.eatenElapsedMs;
-      const active = enemy.active && enemy.state.dead && elapsed !== null && elapsed < ENEMY_EAT_DURATION_MS;
+      const active = enemy.active && enemy.state.dead && enemy.defeatCause === 'contact' && elapsed !== null && elapsed < ENEMY_EAT_DURATION_MS;
       let effect = this.enemyEating.get(enemy);
       if (!active) {
         if (effect) {

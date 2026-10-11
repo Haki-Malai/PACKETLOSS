@@ -67,7 +67,7 @@ describe('seeded Battle Royale arena', () => {
             [11, 30],
             [37, 30],
         ]);
-        expect(map.pickups).toHaveLength(47 * 47 - 5);
+        expect(map.pickups).toHaveLength(47 * 47 - 5 + 8);
 
         for (const cell of map.cells) {
             for (const edge of cell.edges.filter((candidate) => !candidate.portal)) {

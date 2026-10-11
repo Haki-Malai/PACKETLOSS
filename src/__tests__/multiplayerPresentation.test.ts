@@ -53,6 +53,7 @@ function connection(tick = 10): MultiplayerConnectionSnapshot {
     };
 }
 
+/** Creates a controlled scene lifecycle without browser or GPU dependencies. */
 function createHarness(
     prepare: () => Promise<void> = () => Promise.resolve(),
     isReducedMotion: () => boolean = () => false

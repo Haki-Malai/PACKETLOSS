@@ -3,15 +3,18 @@ import {
     GameEvent,
     getDefaultGameStateStore,
     type GameStateStore,
+    type PowerupStatus,
 } from '../../state/gameState';
 import type { DebugStore } from './debugStore';
 import { MenuButton } from './MenuPanel';
 
 export function Hud({
     onPause,
+    onActivatePowerup,
     gameState = getDefaultGameStateStore(),
 }: {
     onPause: () => void;
+    onActivatePowerup?: () => void;
     gameState?: GameStateStore;
 }) {
     const subscribeScore = useCallback((listener: () => void) => {
@@ -31,6 +34,12 @@ export function Hud({
         () => Math.max(0, Math.floor(gameState.getSnapshot().lives)),
         [gameState]
     );
+    const subscribePowerup = useCallback((listener: () => void) => {
+        gameState.on(GameEvent.PowerupChanged, listener);
+        return () => gameState.off(GameEvent.PowerupChanged, listener);
+    }, [gameState]);
+    const getPowerup = useCallback(() => gameState.getPowerupStatus(), [gameState]);
+    const powerup = useSyncExternalStore(subscribePowerup, getPowerup);
     const getBonus = useCallback(() => gameState.getScoreBonusStatus(), [gameState]);
     // HUD is event-driven through game state events.
     const score = useSyncExternalStore(subscribeScore, getScore);
@@ -39,7 +48,7 @@ export function Hud({
     // HUD is rendered in DOM overlay; no canvas draw required.
     return (
         <div
-            className="packet-hud absolute inset-x-0 bottom-0 flex items-center justify-between gap-4"
+            className="packet-hud absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
             data-game-hud="true"
         >
             <div className="packet-hud-section flex flex-col gap-1" data-hud-score="true">
@@ -64,6 +73,7 @@ export function Hud({
                     {lives}
                 </span>
             </div>
+            {onActivatePowerup && <PowerupInventory status={powerup} onActivate={onActivatePowerup} />}
             <MenuButton
                 layout="compact"
                 className="packet-hud-pause"
@@ -71,6 +81,33 @@ export function Hud({
                 onClick={onPause}
             >
                 Pause
+            </MenuButton>
+        </div>
+    );
+}
+
+const POWERUP_LABELS = {
+    blast: 'Blast',
+    'reverse-blast': 'Reverse blast',
+    laser: 'Laser',
+    missile: 'Missile',
+} as const;
+
+/** Shared keyboard and touch inventory presentation for solo and authoritative multiplayer. */
+export function PowerupInventory({ status, onActivate, disabled = false }: {
+    status: PowerupStatus;
+    onActivate: () => void;
+    disabled?: boolean;
+}) {
+    return (
+        <div className="packet-hud-section flex flex-col gap-1" data-hud-powerup="true">
+            <span className="packet-hud-label">Weapon</span>
+            <MenuButton layout="compact" className="packet-hud-powerup"
+                aria-label={status.kind ? 'Use ' + POWERUP_LABELS[status.kind] : 'Weapon inventory empty'}
+                disabled={disabled || !status.kind || status.casting}
+                onClick={onActivate}>
+                <span>{status.kind ? POWERUP_LABELS[status.kind] : 'Empty'}</span>
+                <span className="text-packet-text-muted text-xs">{status.casting ? 'Casting…' : 'E · Use'}</span>
             </MenuButton>
         </div>
     );

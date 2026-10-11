@@ -6,6 +6,7 @@ import { CollisionGrid, CollisionTile } from './CollisionGrid';
 import type { WallConnection } from './MazeFootprint';
 import type { RunMode } from '../../simulation/modes';
 import { getDefaultGameStateStore, type GameStateStore } from '../../../state/gameState';
+import type { PowerupCombatState, PowerupPickup } from '../../shared/offensivePowerups';
 
 export interface WorldProperty {
   name: string;
@@ -127,6 +128,8 @@ export interface MovableEntity {
 export class WorldState {
   readonly gameState: GameStateStore;
   runMode: RunMode = 'classic';
+  powerupCombat: PowerupCombatState = { clockMs: 0, nextId: 1, casts: [], projectiles: [], effects: [] };
+  powerupPickups: PowerupPickup[] = [];
   powerRemainingMs = 0;
   readonly map: WorldMapData;
   readonly tileSize: number;

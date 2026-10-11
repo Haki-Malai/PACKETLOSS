@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Hud, DebugOverlay } from '../game/ui/GameOverlays';
 import { createDebugStore } from '../game/ui/debugStore';
 import { EMPTY_DEBUG } from '../game/shared/events/DebugSnapshot';
-import { addScore, gameEvents, resetGameState, setLives, setScoreBonusStatus } from '../state/gameState';
+import { addScore, gameEvents, resetGameState, setLives, setScoreBonusStatus, GameStateStore } from '../state/gameState';
 
 afterEach(() => {
     cleanup();
@@ -13,6 +13,23 @@ afterEach(() => {
 });
 
 describe('React game overlays', () => {
+    it('shows one held weapon and disables the shared touch control while casting or empty', () => {
+        const store = new GameStateStore();
+        const onActivate = vi.fn();
+        const page = render(<Hud onPause={vi.fn()} gameState={store} onActivatePowerup={onActivate} />);
+        expect(screen.getByRole('button', { name: 'Weapon inventory empty' }).hasAttribute('disabled')).toBe(true);
+        act(() => store.setPowerupStatus({ kind: 'missile', casting: false }));
+        const use = screen.getByRole('button', { name: 'Use Missile' });
+        fireEvent.click(use);
+        expect(onActivate).toHaveBeenCalledOnce();
+        act(() => store.setPowerupStatus({ kind: 'laser', casting: true }));
+        expect(screen.queryByRole('button', { name: 'Use Missile' })).toBeNull();
+        const laser = screen.getByRole('button', { name: 'Use Laser' });
+        expect(laser.hasAttribute('disabled')).toBe(true);
+        fireEvent.click(laser);
+        expect(onActivate).toHaveBeenCalledOnce();
+        page.unmount();
+    });
     it('displays live score/lives, pauses through its control, and releases subscriptions', () => {
         resetGameState(50, 3);
         const subscribe = vi.spyOn(gameEvents, 'on');

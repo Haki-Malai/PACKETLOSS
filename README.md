@@ -14,7 +14,8 @@ Recover data bits, avoid enemies, and use power cores to turn the chase around. 
 ## Controls
 
 - Move: arrow keys or WASD; swipe on mobile.
-- Boost in Battle Royale: tap Space or the Boost button for a 125 ms burst; hold to continue. Movement doubles while spending 40 points per second only while actually moving; walls cost nothing. Boost ends when score runs out.
+- Use a held offensive weapon: E or the inventory button. Collect blast, reverse blast, laser, or missile; a new pickup replaces the single inventory slot. Laser holds Packet still for its full animation and reaches the first wall without a range cap. Weapon collection and kills add no score.
+- Boost in Battle Royale: tap Space or the Boost button for a 125 ms burst; hold to continue. Movement doubles while spending 40 points per second only while actually moving; walls and laser movement locks cost nothing. Boost ends when score runs out.
 - Pause in solo play: Escape, the HUD pause button, or a click/tap on the game canvas. Resume through the pause menu or Escape; clicking its backdrop does not resume. Battle Royale cannot pause.
 - Navigate menus with Tab and Enter/Space; Escape returns from a submenu. Restarting or leaving an unfinished run requires confirmation.
 - Leaving the window pauses an active game; returning resumes only a focus-caused pause with no explicit menu interaction.
@@ -49,6 +50,8 @@ Guests have independent identities and persistent scores. Reusing a name never t
 Create a multiplayer room and two randomly named **BOT** players automatically join and ready up, leaving one spare seat for a friend. Ready yourself and press Start. Bots run in the local Node service and use guest authentication, single-use tickets, real WebSockets, and directional inputs to collect pickups; the server applies the normal scoring, collision, and respawn rules. They ready again after Rematch and leave when no human participants or reconnect reservations remain. Bots never create rooms or start matches. Use `--bots 0` for manual multi-browser tests, or `--bots 3` for a full four-player solo test; `PACKETLOSS_DEV_BOTS` also accepts 0–3. Production has no automated players.
 
 Use `pnpm dev:full -- --multi` to enter Battle Royale directly with the configured bots (two by default), bypassing account and room menus. It restores your local identity or creates a Developer guest, starts as soon as the bots are ready, and replaces your previous match with a fresh stage-zero match on every page refresh. Press **C** to close the next wall immediately; the countdown skips to its deadline without advancing player movement or effect timers. These matches do not save results. `--multi` requires at least one bot and cannot be combined with `--solo`.
+
+Development gameplay keys **1**, **2**, **3**, and **4** equip blast, reverse blast, laser, and missile respectively. Press **E** to use the held weapon. Multiplayer grants require the local development server capability and affect only the requesting player; production rejects them.
 
 Use `--solo` for a development-only one-player Battle Royale. It disables bots and starts play immediately after **Create room**, while retaining movement, shrinking walls, elimination, and reconnect behavior. Solo practice results are not saved, and deployed rooms still require two to four players.
 

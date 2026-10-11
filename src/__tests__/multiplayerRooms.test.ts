@@ -15,12 +15,12 @@ function last<T>(items: readonly T[]): T {
 /** Builds a room service with explicit virtual time, randomness, and a captured public transport. */
 function fixture(seed = 4,
   createMap: (mapSeed: number) => RaceMap = () => dataRaceFixture(),
-  soloDevelopment = false, developmentBots?: number) {
+  soloDevelopment = false, developmentBots?: number, developmentPowerups = false) {
   let now = 0, counter = 0;
   const messages: ServerMessage[] = [], results = new MemoryResultStore();
   const rooms = new RoomService({ createMap, results, now: () => now, epochNow: () => now,
     randomId: () => `match-${++counter}`, randomCode: () => 'ABC234', randomSeed: () => seed,
-    soloDevelopment, multiDevelopment: developmentBots === undefined ? undefined : { botCount: developmentBots } });
+    soloDevelopment, developmentPowerups, multiDevelopment: developmentBots === undefined ? undefined : { botCount: developmentBots } });
   const alice: AuthenticatedPlayer = { playerId: 'alice', name: 'Alice', operation: 'create' };
   const bob: AuthenticatedPlayer = { playerId: 'bob', name: 'Bob', operation: 'join', roomCode: 'ABC234' };
   /** Delivers one validated operation through the same identity binding as WebSockets. */
@@ -44,6 +44,26 @@ function playerColors(players: readonly { id: string; color: string }[]): Record
 }
 
 describe('authoritative private rooms', () => {
+  it('allows inventory grants only with explicit local capability and only for the authenticated sender', async () => {
+    const production = fixture(); await production.start();
+    production.send(production.alice, { type: 'development-equip-powerup', matchId: 'match-1', kind: 'blast' });
+    expect(last(production.messages)).toMatchObject({ type: 'error', message: 'Powerup grants require local development capability.' });
+
+    const local = fixture(4, () => dataRaceFixture(), false, undefined, true); await local.start();
+    local.send(local.alice, { type: 'development-equip-powerup', matchId: 'match-1', kind: 'laser' });
+    const granted = last(local.messages.filter((message) => message.type === 'snapshot')).snapshot;
+    expect(granted.players.find((player) => player.id === 'alice')?.heldPowerup).toBe('laser');
+    expect(granted.players.find((player) => player.id === 'bob')?.heldPowerup).toBeNull();
+    local.send(local.alice, { type: 'development-equip-powerup', matchId: 'stale', kind: 'missile' });
+    expect(last(local.messages)).toMatchObject({ type: 'error' });
+    local.send(local.alice, { type: 'development-equip-powerup', matchId: 'match-1', kind: 'missile' }, 'bob');
+    expect(last(local.messages)).toMatchObject({ type: 'error', message: 'Join a room first.' });
+    local.send(local.alice, { type: 'activate-powerup', matchId: 'match-1', sequence: 1, targetTick: 1 });
+    local.ticks(3);
+    const cast = last(local.messages.filter((message) => message.type === 'snapshot')).snapshot;
+    expect(cast.players.find((player) => player.id === 'alice')).toMatchObject({ heldPowerup: null, acknowledgedPowerup: 1 });
+    expect(cast.combat.casts).toEqual([expect.objectContaining({ ownerId: 'alice', kind: 'laser' })]);
+  });
   it('gates closure controls, auto-starts the full development roster, and resets the creator on refresh', async () => {
     const regular = fixture();
     await regular.start();

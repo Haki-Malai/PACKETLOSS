@@ -3,6 +3,7 @@ import { Box3, BufferGeometry, Group, Material, Mesh } from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArcadeAssets } from '../game/infrastructure/three/ArcadeAssets';
+import { OFFENSIVE_POWERUP_ASSETS } from '../game/infrastructure/three/PowerupAssets';
 import { createCharacterModels } from './fixtures/characterFixtures';
 
 function resourceSpies(scene: Group) {
@@ -32,7 +33,7 @@ describe('Character model loading', () => {
     const parse = vi.spyOn(GLTFLoader.prototype, 'parseAsync');
     const assets = await ArcadeAssets.load();
     const loaded = await Promise.all(parse.mock.results.map((result) => result.value as Promise<GLTF>));
-    const enemyLoaded = loaded.filter((model) => model.animations.length > 0);
+    const enemyLoaded = loaded.filter((model) => model.animations.some(({ name }) => name === 'idle'));
     const bonusLoaded = loaded.filter((model) => model.animations.length === 0);
     expect(fetchModel.mock.calls.map(([url]) => url)).toEqual([
       '/assets/models/enemies/firewall.glb', '/assets/models/enemies/virus.glb',
@@ -41,6 +42,7 @@ describe('Character model loading', () => {
       '/assets/models/multipliers/bug.glb', '/assets/models/multipliers/key.glb',
       '/assets/models/multipliers/cloud.glb', '/assets/models/multipliers/wifi.glb',
       '/assets/models/multipliers/chip.glb',
+      ...OFFENSIVE_POWERUP_ASSETS.map(({ file }) => `/assets/models/powerups/${file}`),
     ]);
     expect(enemyLoaded).toHaveLength(7);
     expect(bonusLoaded).toHaveLength(5);
@@ -121,9 +123,9 @@ describe('Character model loading', () => {
       .mockReturnValueOnce(lateModel)
       .mockResolvedValueOnce(models.quarantine as GLTF)
       .mockResolvedValueOnce(models.trojan as GLTF)
-      .mockResolvedValue(models.virus as GLTF);
+      .mockResolvedValue({ scene: new Group(), animations: [] } as unknown as GLTF);
     const loading = ArcadeAssets.load();
-    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(12));
+    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(12 + OFFENSIVE_POWERUP_ASSETS.length));
     finishParse(models.lag as GLTF);
     await expect(loading).rejects.toThrow('Unable to load model enemies/firewall.glb: Invalid model');
     for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
@@ -145,9 +147,9 @@ describe('Character model loading', () => {
       .mockReturnValueOnce(lateModel)
       .mockResolvedValueOnce(models.quarantine as GLTF)
       .mockResolvedValueOnce(models.trojan as GLTF)
-      .mockResolvedValue(models.firewall as GLTF);
+      .mockResolvedValue({ scene: new Group(), animations: [] } as unknown as GLTF);
     const loading = ArcadeAssets.load(abort.signal);
-    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(12));
+    await vi.waitFor(() => expect(parse).toHaveBeenCalledTimes(12 + OFFENSIVE_POWERUP_ASSETS.length));
     expect(fetchModel).toHaveBeenCalledWith('/assets/models/enemies/firewall.glb', { signal: abort.signal });
     abort.abort();
     finishParse(models.lag as GLTF);

@@ -164,7 +164,8 @@ export function GameShell(options: GameShellOptions) {
         >
             <div ref={surface} inert={!localPlaying} hidden={!localPlaying} className="absolute inset-0">
                 <div id="packet-scene" className="absolute inset-0" />
-                {state.ready && <Hud onPause={pause} gameState={state.gameState} />}
+                {state.ready && <Hud onPause={pause} gameState={state.gameState}
+                    onActivatePowerup={state.tutorialLesson ? undefined : session.activatePowerup} />}
             </div>
             {multiplayerPlaying && <MultiplayerViewport session={session} />}
             {developmentLoading && (

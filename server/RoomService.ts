@@ -49,6 +49,7 @@ export interface RoomServiceOptions {
   instanceRunId?: string;
   processGeneration?: string;
   soloDevelopment?: boolean;
+  developmentPowerups?: boolean;
   multiDevelopment?: { botCount: number };
 }
 export interface RoomStatus {
@@ -152,6 +153,18 @@ export class RoomService {
           }
           this.pump();
           if (room.race.advanceToNextClosure()) this.publishSnapshot(room);
+          return;
+        case 'activate-powerup':
+          this.pump();
+          if (!room.race || room.race.matchId !== message.matchId) throw new Error('Activation belongs to another match.');
+          if (!room.race.activate(identity.playerId, message.sequence, message.targetTick)) throw new Error('Stale or inactive activation.');
+          return;
+        case 'development-equip-powerup':
+          if (!this.options.developmentPowerups) throw new Error('Powerup grants require local development capability.');
+          this.pump();
+          if (!room.race || room.race.matchId !== message.matchId
+            || !room.race.equipPowerup(identity.playerId, message.kind)) throw new Error('Stale or inactive powerup grant.');
+          this.publishSnapshot(room);
           return;
         case 'input':
           this.pump();

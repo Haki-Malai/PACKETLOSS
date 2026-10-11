@@ -22,6 +22,7 @@ import { HologramPacket, type PacketAppearance } from './HologramPacket';
 import { createPointGeometry, createPointMaterial } from './PickupPresentation';
 import { ReturnEnemyPresentation } from './ReturnEnemyPresentation';
 import { StateTransition } from './StateTransition';
+import { PowerupAssets, type PowerupPose } from './PowerupAssets';
 
 type EnemyAppearance = EnemyKey | 'scared';
 type CharacterModel = Pick<GLTF, 'scene' | 'animations'>;
@@ -86,7 +87,8 @@ export class ArcadeAssets {
   private readonly packets = new Map<Group, HologramPacket>();
   private disposed = false;
 
-  constructor(private readonly models: CharacterModels, private readonly bonusModels?: ScoreBonusModels) {
+  /** Takes ownership of character, multiplier, and optional offensive powerup templates. */
+  constructor(private readonly models: CharacterModels, private readonly bonusModels?: ScoreBonusModels, readonly powerups?: PowerupAssets) {
     for (const model of Object.values(models)) collectResources(model.scene, this.resources);
     if (bonusModels) for (const model of Object.values(bonusModels)) collectResources(model.scene, this.resources);
   }
@@ -111,9 +113,10 @@ export class ArcadeAssets {
         throw new Error(`Unable to load model ${folder}/${key}.glb: ${message}`);
       }
     };
-    const [results, bonusResults] = await Promise.all([
+    const [results, bonusResults, powerupResult] = await Promise.all([
       Promise.allSettled(ENEMY_KEYS.map((key) => loadModel('enemies', key))),
       Promise.allSettled(SCORE_BONUS_TIERS.map(({ kind }) => loadModel('multipliers', kind))),
+      Promise.allSettled([PowerupAssets.load(signal)]).then(([result]) => result),
     ]);
     const models = new Map<keyof CharacterModels, CharacterModel>();
     for (const result of results) {
@@ -123,11 +126,12 @@ export class ArcadeAssets {
     for (const result of bonusResults) {
       if (result.status === 'fulfilled') bonusModels.set(result.value.key as ScoreBonusKind, result.value.model);
     }
-    const failed = [...results, ...bonusResults].find((result) => result.status === 'rejected');
+    const failed = [...results, ...bonusResults, powerupResult].find((result) => result.status === 'rejected');
     if (failed || signal?.aborted) {
       const resources: Resources = { geometries: new Set(), materials: new Set(), textures: new Set() };
       for (const model of [...models.values(), ...bonusModels.values()]) collectResources(model.scene, resources);
       disposeResources(resources);
+      if (powerupResult.status === 'fulfilled') powerupResult.value.dispose();
       signal?.throwIfAborted();
       throw failed?.reason;
     }
@@ -138,7 +142,7 @@ export class ArcadeAssets {
     }, {
       bug: bonusModels.get('bug')!, key: bonusModels.get('key')!, cloud: bonusModels.get('cloud')!,
       wifi: bonusModels.get('wifi')!, chip: bonusModels.get('chip')!,
-    });
+    }, powerupResult.status === 'fulfilled' ? powerupResult.value : undefined);
   }
 
   /** Clones one pickup while retaining geometry and materials in this asset owner's lifetime. */
@@ -176,6 +180,11 @@ export class ArcadeAssets {
 
   setPacketMotion(group: Group, x: number, y: number, amount: number): void {
     this.packets.get(group)?.setMotion(x, y, amount);
+  }
+
+  /** Retargets the authored powerup pose to an existing procedural Packet instance. */
+  setPacketCastPose(group: Group, pose: PowerupPose | null): void {
+    this.packets.get(group)?.setCastPose(pose);
   }
 
   facePacket(group: Group, camera: Camera): void {
@@ -236,6 +245,7 @@ export class ArcadeAssets {
     return shadow;
   }
 
+  /** Releases Packet instances, animation bindings, and all owned template libraries once. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -246,6 +256,7 @@ export class ArcadeAssets {
     this.characters.clear();
     for (const packet of this.packets.values()) packet.dispose();
     this.packets.clear();
+    this.powerups?.dispose();
     disposeResources(this.resources);
   }
 

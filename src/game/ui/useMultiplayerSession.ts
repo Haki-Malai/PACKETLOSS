@@ -13,6 +13,7 @@ import { useMultiplayerAvailability } from './useMultiplayerAvailability';
 import { MultiplayerRecovery, type RecoveryResult, type RecoveryState } from '../infrastructure/adapters/MultiplayerRecovery';
 import { PROTOCOL_VERSION } from '../protocol/version';
 import type { BoostAction } from '../simulation/types';
+import type { PowerupKind } from '../shared/offensivePowerups';
 
 const RESERVED_ROOM_KEY = 'packetloss.multiplayer.reserved-room';
 const RESERVED_ROOM_STORAGE_MS = 11 * 60_000;
@@ -292,6 +293,10 @@ export function useMultiplayerSession(
             socket.sendDirection(direction),
         /** Publishes paid boost controls through the shared scheduled input stream. */
         sendBoost: (boost: BoostAction) => socket.sendBoost(boost),
+        /** Requests one authoritative activation independently of movement coalescing. */
+        activatePowerup: () => socket.activatePowerup(),
+        /** Replaces only this player's inventory through the development server capability. */
+        equipDevelopmentPowerup: (kind: PowerupKind) => socket.equipPowerup(kind),
         cancelPendingJoin,
         leave: () => {
             recovery.cancel();

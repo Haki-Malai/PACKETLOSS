@@ -5,6 +5,7 @@ import { EnemyEntity } from '../game/domain/entities/EnemyEntity';
 import type { BrowserInputAdapter } from '../game/infrastructure/adapters/BrowserInputAdapter';
 import { InputSystem } from '../game/systems/InputSystem';
 import { PACKET_PORTAL_BLINK } from '../config/constants';
+import type { PowerupKind } from '../game/shared/offensivePowerups';
 
 const environment = vi.hoisted(() => ({ isDev: true }));
 vi.mock('../config/environment', () => ({ get IS_DEV() { return environment.isDev; } }));
@@ -14,6 +15,43 @@ afterEach(() => {
 });
 
 describe('InputSystem', () => {
+  it('routes E once and development inventory keys while guarding modifiers, death, pause, and tutorial', () => {
+    const { input, world, system: original } = createHarness();
+    original.destroy();
+    world.packet.deathAnimationRemainingMs = 0;
+    const activate = vi.fn(() => true);
+    const equipDevelopment = vi.fn<(_kind: PowerupKind) => boolean>(() => true);
+    const system = new InputSystem(input as unknown as BrowserInputAdapter, world,
+      { togglePause: vi.fn() }, true, { activate, equipDevelopment });
+    system.start();
+    const press = (code: string, extra = {}) => input.emitKeyDown({ code, preventDefault: vi.fn(), ...extra } as unknown as KeyboardEvent);
+    press('KeyE');
+    press('KeyE', { repeat: true });
+    press('KeyE', { ctrlKey: true });
+    press('Digit1'); press('Digit2'); press('Digit3'); press('Digit4');
+    expect(activate).toHaveBeenCalledOnce();
+    expect(equipDevelopment.mock.calls.map(([kind]) => kind)).toEqual(['blast', 'reverse-blast', 'laser', 'missile']);
+    environment.isDev = false;
+    press('Digit1');
+    press('KeyE');
+    expect(equipDevelopment).toHaveBeenCalledTimes(4);
+    expect(activate).toHaveBeenCalledTimes(2);
+    world.packet.deathAnimationRemainingMs = 1;
+    press('KeyE');
+    world.isMoving = false;
+    press('KeyE');
+    expect(activate).toHaveBeenCalledTimes(2);
+    system.destroy();
+    world.packet.deathAnimationRemainingMs = 0;
+    world.isMoving = true;
+    const tutorial = new InputSystem(input as unknown as BrowserInputAdapter, world,
+      { togglePause: vi.fn() }, false, { activate, equipDevelopment });
+    tutorial.start();
+    press('KeyE'); press('Digit1');
+    expect(activate).toHaveBeenCalledTimes(2);
+    expect(equipDevelopment).toHaveBeenCalledTimes(4);
+    tutorial.destroy();
+  });
   it('ignores development shortcuts in production while movement and pause work', () => {
     environment.isDev = false;
     const { input, world, togglePause, system } = createHarness();

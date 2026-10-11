@@ -30,7 +30,7 @@ const basics = [
     ],
     [
         'Battle Royale boost',
-        'Tap Space or Boost for a 125 ms burst; hold to continue at twice normal speed, spending 40 points per second only while moving. Walls cost nothing. Boost ends when points run out. Battle Royale cannot pause.',
+        'Tap Space or Boost for a 125 ms burst; hold to continue at twice normal speed, spending 40 points per second only while moving. Walls and laser movement locks cost nothing. Boost ends when points run out. Battle Royale cannot pause.',
     ],
 ] as const;
 

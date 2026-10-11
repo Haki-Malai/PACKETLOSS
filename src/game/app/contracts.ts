@@ -42,6 +42,7 @@ export interface PacketGame {
   pause(): void;
   resume(): void;
   continueLevel(): void;
+  activatePowerup?(): boolean;
   destroy(): void;
   getGameStateStore?(): GameStateStore | null;
 }
@@ -78,6 +79,7 @@ export interface ComposedGame {
   getRemainingPointCount(): number;
   getCollectedPointCount?(): number;
   resetLevel(): number;
+  activatePowerup?(): boolean;
   tutorial?: TutorialController;
   destroy: () => void;
 }

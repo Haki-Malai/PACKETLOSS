@@ -14,6 +14,10 @@ import { EndlessEncounterSystem } from '../game/systems/EndlessEncounterSystem';
 import { EndlessStreamingSystem } from '../game/systems/EndlessStreamingSystem';
 import { RenderSystem } from '../game/systems/RenderSystem';
 import { ScoreBonusSystem } from '../game/systems/ScoreBonusSystem';
+import { PowerupSystem } from '../game/systems/PowerupSystem';
+import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
+import { CollectibleSystem } from '../game/systems/CollectibleSystem';
+import { MovementRules } from '../game/domain/services/MovementRules';
 import { DebugOverlaySystem } from '../game/systems/DebugOverlaySystem';
 import { getGameState, resetGameState } from '../state/gameState';
 import { createCharacterAssets } from './fixtures/characterFixtures';
@@ -140,6 +144,43 @@ describe('GameCompositionRoot startup', () => {
     composed.destroy();
     expect(rendererDispose).toHaveBeenCalledOnce();
     expect(mount.children).toHaveLength(0);
+  });
+
+  it('resolves released solo weapons before dangerous contact and refills their separate layout', async () => {
+    prepareComposition();
+    vi.spyOn(ArcadeAssets, 'load').mockResolvedValue(createCharacterAssets());
+    vi.mocked(ThreeRendererAdapter).mockImplementationOnce(function () {
+      return { dispose: vi.fn(), prepare: vi.fn(async () => {}) } as unknown as ThreeRendererAdapter;
+    });
+    const composed = await new GameCompositionRoot().compose(runtimeControl);
+    const weapons = composed.updateSystems.find((system) => system instanceof PowerupSystem)!;
+    const collisionIndex = composed.updateSystems.findIndex((system) => system instanceof EnemyPacketCollisionSystem);
+    const pickupIndex = composed.updateSystems.findIndex((system) => system instanceof CollectibleSystem);
+    expect(composed.updateSystems.indexOf(weapons)).toBeLessThan(collisionIndex);
+    expect(collisionIndex).toBeLessThan(pickupIndex);
+    const movement = new MovementRules(composed.world.tileSize);
+    const enemy = composed.world.enemies[0];
+    movement.setEntityTile(enemy, composed.world.packet.tile);
+    enemy.state.free = true;
+    enemy.state.dead = false;
+    weapons.equipDevelopment('reverse-blast');
+    expect(composed.activatePowerup?.()).toBe(true);
+    composed.updateSystems.filter((system) => system instanceof PowerupSystem || system instanceof EnemyPacketCollisionSystem)
+      .forEach((system) => system.update(350));
+    expect(enemy.state.dead).toBe(true);
+    expect(composed.gameState.getSnapshot()).toEqual({ score: 0, lives: 3 });
+    movement.setEntityTile(composed.world.packet, {
+      x: Math.floor(composed.world.powerupPickups[0].x / composed.world.tileSize),
+      y: Math.floor(composed.world.powerupPickups[0].y / composed.world.tileSize),
+    });
+    weapons.collect();
+    expect(composed.world.powerupPickups).toHaveLength(7);
+    composed.resetLevel();
+    expect(composed.world.powerupPickups).toHaveLength(8);
+    expect(composed.gameState.getPowerupStatus()).toEqual({ kind: null, casting: false });
+    composed.updateSystems.forEach((system) => system.destroy?.());
+    composed.renderSystems.forEach((system) => system.destroy?.());
+    composed.destroy();
   });
 
   it('composes Endless from generated tiles with seven originals and three reusable Spam slots', async () => {

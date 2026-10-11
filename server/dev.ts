@@ -39,6 +39,7 @@ export async function main(): Promise<void> {
         instanceRunId,
         processGeneration,
         soloDevelopment,
+        developmentPowerups: true,
         multiDevelopment: multiDevelopment ? { botCount } : undefined,
         randomId: randomUUID,
         randomSeed: () => randomBytes(4).readUInt32LE(),

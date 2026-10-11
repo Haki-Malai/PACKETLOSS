@@ -8,6 +8,8 @@ import {
 import { RACE, SYNCHRONIZATION, type BoostAction, type RaceMap, type RaceSnapshot } from '../../simulation/types';
 import { MultiplayerSynchronization } from '../../simulation/MultiplayerSynchronization';
 import type { JoinCredential, JoinOperation } from './MultiplayerClient';
+import type { OffensivePowerupKind } from '../../shared/offensivePowerups';
+import { IS_DEV } from '../../../config/environment';
 
 export type MultiplayerConnectionPhase =
     | 'idle'
@@ -274,6 +276,21 @@ export class MultiplayerSocketClient {
             (input) => this.send({ type: 'input', ...input }));
     }
 
+    /** Requests a single authoritative cast through a separate scheduled command stream. */
+    activatePowerup(): number | null {
+        if (this.state.phase !== 'connected') return null;
+        return this.synchronization.submitPowerup(performance.now(),
+            (input) => this.send({ type: 'activate-powerup', ...input }));
+    }
+
+    /** Requests a local developer inventory replacement; production omits this command sender. */
+    equipPowerup(kind: OffensivePowerupKind): boolean {
+        if (!IS_DEV || this.state.phase !== 'connected' || !this.state.race?.movementEnabled) return false;
+        const player = this.state.race.players.find((candidate) => candidate.id === this.state.playerId);
+        if (!player?.connected || player.eliminatedAtTick !== null) return false;
+        return this.send({ type: 'development-equip-powerup', matchId: this.state.race.matchId, kind });
+    }
+
     leave(): void {
         this.send({ type: 'leave' });
         this.disconnect(true);
@@ -405,6 +422,9 @@ function sameRaceUi(current: RaceSnapshot | null, next: RaceSnapshot | null): bo
             player.eliminatedAtTick === candidate.eliminatedAtTick &&
             (player.deathMs > 0) === (candidate.deathMs > 0) &&
             player.boosting === candidate.boosting &&
+            player.heldPowerup === candidate.heldPowerup &&
+            current.combat.casts.some((cast) => cast.ownerId === player.id)
+                === next.combat.casts.some((cast) => cast.ownerId === player.id) &&
             player.score === candidate.score
         );
     });

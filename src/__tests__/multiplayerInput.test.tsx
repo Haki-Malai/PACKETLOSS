@@ -7,6 +7,7 @@ import { MultiplayerViewport } from '../game/ui/MultiplayerViewport';
 import type { GameSession } from '../game/ui/useGameSession';
 import type { Direction } from '../game/domain/valueObjects/Direction';
 import type { BoostAction } from '../game/simulation/types';
+import type { PowerupKind } from '../game/shared/offensivePowerups';
 import { dataRaceFixture } from './fixtures/dataRaceFixture';
 
 vi.mock('../game/ui/MultiplayerPresentation', () => ({
@@ -30,12 +31,14 @@ function mount(developmentMultiplayer = false) {
   const sendDirection = vi.fn<(_direction: Direction) => number>(() => 1);
   const sendBoost = vi.fn<(_boost: BoostAction) => number | null>(() => 1);
   const closeNextWall = vi.fn();
+  const activatePowerup = vi.fn();
+  const equipDevelopmentPowerup = vi.fn<(_kind: PowerupKind) => boolean>(() => true);
   const session = { developmentMultiplayer,
-    multiplayer: { synchronization: new MultiplayerSynchronization(), connection, sendDirection, sendBoost, closeNextWall, getConnectionSnapshot: () => connection },
+    multiplayer: { synchronization: new MultiplayerSynchronization(), connection, sendDirection, sendBoost, closeNextWall, activatePowerup, equipDevelopmentPowerup, getConnectionSnapshot: () => connection },
     leaveMultiplayer: vi.fn() } as unknown as GameSession;
   const mounted = render(<MultiplayerViewport session={session} />);
   return { ...mounted, canvas: mounted.container.querySelector('canvas')!, sendDirection, sendBoost,
-    closeNextWall, connection, session };
+    closeNextWall, activatePowerup, equipDevelopmentPowerup, connection, session };
 }
 
 /** Dispatches complete touch-pointer state in jsdom, which does not implement PointerEvent. */
@@ -46,6 +49,42 @@ function pointer(target: Element | Window, type: string, x: number, y: number, p
 }
 
 describe('multiplayer shared input', () => {
+  it('activates E/touch from living connected players and filters repeat, typing, casting, death, and stalls', () => {
+    const harness = mount();
+    harness.connection.race.phase = 'playing';
+    harness.connection.race.movementEnabled = true;
+    harness.connection.race.players[0].heldPowerup = 'missile';
+    harness.rerender(<MultiplayerViewport session={harness.session} />);
+    fireEvent.keyDown(window, { code: 'KeyE' });
+    fireEvent.keyDown(window, { code: 'KeyE', repeat: true });
+    fireEvent.keyDown(window, { code: 'KeyE', ctrlKey: true });
+    const field = document.createElement('input');
+    document.body.append(field);
+    fireEvent.keyDown(field, { code: 'KeyE' });
+    field.remove();
+    fireEvent.click(screen.getByRole('button', { name: 'Use Missile' }));
+    expect(harness.activatePowerup).toHaveBeenCalledTimes(2);
+    harness.connection.race.combat.casts.push({ id: 1, ownerId: harness.connection.playerId,
+      kind: 'missile', facing: 'right', elapsedMs: 0, origin: null });
+    fireEvent.keyDown(window, { code: 'KeyE' });
+    harness.connection.race.combat.casts = [];
+    harness.connection.stalled = true;
+    fireEvent.keyDown(window, { code: 'KeyE' });
+    harness.connection.stalled = false;
+    harness.connection.race.players[0].eliminatedAtTick = 1;
+    fireEvent.keyDown(window, { code: 'KeyE' });
+    expect(harness.activatePowerup).toHaveBeenCalledTimes(2);
+  });
+
+  it('maps development grants to the four weapons and leaves activation on the normal E path', () => {
+    const harness = mount();
+    harness.connection.race.phase = 'playing';
+    harness.connection.race.movementEnabled = true;
+    for (const code of ['Digit1', 'Digit2', 'Digit3', 'Digit4']) fireEvent.keyDown(window, { code });
+    fireEvent.keyDown(window, { code: 'Digit1', repeat: true });
+    expect(harness.equipDevelopmentPowerup.mock.calls.map(([kind]) => kind)).toEqual(['blast', 'reverse-blast', 'laser', 'missile']);
+    expect(harness.activatePowerup).not.toHaveBeenCalled();
+  });
   it('sends one Space tap and ignores repeat, modified, prevented, and focused-control presses', () => {
     const { sendBoost } = mount();
     fireEvent.keyDown(window, { code: 'Space', key: ' ' });

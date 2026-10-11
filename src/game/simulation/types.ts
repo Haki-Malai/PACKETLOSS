@@ -1,4 +1,5 @@
 import { MODE_RULES } from './modes';
+import type { OffensivePowerupKind, PowerupCombatState } from '../shared/offensivePowerups';
 import {
     ENEMY_EAT_CHAIN_SCORES,
     ENEMY_SCARED_DURATION_MS,
@@ -28,7 +29,7 @@ export interface Cell {
 export interface Pickup {
     id: number;
     cell: number;
-    kind: 'bit' | 'core';
+    kind: 'bit' | 'core' | OffensivePowerupKind;
 }
 export interface BattleArenaGeneration {
     kind: 'battle-arena';
@@ -71,6 +72,9 @@ export interface RacePlayer {
     eliminatedAtTick: number | null;
   chain: number;
   acknowledgedInput: number;
+  acknowledgedPowerup: number;
+  heldPowerup: OffensivePowerupKind | null;
+  deathPosition: { x: number; y: number } | null;
 }
 export interface RaceEnemy {
   id: 'firewall' | 'virus';
@@ -101,6 +105,7 @@ export interface RaceSnapshot {
   randomState: number;
   rankings: Ranking[];
   abortReason: string | null;
+  combat: PowerupCombatState;
 }
 export interface PlayerIdentity {
     id: string;
@@ -114,6 +119,11 @@ export interface ScheduledInput {
   targetTick: number;
   direction?: Direction;
   boost?: BoostAction;
+}
+/** Independently sequenced activation intent is consumed before target-tick movement. */
+export interface ScheduledPowerup {
+  sequence: number;
+  targetTick: number;
 }
 export const SYNCHRONIZATION = {
   maxPredictionTicks: 24,

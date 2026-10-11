@@ -43,6 +43,10 @@ describe('PortalService', () => {
     expect(firstTeleport).toBe(true);
     expect(entity.tile).toEqual({ x: 2, y: 1 });
     expect(entity.direction).toBe('left');
+    expect(portals.getTeleportMotion(entity, 10)).toEqual({
+      departure: { x: 0, y: 24 }, arrival: { x: 40, y: 24 }, fraction: 1,
+    });
+    expect(portals.getTeleportMotion(entity, 11)).toBeUndefined();
 
     entity.direction = 'right';
     entity.moved = { x: 8, y: 0 };

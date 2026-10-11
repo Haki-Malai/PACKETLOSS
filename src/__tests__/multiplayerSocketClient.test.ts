@@ -1,5 +1,8 @@
+import { createPowerupCombatState } from '../game/simulation/PowerupCombat';
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MemoryResultStore, RoomService, type AuthenticatedPlayer } from '../../server/RoomService';
+import { dataRaceFixture } from './fixtures/dataRaceFixture';
 import { MultiplayerSocketClient } from '../game/infrastructure/adapters/MultiplayerSocketClient';
 import { encodeRaceSnapshot, parseClientMessage, PROTOCOL_VERSION } from '../game/protocol/messages';
 import { RACE, type RaceMap, type RaceSnapshot } from '../game/simulation/types';
@@ -77,6 +80,7 @@ const snapshot: RaceSnapshot = {
             eliminatedAtTick: null,
             chain: 0,
             acknowledgedInput: 0,
+            acknowledgedPowerup: 0, heldPowerup: null, deathPosition: null,
             boosting: false, boostHeld: false, boostTicks: 0, boostCostTicks: 0,
         },
         {
@@ -93,6 +97,7 @@ const snapshot: RaceSnapshot = {
             eliminatedAtTick: null,
             chain: 0,
             acknowledgedInput: 0,
+            acknowledgedPowerup: 0, heldPowerup: null, deathPosition: null,
             boosting: false, boostHeld: false, boostTicks: 0, boostCostTicks: 0,
         },
     ],
@@ -102,6 +107,7 @@ const snapshot: RaceSnapshot = {
     randomState: 1,
     rankings: [],
     abortReason: null,
+    combat: createPowerupCombatState(),
 };
 const wireSnapshot = encodeRaceSnapshot(map, snapshot);
 
@@ -265,6 +271,99 @@ describe('MultiplayerSocketClient', () => {
             type: 'input',
             sequence: 8,
         });
+        client.disconnect();
+    });
+
+    it('restores authority on reconnect and drops pending powerups without firing twice', async () => {
+        vi.useFakeTimers();
+        let now = 0;
+        vi.spyOn(performance, 'now').mockImplementation(() => now);
+        const rooms = new RoomService({
+            createMap: () => ({ ...dataRaceFixture(), pickups: [{ id: 2, cell: 2, kind: 'bit' }] }),
+            results: new MemoryResultStore(), now: () => now, epochNow: () => now,
+            randomId: () => 'match-1', randomCode: () => 'ABC234', randomSeed: () => 4,
+            instanceRunId: 'run-1', processGeneration: 'generation-1', developmentPowerups: true,
+        });
+        const alice: AuthenticatedPlayer = { playerId: 'alice', name: 'Alice', operation: 'create' };
+        const bob: AuthenticatedPlayer = { playerId: 'bob', name: 'Bob', operation: 'join', roomCode: 'ABC234' };
+        const ignore = (): void => {};
+        rooms.handle('alice', alice, { type: 'create' }, ignore);
+        rooms.handle('bob', bob, { type: 'join', code: 'ABC234' }, ignore);
+        rooms.handle('alice', alice, { type: 'ready', ready: true }, ignore);
+        rooms.handle('bob', bob, { type: 'ready', ready: true }, ignore);
+        rooms.handle('alice', alice, { type: 'start' }, ignore);
+        await Promise.resolve();
+        rooms.handle('alice', alice, { type: 'activate-powerup', matchId: 'match-1', sequence: 7, targetTick: 1 }, ignore);
+        rooms.handle('bob', bob, { type: 'development-equip-powerup', matchId: 'match-1', kind: 'blast' }, ignore);
+        rooms.handle('bob', bob, { type: 'activate-powerup', matchId: 'match-1', sequence: 1, targetTick: 1 }, ignore);
+        /** Steps the real authority without advancing the unrelated socket watchdog timers. */
+        const advance = (count: number): void => {
+            for (let index = 0; index < count; index += 1) { now += RACE.stepMs; rooms.pump(); }
+        };
+        advance(30);
+        rooms.handle('alice', alice, { type: 'development-equip-powerup', matchId: 'match-1', kind: 'missile' }, ignore);
+        rooms.disconnect('alice', 'alice');
+
+        const sockets: FakeSocket[] = [];
+        const returning: AuthenticatedPlayer = { ...alice, operation: 'reconnect', roomCode: 'ABC234' };
+        const client = new MultiplayerSocketClient(() => {
+            const socket = new FakeSocket();
+            sockets.push(socket);
+            const peer = 'alice-client-' + sockets.length;
+            vi.spyOn(socket, 'send').mockImplementation((data) => {
+                socket.sent.push(data);
+                const message = parseClientMessage(data);
+                if (!message) throw new Error('Invalid client message.');
+                if (message.type === 'authenticate') {
+                    socket.message({ type: 'authenticated', version: PROTOCOL_VERSION, playerId: 'alice',
+                        instanceRunId: 'run-1', processGeneration: 'generation-1' });
+                } else rooms.handle(peer, returning, message, (reply) => socket.message(reply));
+            });
+            return socket;
+        });
+        /** Admits a new transport generation through the actual client connection lifecycle. */
+        const reconnect = (): FakeSocket => {
+            client.connect({ credential: { ticket: 'reconnect-ticket',
+                expiresAt: new Date(Date.now() + 60_000).toISOString(), websocketUrl: 'wss://game.example/ws',
+                processGeneration: 'generation-1' }, operation: 'reconnect', roomCode: 'ABC234',
+                expectedInstanceRunId: 'run-1', expectedProcessGeneration: 'generation-1' });
+            const socket = sockets[sockets.length - 1];
+            socket.open();
+            return socket;
+        };
+        const firstSocket = reconnect();
+        const before = client.getSnapshot().race!;
+        expect(before.players.find((player) => player.id === 'alice'))
+            .toMatchObject({ heldPowerup: 'missile', acknowledgedPowerup: 7 });
+        const released = before.combat.casts.find((cast) => cast.ownerId === 'bob')!;
+        expect(released.origin).not.toBeNull();
+        const blast = before.combat.effects.find((effect) => effect.ownerId === 'bob' && effect.role === 'attack')!;
+        expect(blast.radius).toBeGreaterThan(0);
+        expect(client.activatePowerup()).toBe(8);
+        expect(client.activatePowerup()).toBeNull();
+        const abandoned = firstSocket.sent.find((message) => parseClientMessage(message)?.type === 'activate-powerup')!;
+        client.disconnect();
+        rooms.disconnect('alice-client-1', 'alice');
+        advance(6); // The abandoned activation's target tick passes while its transport is disconnected.
+
+        const secondSocket = reconnect();
+        const restored = client.getSnapshot().race!;
+        expect(restored.players.find((player) => player.id === 'alice'))
+            .toMatchObject({ connected: true, heldPowerup: 'missile', acknowledgedPowerup: 7 });
+        expect(restored.combat.casts.find((cast) => cast.id === released.id)?.elapsedMs).toBeGreaterThan(released.elapsedMs);
+        expect(restored.combat.effects.find((effect) => effect.id === blast.id)?.elapsedMs).toBeGreaterThan(blast.elapsedMs);
+        expect(secondSocket.sent.some((message) => parseClientMessage(message)?.type === 'activate-powerup')).toBe(false);
+        expect(client.activatePowerup()).toBe(8);
+        advance(6);
+        const fired = client.getSnapshot().race!;
+        expect(fired.players.find((player) => player.id === 'alice'))
+            .toMatchObject({ heldPowerup: null, acknowledgedPowerup: 8 });
+        const ownCasts = fired.combat.casts.filter((cast) => cast.ownerId === 'alice');
+        expect(ownCasts).toHaveLength(1);
+        secondSocket.send(abandoned); // A delayed duplicate from the old connection cannot consume or restart a cast.
+        advance(6);
+        expect(client.getSnapshot().race?.combat.casts.filter((cast) => cast.ownerId === 'alice'))
+            .toEqual([expect.objectContaining({ id: ownCasts[0].id })]);
         client.disconnect();
     });
 
