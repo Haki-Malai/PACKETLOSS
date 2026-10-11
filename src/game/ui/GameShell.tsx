@@ -133,12 +133,6 @@ export function GameShell(options: GameShellOptions) {
                     event.preventDefault();
                     retrySession();
                 }
-            } else if ((event.code === 'Space' || event.key === ' ') && state.screen === 'paused') {
-                const target = event.target as HTMLElement | null;
-                if (target?.closest('button,input,select,textarea,a,[contenteditable="true"]'))
-                    return;
-                event.preventDefault();
-                resume();
             }
         }
         window.addEventListener('keydown', handleKeyDown);

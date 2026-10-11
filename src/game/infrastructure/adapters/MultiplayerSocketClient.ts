@@ -5,7 +5,7 @@ import {
     type ClientMessage,
     type RoomState,
 } from '../../protocol/messages';
-import { RACE, SYNCHRONIZATION, type RaceMap, type RaceSnapshot } from '../../simulation/types';
+import { RACE, SYNCHRONIZATION, type BoostAction, type RaceMap, type RaceSnapshot } from '../../simulation/types';
 import { MultiplayerSynchronization } from '../../simulation/MultiplayerSynchronization';
 import type { JoinCredential, JoinOperation } from './MultiplayerClient';
 
@@ -267,6 +267,13 @@ export class MultiplayerSocketClient {
             (input) => this.send({ type: 'input', ...input }));
     }
 
+    /** Sends ordered boost intent, allowing cancellation even while gameplay snapshots are stale. */
+    sendBoost(boost: BoostAction): number | null {
+        if (this.state.phase !== 'connected') return null;
+        return this.synchronization.submitBoost(boost, performance.now(),
+            (input) => this.send({ type: 'input', ...input }));
+    }
+
     leave(): void {
         this.send({ type: 'leave' });
         this.disconnect(true);
@@ -397,6 +404,7 @@ function sameRaceUi(current: RaceSnapshot | null, next: RaceSnapshot | null): bo
             player.connected === candidate.connected &&
             player.eliminatedAtTick === candidate.eliminatedAtTick &&
             (player.deathMs > 0) === (candidate.deathMs > 0) &&
+            player.boosting === candidate.boosting &&
             player.score === candidate.score
         );
     });

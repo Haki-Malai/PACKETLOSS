@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { IS_DEV } from '../../config/environment';
-import { RACE, type Direction } from '../simulation/types';
+import { RACE, type BoostAction, type Direction } from '../simulation/types';
+import { BOOST } from '../simulation/boost';
 import { buttonLayout } from './MenuPanel';
 import { MultiplayerPresentationSession } from './MultiplayerPresentation';
 import type { GameSession } from './useGameSession';
@@ -12,12 +14,19 @@ import type { MultiplayerSynchronization } from '../simulation/MultiplayerSynchr
 export function MultiplayerViewport({ session }: { session: GameSession }) {
     const { connection } = session.multiplayer;
     const raceMap = connection.map;
+    const localPlayer = connection.race?.players.find((player) => player.id === connection.playerId);
+    const canBoost = connection.phase === 'connected' && !connection.stalled
+        && connection.race?.movementEnabled && localPlayer?.connected
+        && localPlayer.eliminatedAtTick === null && localPlayer.score > 0;
     const root = useRef<HTMLDivElement>(null);
     const canvas = useRef<HTMLCanvasElement>(null);
     const presentation = useRef<MultiplayerPresentationSession | null>(null);
     const sessionRef = useRef(session);
     const sendDirectionRef = useRef<(_direction: Direction) => void>(() => undefined);
     const input = useRef<BrowserInputAdapter | null>(null);
+    const boostSources = useRef(new Set<string>());
+    const boostPointer = useRef<number | null>(null);
+    const boostRequested = useRef(false);
     const [presentationError, setPresentationError] = useState('');
     sessionRef.current = session;
     sendDirectionRef.current = (direction) => {
@@ -30,10 +39,90 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
         multiplayer.sendDirection(direction);
     };
 
+    /** Reads current authority rather than a rendered HUD snapshot when publishing boost edges. */
+    const sendBoost = useCallback((action: BoostAction) => {
+        const multiplayer = sessionRef.current.multiplayer;
+        const latest = multiplayer.getConnectionSnapshot();
+        const player = latest.race?.players.find((candidate) => candidate.id === latest.playerId);
+        if (latest.phase !== 'connected' || !latest.race?.movementEnabled
+            || !player?.connected || player.eliminatedAtTick !== null) return null;
+        if (action === 'press' && (document.hidden || latest.stalled || player.score <= 0)) return null;
+        return multiplayer.sendBoost(action);
+    }, []);
+
+    /** Cancels even a released tap whose minimum burst may still be queued or active on the server. */
+    const cancelBoostControl = useCallback(() => {
+        if (boostRequested.current) sendBoost('cancel');
+        boostRequested.current = false;
+        boostSources.current.clear();
+        boostPointer.current = null;
+    }, [sendBoost]);
+
+    /** Combines keyboard and pointer holds without buying multiple overlapping boosts. */
+    const startBoost = useCallback((source: string): boolean => {
+        if (boostSources.current.has(source)) return false;
+        if (boostSources.current.size === 0) {
+            if (sendBoost('press') === null) return false;
+            boostRequested.current = true;
+        }
+        boostSources.current.add(source);
+        return true;
+    }, [sendBoost]);
+
+    /** Releases only the owning source; failed releases fall back to stale-safe cancellation. */
+    const releaseBoost = useCallback((source: string) => {
+        if (!boostSources.current.delete(source) || boostSources.current.size > 0) return;
+        if (sendBoost('release') === null) cancelBoostControl();
+    }, [sendBoost, cancelBoostControl]);
+
+    /** Captures the boost finger while the canvas independently accepts a steering swipe. */
+    function boostPointerDown(event: ReactPointerEvent<HTMLButtonElement>): void {
+        if (boostPointer.current !== null || event.pointerType !== 'touch' && event.button !== 0) return;
+        event.preventDefault();
+        if (!startBoost('pointer')) return;
+        boostPointer.current = event.pointerId;
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+
+    /** Completes an ordinary tap/hold without cancelling its minimum burst. */
+    function boostPointerUp(event: ReactPointerEvent<HTMLButtonElement>): void {
+        if (boostPointer.current !== event.pointerId) return;
+        event.preventDefault();
+        boostPointer.current = null;
+        releaseBoost('pointer');
+        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+    }
+
+    /** Immediately cancels an interrupted capture instead of retaining an unattended hold. */
+    function boostPointerCancel(event: ReactPointerEvent<HTMLButtonElement>): void {
+        if (boostPointer.current === event.pointerId) cancelBoostControl();
+    }
+
+    /** Gives a focused Boost button normal Space/Enter accessibility with the same held behavior. */
+    function boostKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>): void {
+        if (!['Space', 'Enter'].includes(event.code) || event.altKey || event.ctrlKey || event.metaKey) return;
+        event.preventDefault();
+        if (!event.repeat) startBoost(`button-${event.code}`);
+    }
+
+    /** Releases a focused keyboard control while suppressing a duplicate native click. */
+    function boostKeyUp(event: ReactKeyboardEvent<HTMLButtonElement>): void {
+        if (!['Space', 'Enter'].includes(event.code)) return;
+        event.preventDefault();
+        releaseBoost(`button-${event.code}`);
+    }
+
     useEffect(() => {
         presentation.current?.reset();
         input.current?.reset();
-    }, [connection.race?.matchId, connection.phase]);
+    }, [connection.race?.matchId, connection.phase, connection.race?.movementEnabled,
+        connection.stalled, localPlayer?.eliminatedAtTick]);
+
+    useEffect(() => {
+        if (!canBoost) cancelBoostControl();
+    }, [canBoost, cancelBoostControl]);
 
     useEffect(() => {
         const target = canvas.current;
@@ -52,6 +141,11 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
         }
         adapter.onKeyDown(keyboardIntent);
         adapter.onKeyDown((event) => {
+            if (event.code !== 'Space' || document.hidden || event.altKey || event.ctrlKey || event.metaKey) return;
+            event.preventDefault();
+            if (!event.repeat) startBoost('space');
+        });
+        adapter.onKeyDown((event) => {
             if (!IS_DEV || !sessionRef.current.developmentMultiplayer || document.hidden
                 || event.code !== 'KeyC' || event.repeat || event.altKey || event.ctrlKey
                 || event.metaKey || event.shiftKey) return;
@@ -59,6 +153,7 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
             sessionRef.current.multiplayer.closeNextWall();
         });
         adapter.onKeyUp(keyboardIntent);
+        adapter.onKeyUp((event) => { if (event.code === 'Space') releaseBoost('space'); });
         adapter.onPointerDown((pointer) => { if (!document.hidden) directions.start(pointer); });
         adapter.onPointerMove((pointer) => {
             if (document.hidden) return;
@@ -67,16 +162,17 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
         });
         adapter.onPointerUp((pointer) => directions.end(pointer));
         adapter.onPointerCancel((pointer) => directions.cancel(pointer.pointerId));
-        adapter.onReset(() => { directions.reset(); sentKeyboard = null; });
+        adapter.onReset(() => { directions.reset(); sentKeyboard = null; cancelBoostControl(); });
         /** Drops pending input on visibility changes without pausing the authoritative match. */
         const resetInput = () => adapter.reset();
         document.addEventListener('visibilitychange', resetInput);
         return () => {
             document.removeEventListener('visibilitychange', resetInput);
+            cancelBoostControl();
             if (input.current === adapter) input.current = null;
             adapter.destroy();
         };
-    }, []);
+    }, [startBoost, releaseBoost, cancelBoostControl]);
 
     useEffect(() => {
         const targetCanvas = canvas.current;
@@ -123,7 +219,6 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
         ? 1 - shrinkTicks / RACE.shrinkEveryTicks
         : 1;
     const arenaSize = race ? 49 - race.shrinkStage * 2 : 49;
-    const localPlayer = race?.players.find((player) => player.id === connection.playerId);
 
     return (
         <section
@@ -187,6 +282,32 @@ export function MultiplayerViewport({ session }: { session: GameSession }) {
                     {Math.ceil(connection.warning.remainingMs / 60_000)} min
                 </p>
             )}
+            <button
+                type="button"
+                className={`packet-button packet-race-boost min-h-11 px-3 py-2 ${buttonLayout}`}
+                aria-label="Boost"
+                aria-describedby="packet-boost-help"
+                aria-pressed={localPlayer?.boosting ?? false}
+                disabled={!canBoost}
+                onPointerDown={boostPointerDown}
+                onPointerUp={boostPointerUp}
+                onPointerCancel={boostPointerCancel}
+                onLostPointerCapture={boostPointerCancel}
+                onKeyDown={boostKeyDown}
+                onKeyUp={boostKeyUp}
+                onBlur={cancelBoostControl}
+                onClick={(event) => {
+                    if (event.detail === 0 && startBoost('activate')) releaseBoost('activate');
+                }}
+            >
+                <span>Boost</span>
+                <span className="text-packet-text-muted text-xs">
+                    Space · {Math.round(1000 / (RACE.stepMs * BOOST.ticksPerPoint))} pts/s
+                </span>
+            </button>
+            <p id="packet-boost-help" className="sr-only">
+                Tap for a 125 millisecond burst, or hold to move twice as fast while spending 40 points per second only while moving.
+            </p>
             <button
                 type="button"
                 className={`packet-button packet-race-leave min-h-11 px-3 py-2 ${buttonLayout}`}

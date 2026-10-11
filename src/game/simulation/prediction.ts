@@ -1,4 +1,5 @@
-import { applyScheduledDirection, move, movementEdge, opposite, position } from './movement';
+import { move, movementEdge, opposite, position } from './movement';
+import { advanceBoost, applyScheduledInput } from './boost';
 import { isBattleArenaCellActive } from './BattleArenaMap';
 import { RACE, SYNCHRONIZATION, type Movement, type RaceMap, type RacePlayer, type RaceSnapshot, type ScheduledInput } from './types';
 
@@ -6,17 +7,24 @@ export type Point = { x: number; y: number };
 type Axis = keyof Point;
 const EPSILON = 1e-8;
 
-/** Advances a clone from completed authoritative ticks using the server's input boundary convention. */
+/** Samples movement using the same boost budget and input boundaries as the server. */
 export function reconcileMovement(map: RaceMap, player: RacePlayer, authoritativeTick: number,
   predictedTick: number, pending: readonly ScheduledInput[]): Movement {
-  const movement = { ...player.movement };
-  if (!player.connected || player.eliminatedAtTick !== null || player.deathMs > 0) return movement;
+  return reconcilePlayer(map, player, authoritativeTick, predictedTick, pending).movement;
+}
+
+/** Replays private movement/boost state without predicting pickup awards or exposing predicted scores. */
+export function reconcilePlayer(map: RaceMap, player: RacePlayer, authoritativeTick: number,
+  predictedTick: number, pending: readonly ScheduledInput[]): RacePlayer {
+  const predicted = { ...player, movement: { ...player.movement } };
+  if (!player.connected || player.eliminatedAtTick !== null || player.deathMs > 0) return predicted;
   const target = Math.min(predictedTick, authoritativeTick + SYNCHRONIZATION.maxPredictionTicks);
   for (let tick = authoritativeTick; tick < target; tick += 1) {
-    applyScheduledDirection(movement, pending, tick + 1, player.acknowledgedInput);
-    move(map, movement, RACE.playerSpeed * RACE.stepMs / 1000 * Math.min(1, target - tick));
+    applyScheduledInput(predicted, pending, tick + 1);
+    const fraction = Math.min(1, target - tick);
+    advanceBoost(map, predicted, fraction);
   }
-  return movement;
+  return predicted;
 }
 
 /** Keeps one monotonic tick clock independent of snapshot arrival and rendering cadence. */
@@ -90,6 +98,8 @@ export interface ActorSample {
 export function samplePlayerEffects(player: RacePlayer, elapsedTicks: number): RacePlayer {
   const elapsedMs = Math.max(0, elapsedTicks) * RACE.stepMs;
   return { ...player, huntMs: Math.max(0, player.huntMs - elapsedMs),
+    boosting: player.boosting && (player.boostHeld || elapsedTicks < player.boostTicks),
+    boostTicks: Math.max(0, player.boostTicks - Math.max(0, elapsedTicks)),
     protectionMs: Math.max(0, player.protectionMs - elapsedMs),
     portalBlinkMs: Math.max(0, (player.portalBlinkMs ?? 0) - elapsedMs),
     deathMs: Math.max(0, player.deathMs - elapsedMs) };

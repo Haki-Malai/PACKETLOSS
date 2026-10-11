@@ -1,2 +1,2 @@
-/** Fences scheduled input, movement permission, and snapshot publication semantics. */
-export const PROTOCOL_VERSION = 6;
+/** Fences fractional boost duration and movement-only spending. */
+export const PROTOCOL_VERSION = 9;

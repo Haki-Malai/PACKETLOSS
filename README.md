@@ -14,7 +14,8 @@ Recover data bits, avoid enemies, and use power cores to turn the chase around. 
 ## Controls
 
 - Move: arrow keys or WASD; swipe on mobile.
-- Pause: Space, Escape, the HUD pause button, or a click/tap on the game canvas. Resume through the pause menu or Space/Escape; clicking its backdrop does not resume.
+- Boost in Battle Royale: tap Space or the Boost button for a 125 ms burst; hold to continue. Movement doubles while spending 40 points per second only while actually moving; walls cost nothing. Boost ends when score runs out.
+- Pause in solo play: Escape, the HUD pause button, or a click/tap on the game canvas. Resume through the pause menu or Escape; clicking its backdrop does not resume. Battle Royale cannot pause.
 - Navigate menus with Tab and Enter/Space; Escape returns from a submenu. Restarting or leaving an unfinished run requires confirmation.
 - Leaving the window pauses an active game; returning resumes only a focus-caused pause with no explicit menu interaction.
 

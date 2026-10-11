@@ -1,8 +1,8 @@
 import { battleArenaMapAtStage } from './BattleArenaMap';
 import { position } from './movement';
 import { correctedPoint, crossedPortal, RacePresentationClock,
-  reconcileMovement, samplePlayerEffects, sampleRemoteActor, type ActorSample, type Point } from './prediction';
-import { RACE, SYNCHRONIZATION, type Direction, type Movement, type RaceMap, type RaceSnapshot, type ScheduledInput } from './types';
+  reconcilePlayer, samplePlayerEffects, sampleRemoteActor, type ActorSample, type Point } from './prediction';
+import { RACE, SYNCHRONIZATION, type BoostAction, type Direction, type Movement, type RaceMap, type RacePlayer, type RaceSnapshot, type ScheduledInput } from './types';
 
 export interface SynchronizationDiagnostics {
   correctionMagnitude: number;
@@ -31,7 +31,7 @@ export class MultiplayerSynchronization {
   private rtt: number | null = null;
   private sequence = 0;
   private pending: ScheduledInput[] = [];
-  private movement: Movement | null = null;
+  private predictedPlayer: RacePlayer | null = null;
   private simulatedTick = 0;
   private offset: Point = { x: 0, y: 0 };
   private lastSampleMs: number | null = null;
@@ -58,7 +58,7 @@ export class MultiplayerSynchronization {
   reset(): void {
     this.race = null; this.map = null; this.activeMap = null; this.playerId = null;
     this.snapshots = []; this.publication = -1; this.pending = []; this.sequence = 0;
-    this.rtt = null; this.movement = null; this.previousMovement = null; this.remoteTick = 0;
+    this.rtt = null; this.predictedPlayer = null; this.previousMovement = null; this.remoteTick = 0;
     this.previousRemoteMovements.clear(); this.wasUnderrun = false;
     this.clock.reset(); this.offset = { x: 0, y: 0 }; this.lastSampleMs = null;
     Object.assign(this.diagnostics, { correctionMagnitude: 0, correctionReason: 'reset', snapshotAgeMs: 0,
@@ -78,7 +78,7 @@ export class MultiplayerSynchronization {
     const sameMatch = this.race?.matchId === race.matchId && this.map?.id === map.id && playerId === this.playerId;
     if (sameMatch && this.race && race.tick < this.race.tick) return false;
     const oldRace = this.race;
-    const old = sameMatch ? this.localMovement(this.predictionTick(nowMs)) : null;
+    const old = sameMatch ? this.localPlayer(this.predictionTick(nowMs)) : null;
     if (!sameMatch) {
       this.pending = []; this.snapshots = []; this.sequence = 0; this.previousMovement = null;
       this.previousRemoteMovements.clear(); this.wasUnderrun = false;
@@ -95,18 +95,18 @@ export class MultiplayerSynchronization {
     this.pending = this.pending.filter((input) => input.sequence > (player?.acknowledgedInput ?? 0));
     if (!race.movementEnabled || !player?.connected || player.eliminatedAtTick !== null) this.pending = [];
     this.restoreMovement();
-    const current = this.localMovement(this.predictionTick(nowMs));
+    const current = this.localPlayer(this.predictionTick(nowMs));
     this.diagnostics.correctionMagnitude = 0;
     this.diagnostics.correctionReason = 'none';
     if (old && current) {
       const activeMap = this.activeMap!;
-      const from = position(activeMap, old), to = position(activeMap, current);
+      const from = position(activeMap, old.movement), to = position(activeMap, current.movement);
       const error = { x: from.x - to.x, y: from.y - to.y };
       this.diagnostics.correctionMagnitude = Math.hypot(error.x, error.y);
       this.diagnostics.correctionReason = !race.movementEnabled ? 'movement-disabled'
         : oldRace?.shrinkStage !== race.shrinkStage ? 'topology' : 'acknowledgement';
       const safe = race.movementEnabled && oldRace?.shrinkStage === race.shrinkStage
-        && Math.hypot(error.x, error.y) <= 1 && correctedPoint(activeMap, current, to, error);
+        && Math.hypot(error.x, error.y) <= 1 && correctedPoint(activeMap, current.movement, to, error);
       this.offset = safe ? { x: this.offset.x + error.x, y: this.offset.y + error.y } : { x: 0, y: 0 };
       if (Math.hypot(this.offset.x, this.offset.y) > 1) this.offset = { x: 0, y: 0 };
     }
@@ -117,16 +117,34 @@ export class MultiplayerSynchronization {
   /** Records intent only after transport accepts it; the currently drawn fractional step stays immutable. */
   submitDirection(direction: Direction, nowMs: number,
     send: (_input: ScheduledInput & { matchId: string }) => boolean): number | null {
+    return this.submitInput({ direction }, nowMs, send);
+  }
+
+  /** Shares ordered input sequencing; cancellation remains available during a stale snapshot stream. */
+  submitBoost(boost: BoostAction, nowMs: number,
+    send: (_input: ScheduledInput & { matchId: string }) => boolean): number | null {
+    return this.submitInput({ boost }, nowMs, send);
+  }
+
+  /** Commits input only after transport accepts it, with a bounded cancellation escape for a full queue. */
+  private submitInput(intent: Pick<ScheduledInput, 'direction' | 'boost'>, nowMs: number,
+    send: (_input: ScheduledInput & { matchId: string }) => boolean): number | null {
     const race = this.race;
     const player = race?.players.find((candidate) => candidate.id === this.playerId);
+    const cancelling = intent.boost === 'cancel';
+    const stale = nowMs - this.receivedAt >= SYNCHRONIZATION.maxPredictionTicks * RACE.stepMs;
     if (!race?.movementEnabled || !player?.connected || player.eliminatedAtTick !== null
-      || nowMs - this.receivedAt >= SYNCHRONIZATION.maxPredictionTicks * RACE.stepMs || this.pending.length >= 128) return null;
-    const targetTick = Math.max(Math.floor(this.predictionTick(nowMs)) + 2,
-      this.pending[this.pending.length - 1]?.targetTick ?? 0);
+      || !cancelling && (stale || this.pending.length >= 128)) return null;
+    const lastTarget = this.pending[this.pending.length - 1]?.targetTick ?? 0;
+    let targetTick = Math.max(Math.floor(this.predictionTick(nowMs)) + 2, lastTarget);
+    if (cancelling && (stale || targetTick > race.tick + SYNCHRONIZATION.maxPredictionTicks)) {
+      targetTick = Math.max(race.tick + 1, lastTarget);
+    }
     if (targetTick > race.tick + SYNCHRONIZATION.maxPredictionTicks) return null;
-    const input = { matchId: race.matchId, sequence: this.sequence + 1, targetTick, direction };
+    const input = { matchId: race.matchId, sequence: this.sequence + 1, targetTick, ...intent };
     if (!send(input)) return null;
     this.sequence = input.sequence;
+    if (cancelling && this.pending.length >= 128) this.pending = [];
     this.pending.push(input);
     this.diagnostics.pendingInputs = this.pending.length;
     return input.sequence;
@@ -145,21 +163,21 @@ export class MultiplayerSynchronization {
     if (underrun && !this.wasUnderrun) this.diagnostics.interpolationUnderruns += 1;
     this.wasUnderrun = underrun;
     const actors = new Map<string, ActorSample>();
-    const local = this.localMovement(predictedTick);
+    const local = this.localPlayer(predictedTick);
     const decay = Math.exp(-Math.max(0, nowMs - (this.lastSampleMs ?? nowMs)) / 80);
     this.offset.x *= decay; this.offset.y *= decay;
     for (const player of race.players) {
       if (player.id === this.playerId && local) {
-        const raw = position(map, local);
-        const point = correctedPoint(map, local, raw, this.offset);
-        const discontinuity = this.previousMovement === null || crossedPortal(map, this.previousMovement, local);
+        const raw = position(map, local.movement);
+        const point = correctedPoint(map, local.movement, raw, this.offset);
+        const discontinuity = this.previousMovement === null || crossedPortal(map, this.previousMovement, local.movement);
         if (!point || discontinuity) this.offset = { x: 0, y: 0 };
         const sampled = samplePlayerEffects(player, Math.max(0, presentationTick - race.tick));
-        actors.set(player.id, { player: { ...sampled, movement: local }, point: discontinuity ? raw : point ?? raw, discontinuity,
-          moving: race.movementEnabled && player.connected && local.to !== null
+        actors.set(player.id, { player: { ...sampled, movement: local.movement, boosting: local.boosting }, point: discontinuity ? raw : point ?? raw, discontinuity,
+          moving: race.movementEnabled && player.connected && local.movement.to !== null
             && player.eliminatedAtTick === null && player.deathMs <= 0
             && nowMs - this.receivedAt < SYNCHRONIZATION.maxPredictionTicks * RACE.stepMs });
-        this.previousMovement = { ...local };
+        this.previousMovement = { ...local.movement };
       } else {
         const sampled = sampleRemoteActor(this.snapshots, target, player.id, map);
         if (sampled) {
@@ -183,26 +201,26 @@ export class MultiplayerSynchronization {
       (this.rtt ?? 0) + SYNCHRONIZATION.commandSlackTicks * RACE.stepMs);
   }
 
-  /** Restores the local fixed-step base; only acceptance/reset replays from authority. */
+  /** Restores the local movement and private spending budget from a completed authoritative tick. */
   private restoreMovement(): void {
     const player = this.race?.players.find((candidate) => candidate.id === this.playerId);
-    this.movement = player ? { ...player.movement } : null;
+    this.predictedPlayer = player ? { ...player, movement: { ...player.movement } } : null;
     this.simulatedTick = this.race?.tick ?? 0;
   }
 
   /** Advances completed ticks incrementally and samples one disposable fractional step. */
-  private localMovement(target: number): Movement | null {
+  private localPlayer(target: number): RacePlayer | null {
     const race = this.race, map = this.activeMap;
-    let movement = this.movement;
+    let predicted = this.predictedPlayer;
     const player = race?.players.find((candidate) => candidate.id === this.playerId);
-    if (!race || !map || !movement || !player) return null;
-    if (!race.movementEnabled || !player.connected || player.eliminatedAtTick !== null || player.deathMs > 0) return { ...player.movement };
+    if (!race || !map || !predicted || !player) return null;
+    if (!race.movementEnabled || !player.connected || player.eliminatedAtTick !== null || player.deathMs > 0) return { ...player, boosting: false };
     const capped = Math.max(this.simulatedTick, Math.min(target, race.tick + SYNCHRONIZATION.maxPredictionTicks));
     if (this.simulatedTick < Math.floor(capped)) {
-      movement = reconcileMovement(map, { ...player, movement }, this.simulatedTick, Math.floor(capped), this.pending);
-      this.movement = movement;
+      predicted = reconcilePlayer(map, predicted, this.simulatedTick, Math.floor(capped), this.pending);
+      this.predictedPlayer = predicted;
       this.simulatedTick = Math.floor(capped);
     }
-    return reconcileMovement(map, { ...player, movement }, this.simulatedTick, capped, this.pending);
+    return reconcilePlayer(map, predicted, this.simulatedTick, capped, this.pending);
   }
 }

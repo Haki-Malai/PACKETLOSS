@@ -156,7 +156,7 @@ export class RoomService {
         case 'input':
           this.pump();
           if (!room.race || room.race.matchId !== message.matchId) throw new Error('Input belongs to another match.');
-          if (!room.race.input(identity.playerId, message.sequence, message.direction, message.targetTick)) throw new Error('Stale or inactive input.');
+          if (!room.race.input(identity.playerId, message.sequence, message.direction, message.targetTick, message.boost)) throw new Error('Stale or inactive input.');
           return;
         case 'leave':
           this.remove(room, identity.playerId); send({ type: 'left' }); break;

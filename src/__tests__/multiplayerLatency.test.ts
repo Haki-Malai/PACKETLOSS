@@ -7,10 +7,15 @@ import { RACE, type RaceSnapshot, type ScheduledInput } from '../game/simulation
 import { dataRaceFixture } from './fixtures/dataRaceFixture';
 
 /** Exercises actual command delivery and server steps independently of client rendering. */
-function scheduledNetwork(frameRate: number, uploadMs: number, downloadMs: number) {
+function scheduledNetwork(frameRate: number, uploadMs: number, downloadMs: number, boosting = false) {
   const map = dataRaceFixture();
   const race = new DataRace(map, 'network', [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], 1);
   const id = race.snapshot().players[0].id;
+  if (boosting) {
+    const funded = race.snapshot();
+    funded.players[0].score = 100;
+    race.restore(funded);
+  }
   const sync = new MultiplayerSynchronization();
   sync.observeRoundTrip(uploadMs + downloadMs);
   const states = new Map<number, RaceSnapshot>([[0, race.snapshot()]]);
@@ -21,7 +26,7 @@ function scheduledNetwork(frameRate: number, uploadMs: number, downloadMs: numbe
   for (let now = 0; now <= 2200; now += 1) {
     while (inputs[0] && inputs[0].at <= now) {
       const { command } = inputs.shift()!;
-      expect(race.input(id, command.sequence, command.direction, command.targetTick)).toBe(true);
+      expect(race.input(id, command.sequence, command.direction, command.targetTick, command.boost)).toBe(true);
     }
     while ((race.tick + 1) * RACE.stepMs <= now + 1e-8) {
       race.step();
@@ -42,12 +47,24 @@ function scheduledNetwork(frameRate: number, uploadMs: number, downloadMs: numbe
       expect(sync.submitDirection(direction, now, (command) => {
         inputs.push({ at: now + uploadMs + 5, command }); return true;
       })).not.toBeNull();
+      if (boosting) {
+        const actions = now === 300 ? ['press'] as const : now === 500 ? ['release'] as const
+          : now === 800 ? ['press', 'release'] as const : ['cancel'] as const;
+        for (const action of actions) {
+          expect(sync.submitBoost(action, now, (command) => {
+            inputs.push({ at: now + uploadMs + 5, command }); return true;
+          })).not.toBeNull();
+        }
+      }
     }
     if (now >= nextFrame && now < 1900) {
       nextFrame += 1000 / frameRate;
       const frame = sync.sample(now);
       const actor = frame?.actors.get(id);
-      if (frame && actor) samples.push({ tick: frame.predictedTick, ...actor.point, discontinuity: actor.discontinuity });
+      if (frame && actor) {
+        samples.push({ tick: frame.predictedTick, ...actor.point, discontinuity: actor.discontinuity });
+        if (boosting) expect(actor.player.score).toBe(sync.history[sync.history.length - 1].players.find((player) => player.id === id)!.score);
+      }
     }
   }
   for (const [index, sample] of samples.entries()) {
@@ -56,7 +73,20 @@ function scheduledNetwork(frameRate: number, uploadMs: number, downloadMs: numbe
     const a = position(map, before.players.find((player) => player.id === id)!.movement);
     const b = position(map, after.players.find((player) => player.id === id)!.movement);
     const fraction = sample.tick % 1;
-    expect(sample.x).toBeCloseTo(a.x + (b.x - a.x) * fraction, 7);
+    let expectedX = a.x + (b.x - a.x) * fraction;
+    // This authored corridor ends at x=0 and x=4; a partial boost can shift either speed's wall arrival into mid-tick.
+    if (a.x !== b.x && (b.x === 0 || b.x === 4)) {
+      const speed = boosting && after.players.find((player) => player.id === id)!.boosting ? 0.125 : 0.0625;
+      expectedX = Math.max(0, Math.min(4, a.x + Math.sign(b.x - a.x)
+        * speed * fraction));
+    }
+    // A 125 ms tap ends halfway through its eighth tick: 0.125 tiles/tick, then 0.0625.
+    const prior = before.players.find((player) => player.id === id)!;
+    if (boosting && prior.boosting && !prior.boostHeld && prior.boostTicks === 0.5 && a.x !== b.x) {
+      expectedX = Math.max(0, Math.min(4, a.x + Math.sign(b.x - a.x)
+        * (0.125 * Math.min(fraction, 0.5) + 0.0625 * Math.max(0, fraction - 0.5))));
+    }
+    expect(sample.x).toBeCloseTo(expectedX, 7);
     expect(sample.y).toBeCloseTo(a.y + (b.y - a.y) * fraction, 7);
     expect(sample.discontinuity).toBe(index === 0);
   }
@@ -107,6 +137,11 @@ describe('multiplayer prediction and presentation', () => {
     scheduledNetwork(fps, up, down);
   });
 
+  it.each([60, 120, 144].flatMap((fps) => [[0, 0], [50, 50], [30, 170]].map(([up, down]) => [fps, up, down])))('replays paid boost taps/holds at %i Hz with %i/%i ms delay and jitter', (fps, up, down) => {
+    expect.hasAssertions();
+    scheduledNetwork(fps, up, down, true);
+  });
+
   it('uses the same final intent for simultaneous changes, without rewriting a started partial step', () => {
     const { map, state, id, sync } = scenario();
     const commands: ScheduledInput[] = [];
@@ -131,6 +166,46 @@ describe('multiplayer prediction and presentation', () => {
     const solo = new DataRace(map, 'solo', [{ id, name: 'A' }], 1, 0, true);
     sync.acceptSnapshot(map, solo.snapshot(), id, 3, 100);
     expect(sync.sample(120)!.actors.get(id)!.point.x).toBeGreaterThan(0);
+  });
+
+  it('retains the private spending budget across incremental frames while showing confirmed score', () => {
+    const { race, map, id, sync } = scenario();
+    const funded = race.snapshot();
+    funded.players[0].score = 1;
+    race.restore(funded);
+    sync.acceptSnapshot(map, funded, id, 2, 0);
+    expect(sync.submitBoost('press', 0, () => true)).not.toBeNull();
+    sync.sample(50);
+    sync.sample(75);
+    const actor = sync.sample(100)!.actors.get(id)!;
+    expect(actor.point.x).toBeCloseTo(0.59375);
+    expect(actor.player.score).toBe(1);
+    expect(actor.player.boosting).toBe(false);
+    expect(race.snapshot().players[0].score).toBe(1);
+  });
+
+  it('allows boost cancellation through a stalled stream and does not record failed boost sends', () => {
+    const { race, map, id, sync } = scenario();
+    const funded = race.snapshot();
+    funded.players[0].score = 100;
+    map.pickups = [{ id: 5, cell: 5, kind: 'bit' }];
+    funded.pickups = map.pickups.map((pickup) => ({ ...pickup }));
+    race.restore(funded);
+    sync.acceptSnapshot(map, funded, id, 2, 0);
+    expect(sync.submitBoost('press', 0, () => false)).toBeNull();
+    expect(sync.diagnostics.pendingInputs).toBe(0);
+    const commands: ScheduledInput[] = [];
+    sync.submitBoost('press', 0, (command) => { commands.push(command); return true; });
+    race.input(id, commands[0].sequence, undefined, commands[0].targetTick, commands[0].boost);
+    for (let tick = 0; tick < commands[0].targetTick; tick += 1) race.step();
+    expect(race.snapshot().players[0].boosting).toBe(true);
+    expect(sync.submitDirection('left', 2000, () => true)).toBeNull();
+    expect(sync.submitBoost('press', 2000, () => true)).toBeNull();
+    expect(sync.submitBoost('cancel', 2000, (command) => { commands.push(command); return true; })).not.toBeNull();
+    expect(race.input(id, commands[1].sequence, undefined, commands[1].targetTick, commands[1].boost)).toBe(true);
+    race.step();
+    expect(race.snapshot().players[0]).toMatchObject({ boosting: false, boostHeld: false,
+      boostTicks: 0, score: 100, acknowledgedInput: commands[1].sequence });
   });
 
   it('bounds a stalled stream, then rebases without treating recovery correction as a camera teleport', () => {

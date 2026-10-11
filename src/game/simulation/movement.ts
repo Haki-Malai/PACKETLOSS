@@ -1,7 +1,13 @@
-import { type Direction, type Edge, type Movement, type RaceMap, type ScheduledInput } from './types';
+import { type Direction, type Edge, type Movement, type RaceMap } from './types';
 import { advanceEntity, getDistanceToCenter, resolveBufferedDirection } from '../domain/services/MovementRules';
 import { DIRECTION_VECTORS, OPPOSITE_DIRECTION } from '../domain/valueObjects/Direction';
 import { PORTAL_TRAVEL_FRACTION } from '../domain/services/PortalService';
+
+export interface MovementTeleport {
+  departure: { x: number; y: number };
+  arrival: { x: number; y: number };
+  fraction: number;
+}
 
 /** Creates a fully serializable centered actor, including its buffered turn. */
 export function createMovement(cell: number, direction: Direction = 'right'): Movement {
@@ -19,10 +25,10 @@ export function movementEdge(map: RaceMap, actor: Movement): Edge | null {
     && (edge.portal || edge.direction === actor.direction)) ?? null;
 }
 
-/** Adapts serializable graph movement to the same buffered-turn and corridor travel rules as solo play. */
+/** Applies shared corridor travel and returns distance actually moved, excluding portal jumps; callbacks include exact discontinuity samples. */
 export function move(map: RaceMap, actor: Movement, distance: number, portals = true,
-  onCenter?: (_actor: Movement) => boolean | void, onTeleport?: () => void): void {
-  if (!Number.isFinite(distance) || distance <= 0) return;
+  onCenter?: (_actor: Movement) => boolean | void, onTeleport?: (_motion: MovementTeleport) => void): number {
+  if (!Number.isFinite(distance) || distance <= 0) return 0;
   let remaining = distance;
   if (actor.to !== null && actor.progress < 1e-9) actor.to = null;
   if (actor.to !== null) {
@@ -36,16 +42,16 @@ export function move(map: RaceMap, actor: Movement, distance: number, portals = 
   }
   while (remaining > 1e-9) {
     if (actor.to === null) {
-      if (onCenter?.(actor) === false) return;
+      if (onCenter?.(actor) === false) return distance - remaining;
       const edges = map.cells[actor.cell].edges.filter((edge) => portals || !edge.portal);
       actor.direction = resolveBufferedDirection(actor.direction, actor.queued, true,
         (direction) => edges.some((edge) => edge.direction === direction));
       const edge = edges.find((candidate) => candidate.direction === actor.direction);
-      if (!edge) return;
+      if (!edge) return distance - remaining;
       actor.to = edge.to;
     }
     const edge = movementEdge(map, actor);
-    if (!edge) return;
+    if (!edge) return distance - remaining;
     const length = edge.portal ? PORTAL_TRAVEL_FRACTION : 1;
     const vector = DIRECTION_VECTORS[edge.direction];
     const segment = { tile: { x: 0, y: 0 }, moved: {
@@ -57,13 +63,18 @@ export function move(map: RaceMap, actor: Movement, distance: number, portals = 
     actor.progress = Math.hypot(segment.moved.x, segment.moved.y) / length;
     if (segment.tile.x !== 0 || segment.tile.y !== 0 || actor.progress < 1e-9) {
       if (actor.direction === edge.direction) {
+        const departure = map.cells[actor.cell], arrival = map.cells[actor.to];
         actor.cell = actor.to;
-        if (edge.portal) onTeleport?.();
+        if (edge.portal) onTeleport?.({
+          departure: { x: departure.x + vector.dx * length, y: departure.y + vector.dy * length },
+          arrival: { x: arrival.x, y: arrival.y }, fraction: (distance - remaining) / distance,
+        });
       }
       actor.to = null;
       actor.progress = 0;
     }
   }
+  return distance - remaining;
 }
 
 /** Returns an actor's world position in tile units, preserving portal mouth travel. */
@@ -98,16 +109,4 @@ export function physicalPath(map: RaceMap, from: number, to: number): number[] |
     }
   }
   return null;
-}
-
-/** Selects the newest consumed intent; repeated commands in one tick cannot create extra travel. */
-export function applyScheduledDirection(movement: Movement, inputs: readonly ScheduledInput[],
-  tick: number, acknowledgedInput: number): number {
-  let latest: ScheduledInput | undefined;
-  for (const input of inputs) {
-    if (input.targetTick <= tick && input.sequence > acknowledgedInput
-      && (!latest || input.sequence > latest.sequence)) latest = input;
-  }
-  if (latest) movement.queued = latest.direction;
-  return latest?.sequence ?? acknowledgedInput;
 }

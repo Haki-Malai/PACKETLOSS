@@ -26,7 +26,11 @@ const basics = [
     ],
     [
         'Pause',
-        'Press Space or Escape, use the Pause button, or click/tap the game. Choose Resume when ready.',
+        'In solo modes, press Escape, use the Pause button, or click/tap the game. Choose Resume when ready.',
+    ],
+    [
+        'Battle Royale boost',
+        'Tap Space or Boost for a 125 ms burst; hold to continue at twice normal speed, spending 40 points per second only while moving. Walls cost nothing. Boost ends when points run out. Battle Royale cannot pause.',
     ],
 ] as const;
 

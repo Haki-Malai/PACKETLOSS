@@ -388,7 +388,7 @@ function createThreeStage({
                 );
                 let discontinuity = nextFollowedPlayerId !== followedPlayerId;
                 followedPlayerId = nextFollowedPlayerId;
-                discontinuity = syncActors(frame, followedPlayerId, now, players, cameraTarget) || discontinuity;
+                discontinuity = syncActors(frame, followedPlayerId, now, players, cameraTarget, reducedMotion) || discontinuity;
                 const acknowledgedInput = connection.race.players.find(
                     (player) => player.id === connection.playerId
                 )?.acknowledgedInput;
@@ -480,13 +480,14 @@ function createThreeStage({
     }
 }
 
-/** Maps authoritative identities and effects to solo Packet variants without changing gameplay. */
+/** Maps sampled identities, paid boost, and power effects to Packet variants without changing gameplay. */
 function syncActors(
     frame: MultiplayerRenderState,
     followedPlayerId: string | null,
     now: number,
     players: PlayerModel[],
-    cameraTarget: { x: number; y: number }
+    cameraTarget: { x: number; y: number },
+    reducedMotion: boolean
 ): boolean {
     let discontinuity = false;
     for (const model of players) model.packet.group.visible = false;
@@ -499,6 +500,7 @@ function syncActors(
         packet.group.visible = player.eliminatedAtTick === null || player.deathMs > 0;
         model.labels.setIdentity(player.name, player.score);
         packet.setScore(player.score);
+        packet.setBoost(player.boosting, reducedMotion);
         const portalVisible = (player.portalBlinkMs ?? 0) <= 0
             || Math.floor((PACKET_PORTAL_BLINK.durationMs - (player.portalBlinkMs ?? 0))
                 / PACKET_PORTAL_BLINK.intervalMs) % 2 === 0;

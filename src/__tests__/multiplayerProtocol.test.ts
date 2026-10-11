@@ -24,7 +24,7 @@ describe('multiplayer protocol validation', () => {
         };
     expect(parseClientMessage(JSON.stringify(authenticate))).toEqual(authenticate);
     expect(parseServerMessage(JSON.stringify(authenticated))).toEqual(authenticated);
-        for (const version of [1, 2, 3, 4, 5]) {
+        for (const version of [1, 2, 3, 4, 5, 6, 7, 8]) {
             expect(parseClientMessage(JSON.stringify({ ...authenticate, version }))).toBeNull();
             expect(parseServerMessage(JSON.stringify({ ...authenticated, version }))).toBeNull();
         }
@@ -105,9 +105,14 @@ describe('multiplayer protocol validation', () => {
         ).toEqual(snapshot);
     });
 
-  it('accepts only sequenced direction input, rejecting forged authority and malformed payloads', () => {
+  it('accepts only sequenced direction/boost intent, rejecting forged authority and malformed payloads', () => {
     const input = { type: 'input', matchId: 'match', sequence: 1, targetTick: 12, direction: 'left' };
     expect(parseClientMessage(JSON.stringify(input))).toEqual(input);
+    for (const boost of ['press', 'release', 'cancel']) {
+      const command = { type: 'input', matchId: 'match', sequence: 2, targetTick: 12, boost };
+      expect(parseClientMessage(JSON.stringify(command))).toEqual(command);
+      expect(parseClientMessage(JSON.stringify({ ...input, boost }))).toEqual({ ...input, boost });
+    }
         for (const forged of [
             { ...input, score: 99 },
             { ...input, x: 4 },
@@ -118,10 +123,35 @@ describe('multiplayer protocol validation', () => {
             { ...input, targetTick: 1.5 },
             { ...input, targetTick: undefined },
             { ...input, direction: 'teleport' },
+            { ...input, boost: 'teleport' },
+            { ...input, direction: undefined },
+            { ...input, boosting: true },
         ]) {
       expect(parseClientMessage(JSON.stringify(forged))).toBeNull();
     }
     expect(parseClientMessage('{')).toBeNull();
     expect(parseServerMessage('{"type":"snapshot","snapshot":{}}')).toBeNull();
+  });
+
+  it('round-trips active boost timers and rejects invalid spending state', () => {
+    const map = dataRaceFixture();
+    const game = new DataRace(map, 'boost-wire', [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], 4);
+    const funded = game.snapshot();
+    funded.players[0].score = 100;
+    game.restore(funded);
+    game.input(funded.players[0].id, 1, undefined, 1, 'press');
+    game.step();
+    game.step();
+    const snapshot = game.snapshot();
+    expect(snapshot.players[0]).toMatchObject({ boostTicks: 5.5, boostCostTicks: 0.5 });
+    const envelope = { type: 'snapshot', publication: 1, snapshot: encodeRaceSnapshot(map, snapshot),
+      serverTimeMs: 1000, instanceRunId: 'run', processGeneration: 'process' };
+    const parsed = parseServerMessage(JSON.stringify(envelope));
+    expect(parsed?.type === 'snapshot' && decodeRaceSnapshot(map, parsed.snapshot)).toEqual(snapshot);
+    for (const invalid of [{ boostTicks: 8 }, { boostTicks: -1 }, { boostCostTicks: 1.5 }, { boostCostTicks: -0.5 }]) {
+      const forged = structuredClone(envelope);
+      Object.assign(forged.snapshot.players[0], invalid);
+      expect(parseServerMessage(JSON.stringify(forged))).toBeNull();
+    }
   });
 });

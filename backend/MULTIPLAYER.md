@@ -188,8 +188,8 @@ local Docker smoke workflow in `docs/TESTING.md`; mocked SDK tests do not establ
 those integration outcomes. Remote IAM, API Gateway authorizer wiring, EC2 startup,
 DNS, TLS, and regional lifecycle behavior require reviewed deployed verification.
 
-## Protocol 6 release coordination
+## Protocol 9 release coordination
 
-Protocol 6 changes input timing and acknowledgement semantics. Inputs require an integer `targetTick`; snapshots require `movementEnabled` and a publication counter in the envelope. Arena generator version 3 and completed-result storage remain unchanged.
+Protocol 9 permits fractional minimum-burst ticks and point-cost remainders for exact 125 ms boosts and proportional spending at 40 points per second of actual boosted movement. It retains ordered boost press/release/cancel intent alongside optional direction intent, plus per-player boost activity and held state. Inputs still require an integer `targetTick`; snapshots require `movementEnabled` and a publication counter in the envelope. Arena generator version 3 and completed-result storage remain unchanged.
 
-Build the frontend, game service, account/control Lambdas, development clients, and release manifest from the same revision. Validate with Node 24 and `pnpm test:all`. For deployment, first drain admission and let active matches finish, then use the existing deployment runbook to publish the matching control/game/frontend artifacts and verify protocol-six readiness before reopening admission. Existing tabs must refresh; there is no dual-protocol fallback. Rollback requires the matching previous artifact set, with admission drained again. Deployment and remote drain/resume commands require a separately reviewed operational action.
+Build the frontend, game service, account/control Lambdas, development clients, and release manifest from the same revision. Validate with Node 24 and `pnpm test:all`. For deployment, first drain admission and let active matches finish, then use the existing deployment runbook to publish the matching control/game/frontend artifacts and verify protocol-nine readiness before reopening admission. Existing tabs must refresh; there is no dual-protocol fallback. Rollback requires the matching previous artifact set, with admission drained again. Deployment and remote drain/resume commands require a separately reviewed operational action.

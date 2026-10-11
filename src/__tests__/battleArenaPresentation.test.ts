@@ -8,6 +8,7 @@ import { Camera3D } from '../engine/camera3d';
 import { buildMazeWallFootprint } from '../game/domain/world/MazeFootprint';
 import type { MultiplayerConnectionSnapshot } from '../game/infrastructure/adapters/MultiplayerSocketClient';
 import { MazeScene } from '../game/infrastructure/three/MazeScene';
+import { HologramPacket } from '../game/infrastructure/three/HologramPacket';
 import * as mazeGeometry from '../game/infrastructure/three/MazeGeometry';
 import {
   battleArenaBounds, battleArenaOuterBounds, createBattleArenaMap, createBattleArenaWorldMap,
@@ -290,6 +291,7 @@ describe('Battle Royale perimeter presentation', () => {
       instanceRunId: 'run', processGeneration: 'generation', warning: null, message: '',
     };
     const snap = vi.spyOn(Camera3D.prototype, 'snapToFollowTarget');
+    const boost = vi.spyOn(HologramPacket.prototype, 'setBoost');
     const bounds = vi.spyOn(Camera3D.prototype, 'setBounds');
     const zoom = vi.spyOn(Camera3D.prototype, 'setZoom');
     const walls = vi.spyOn(mazeGeometry, 'buildMazeWallGeometryFromFootprint');
@@ -328,8 +330,10 @@ describe('Battle Royale perimeter presentation', () => {
       expect(initialMaterial.opacity).toBe(1);
       const started = structuredClone(initial);
       started.phase = 'playing';
+      Object.assign(started.players[1], { score: 100, boosting: true, boostHeld: true, boostTicks: 7.5 });
       connection = { ...connection, race: started, raceHistory: [started], receivedAtMs: now += 16 };
       frame(now);
+      expect(boost).toHaveBeenCalledWith(true, false);
       expect(initialMaterial.color.getHexString()).toBe('b846ff');
       const originalPosition = camera.position.clone();
       const originalProjection = camera.projectionMatrix.clone();
@@ -397,6 +401,7 @@ describe('Battle Royale perimeter presentation', () => {
       const reducedDisposals = watchDisposal(scene.getObjectByName('battle-arena-transition')!);
       reducedMotion = true;
       frame(now += 16);
+      expect(boost).toHaveBeenCalledWith(true, true);
       expect(scene.getObjectByName('battle-arena-transition')).toBeUndefined();
       reducedDisposals.forEach((dispose) => expect(dispose).toHaveBeenCalledOnce());
       const finalPerimeter = maze.getObjectByName('perimeter-wall-edges') as InstancedMesh;

@@ -350,7 +350,9 @@ describe('GameShell', () => {
         expect(page.action('help-basics').classList.contains('packet-primary')).toBe(true);
         expect(
             Array.from(page.root.querySelectorAll('dt')).map((node) => node.textContent)
-        ).toEqual(['Move', 'Survive', 'Pause']);
+        ).toEqual(['Move', 'Survive', 'Pause', 'Battle Royale boost']);
+        expect(page.find('#packet-help-content').textContent).toContain('125 ms burst');
+        expect(page.find('#packet-help-content').textContent).toContain('spending 40 points per second only while moving');
         expect(page.root.querySelector('.packet-enemy')).toBeNull();
         expect(mountEnemyPortraits).not.toHaveBeenCalled();
 
@@ -1173,7 +1175,10 @@ describe('GameShell', () => {
         expect(page.document.activeElement).toBe(page.action('back'));
         page.key('Escape');
         page.find('[role="dialog"]').focus();
-        expect(page.key(' ').defaultPrevented).toBe(true);
+        expect(page.key(' ').defaultPrevented).toBe(false);
+        expect(game.resume).not.toHaveBeenCalled();
+        expect(page.screen()).toBe('paused');
+        expect(page.key('Escape').defaultPrevented).toBe(true);
         expect(game.resume).toHaveBeenCalledOnce();
         expect(page.screen()).toBe('playing');
     });

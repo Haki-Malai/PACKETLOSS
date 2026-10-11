@@ -1,7 +1,8 @@
 import { battleArenaBounds, battleArenaMapAtStage, isBattleArenaCellActive } from './BattleArenaMap';
-import { applyScheduledDirection, createMovement, move, movementEdge, position } from './movement';
+import { createMovement, movementEdge, position } from './movement';
+import { advanceBoost, applyScheduledInput, cancelBoost } from './boost';
 import { cloneSnapshot } from './cloneSnapshot';
-import { DIRECTIONS, RACE, SYNCHRONIZATION, type PlayerIdentity, type RaceMap, type RacePlayer, type RaceSnapshot, type ScheduledInput } from './types';
+import { DIRECTIONS, RACE, SYNCHRONIZATION, type BoostAction, type PlayerIdentity, type RaceMap, type RacePlayer, type RaceSnapshot, type ScheduledInput } from './types';
 import { COLLECTIBLE_CONFIG, PACKET_PORTAL_BLINK, SPRITE_SIZE, TILE_SIZE } from '../../config/constants';
 import { isBodyOverlap } from '../domain/valueObjects/CollisionBody';
 
@@ -35,6 +36,7 @@ export class DataRace {
       const slot = (index + slotRotation) % participants.length;
       return { ...identity, slot, color: identity.color ?? RACE.colors[slot],
       score: 0, connected: true, movement: createMovement(map.spawns[slot]), huntMs: 0,
+      boosting: false, boostHeld: false, boostTicks: 0, boostCostTicks: 0,
       protectionMs: RACE.protectionMs, portalBlinkMs: 0, deathMs: 0, eliminatedAtTick: null,
       chain: 0, acknowledgedInput: 0 };
     }).sort((a, b) => a.slot - b.slot);
@@ -62,7 +64,8 @@ export class DataRace {
   }
 
   /** Queues bounded tick-stamped intent; late input waits for the next authoritative step. */
-  input(playerId: string, sequence: number, direction: typeof DIRECTIONS[number], targetTick = this.state.tick + 1): boolean {
+  input(playerId: string, sequence: number, direction: typeof DIRECTIONS[number] | undefined,
+    targetTick = this.state.tick + 1, boost?: BoostAction): boolean {
     const player = this.state.players.find((candidate) => candidate.id === playerId);
     const queued = this.inputs.get(playerId);
     if (!player?.connected || player.eliminatedAtTick !== null
@@ -71,22 +74,28 @@ export class DataRace {
       || !Number.isSafeInteger(targetTick) || targetTick < 0
       || targetTick > this.state.tick + SYNCHRONIZATION.maxPredictionTicks
       || targetTick < (queued?.targetTick ?? 0)
-      || !DIRECTIONS.includes(direction) || !['countdown', 'playing'].includes(this.state.phase)) return false;
+      || direction !== undefined && !DIRECTIONS.includes(direction)
+      || boost !== undefined && !['press', 'release', 'cancel'].includes(boost)
+      || direction === undefined && boost === undefined
+      || !['countdown', 'playing'].includes(this.state.phase)) return false;
     const commands = queued?.commands ?? new Map<number, ScheduledInput>();
+    if (commands.size >= 128) {
+      if (boost !== 'cancel') return false;
+      commands.clear();
+    }
     const effectiveTick = Math.max(this.state.tick + 1, targetTick);
-    commands.set(effectiveTick, { sequence, targetTick: effectiveTick, direction });
+    commands.set(sequence, { sequence, targetTick: effectiveTick, direction, boost });
     this.inputs.set(playerId, { sequence, targetTick, commands });
     return true;
   }
 
-  /** Consumes the newest applicable intent once, before this completed tick's movement. */
+  /** Consumes ordered boost edges and the final direction before this completed tick's movement. */
   private consumeInput(player: RacePlayer): void {
     const queue = this.inputs.get(player.id);
     if (!queue) return;
-    player.acknowledgedInput = applyScheduledDirection(player.movement, [...queue.commands.values()],
-      this.state.tick, player.acknowledgedInput);
-    for (const tick of queue.commands.keys()) {
-      if (tick <= this.state.tick) queue.commands.delete(tick);
+    applyScheduledInput(player, [...queue.commands.values()], this.state.tick);
+    for (const [sequence, command] of queue.commands) {
+      if (command.targetTick <= this.state.tick) queue.commands.delete(sequence);
     }
   }
 
@@ -94,7 +103,7 @@ export class DataRace {
   disconnect(playerId: string): void {
     this.inputs.delete(playerId);
     const player = this.state.players.find((candidate) => candidate.id === playerId);
-    if (player) player.connected = false;
+    if (player) { player.connected = false; cancelBoost(player); }
   }
 
   /** Restores a reserved participant at their exact authoritative position or spectator state. */
@@ -102,6 +111,7 @@ export class DataRace {
     const player = this.state.players.find((candidate) => candidate.id === playerId);
     if (!player) throw new Error('Unknown reserved participant.');
     player.connected = true;
+    cancelBoost(player);
   }
 
   /** Eliminates one active participant without evaluating the winner until the next fixed step. */
@@ -120,6 +130,7 @@ export class DataRace {
     if (this.state.phase === 'finished' || this.state.phase === 'aborted') return;
     this.state.phase = 'aborted';
     this.inputs.clear();
+    this.state.players.forEach(cancelBoost);
     this.state.abortReason = reason;
     this.state.rankings = [];
   }
@@ -144,9 +155,9 @@ export class DataRace {
       player.protectionMs = Math.max(0, player.protectionMs - RACE.stepMs);
       player.portalBlinkMs = Math.max(0, (player.portalBlinkMs ?? 0) - RACE.stepMs);
       if (player.huntMs < 1e-6) { player.huntMs = 0; player.chain = 0; }
-      if (!player.connected || outcomeLocked) continue;
+      if (!player.connected || outcomeLocked) { cancelBoost(player); continue; }
       this.consumeInput(player);
-      move(this.activeMap, player.movement, RACE.playerSpeed * RACE.stepMs / 1000, true, undefined,
+      advanceBoost(this.activeMap, player, 1, false,
         () => { player.portalBlinkMs = PACKET_PORTAL_BLINK.durationMs; });
     }
     if (outcomeLocked) {
@@ -247,6 +258,7 @@ export class DataRace {
   ): void {
     if (player.eliminatedAtTick !== null) return;
     this.inputs.delete(player.id);
+    cancelBoost(player);
     if (player.movement.to !== null) {
       const nearest = [player.movement.cell, player.movement.to].map((cell) => {
         const endpoint = map.cells[cell];
@@ -281,6 +293,7 @@ export class DataRace {
   /** Freezes play and assigns competition ranks across survivors and elimination cohorts. */
   private finish(): void {
     this.inputs.clear();
+    this.state.players.forEach(cancelBoost);
     this.state.phase = 'finished';
     const survivors = this.state.players.filter((player) => player.eliminatedAtTick === null)
       .sort((a, b) => b.score - a.score || a.slot - b.slot);

@@ -12,6 +12,7 @@ import {
 import { useMultiplayerAvailability } from './useMultiplayerAvailability';
 import { MultiplayerRecovery, type RecoveryResult, type RecoveryState } from '../infrastructure/adapters/MultiplayerRecovery';
 import { PROTOCOL_VERSION } from '../protocol/version';
+import type { BoostAction } from '../simulation/types';
 
 const RESERVED_ROOM_KEY = 'packetloss.multiplayer.reserved-room';
 const RESERVED_ROOM_STORAGE_MS = 11 * 60_000;
@@ -289,6 +290,8 @@ export function useMultiplayerSession(
         rematch: () => socket.rematch(),
         sendDirection: (direction: 'up' | 'right' | 'down' | 'left') =>
             socket.sendDirection(direction),
+        /** Publishes paid boost controls through the shared scheduled input stream. */
+        sendBoost: (boost: BoostAction) => socket.sendBoost(boost),
         cancelPendingJoin,
         leave: () => {
             recovery.cancel();

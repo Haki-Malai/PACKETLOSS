@@ -60,6 +60,10 @@ export interface RacePlayer {
   connected: boolean;
   score: number;
   movement: Movement;
+  boosting: boolean;
+  boostHeld: boolean;
+  boostTicks: number;
+  boostCostTicks: number;
   huntMs: number;
   protectionMs: number;
   portalBlinkMs?: number;
@@ -103,11 +107,13 @@ export interface PlayerIdentity {
     name: string;
     color?: string;
 }
-/** Direction intent is consumed before movement of targetTick, never on receipt. */
+export type BoostAction = 'press' | 'release' | 'cancel';
+/** Ordered direction and boost intent is consumed before movement of targetTick, never on receipt. */
 export interface ScheduledInput {
   sequence: number;
   targetTick: number;
-  direction: Direction;
+  direction?: Direction;
+  boost?: BoostAction;
 }
 export const SYNCHRONIZATION = {
   maxPredictionTicks: 24,

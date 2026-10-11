@@ -76,6 +76,8 @@ export class HologramPacket {
   private powerAmount: number | undefined;
   private enemyEatProgress: number | null = null;
   private scoreTier: PacketScoreTier | null = null;
+  private boosting = false;
+  private boostReducedMotion = false;
   private disposed = false;
 
   /** Creates independently owned visuals; omitting appearance preserves the solo Packet. */
@@ -267,15 +269,19 @@ export class HologramPacket {
     this.sample(0);
   }
 
-  /** Samples cosmetic animation in seconds without advancing gameplay or changing identity colors; angry eyes retain their placement and size. */
+  /** Samples score-controlled binary details, boost glow and sparks, and power cosmetics without advancing gameplay or changing identity colors; angry eyes retain their placement and size. */
   sample(timeSeconds: number): void {
     if (this.disposed) return;
     const time = Math.max(0, timeSeconds);
     const tier = this.scoreTier;
-    const glowOpacity = tier?.glowOpacity ?? 0;
-    const glowScale = (tier?.glowScale ?? 1) * (1 + Math.sin(time * 2.2) * 0.025);
+    const boost = this.boosting && this.deathProgress === null;
+    const animatedBoost = boost && !this.boostReducedMotion;
+    const boostPulse = animatedBoost ? 0.84 + Math.sin(time * 18) * 0.16 : 1;
+    const glowOpacity = Math.max(tier?.glowOpacity ?? 0, boost ? 0.95 : 0);
+    const glowScale = Math.max(tier?.glowScale ?? 1, boost ? 1.9 : 1)
+      * (boost ? animatedBoost ? 1 + Math.sin(time * 18) * 0.1 : 1 : 1 + Math.sin(time * 2.2) * 0.025);
     this.scoreGlow.visible = glowOpacity > 0 && this.deathProgress === null;
-    this.scoreGlow.material.opacity = glowOpacity * (0.92 + Math.sin(time * 2.2) * 0.08);
+    this.scoreGlow.material.opacity = glowOpacity * (boost ? boostPulse : 0.92 + Math.sin(time * 2.2) * 0.08);
     this.scoreGlow.scale.set(9.4 * glowScale, 8.2 * glowScale, 1);
     const pickup = this.deathProgress === null ? this.frame / 3 : 0;
     const hunter = this.deathProgress === null
@@ -290,7 +296,7 @@ export class HologramPacket {
     this.body.scale.set(1.2, 1, 1);
     for (const material of this.pickupRims) {
       material.color.copy(accent).lerp(this.pickupColor, pickup);
-      material.opacity = (0.85 + pickup * 0.15) * warning;
+      material.opacity = Math.min(1, (0.85 + pickup * 0.15) * warning + (boost ? boostPulse * 0.25 : 0));
     }
     this.body.visible = true;
     this.glitchActive.value = 0;
@@ -309,40 +315,44 @@ export class HologramPacket {
       eye.mesh.material.opacity = 0.96 + Math.sin(time * 2.8) * 0.04;
       if (eye.glow) {
         eye.glow.material.color.copy(accent);
-        eye.glow.material.opacity = (0.35 + Math.sin(time * 2.8) * 0.04) * blink;
+        eye.glow.material.opacity = (0.35 + Math.sin(time * 2.8) * 0.04 + (boost ? boostPulse * 0.45 : 0)) * blink;
+        eye.glow.scale.set(1.8 * (boost ? 1.4 : 1), 3.1 * (boost ? 1.4 : 1), 1);
       }
     }
     for (const [i, digit] of this.digits.entries()) {
       const enabled = tier === null || (digit.surface ? i - 10 < tier.surfaceDigits : i < tier.floatingDigits);
-      const switchTime = time + (this.deathProgress ?? 0) * 8;
+      const switchTime = time * (animatedBoost ? 2.5 : 1) + (this.deathProgress ?? 0) * 8;
       const switchStep = Math.floor(switchTime / (0.8 + noise(i + 320) * 1.4) + digit.phase);
       const value = noise(switchStep * 19 + i * 71 + 840) < 0.5 ? 0 : 1;
       digit.mesh.geometry = this.glyphs[value];
       digit.mesh.userData.glyph = String(value);
-      const phase = (time / digit.period + digit.phase) % 1;
+      const phase = (time / (digit.period * (animatedBoost ? 0.35 : 1)) + digit.phase) % 1;
       const opacity = MathUtils.smoothstep(phase, 0, 0.1) * (1 - MathUtils.smoothstep(phase, 0.8, 1));
       digit.mesh.position.x = digit.x;
-      digit.mesh.position.y = digit.y + (digit.surface ? 0 : (phase - 0.5) * 0.5);
+      digit.mesh.position.y = digit.y + (digit.surface ? 0 : (phase - 0.5) * (animatedBoost ? 1.2 : 0.5));
       digit.mesh.position.z = digit.surface ? 2.145 : 1.5 + Math.sin(time * 0.7 + i * 1.4) * 0.35;
-      digit.mesh.material.opacity = enabled ? digit.surface ? 0.45 + opacity * 0.45 : opacity * (i % 2 === 0 ? 1 : 0.9) : 0;
+      digit.mesh.material.opacity = enabled ? animatedBoost ? 0.45 + opacity * 0.55
+        : digit.surface ? 0.45 + opacity * 0.45 : opacity * (i % 2 === 0 ? 1 : 0.9) : 0;
       digit.mesh.material.color.copy(!digit.surface && i % 5 === 0 ? this.brightColor : this.baseColor).lerp(GOLD_COLOR, hunter);
-      digit.mesh.visible = enabled && (digit.surface === true || opacity > 0.015);
+      digit.mesh.visible = enabled && (animatedBoost || digit.surface === true || opacity > 0.015);
     }
     for (const [i, pixel] of this.pixels.entries()) {
-      const step = Math.floor(time / (0.7 + noise(i + 650) * 1.1));
-      pixel.visible = tier === null || i < tier.pixelCount;
-      pixel.material.opacity = pixel.visible ? (0.2 + noise(step * 23 + i * 43 + 700) * 0.6) * (tier?.pixelOpacity ?? 1) : 0;
+      const step = Math.floor(time / ((0.7 + noise(i + 650) * 1.1) * (animatedBoost ? 0.2 : 1)));
+      pixel.visible = animatedBoost || tier === null || i < tier.pixelCount;
+      const brightness = noise(step * 23 + i * 43 + 700);
+      pixel.material.opacity = pixel.visible ? animatedBoost ? 0.65 + brightness * 0.35
+        : (0.2 + brightness * 0.6) * (tier?.pixelOpacity ?? 1) : 0;
       pixel.material.color.copy(accent);
     }
-    const trailStrength = this.trailOpacity * (tier?.trailStrength ?? 1);
-    this.trail.visible = trailStrength > 0.01;
+    const trailStrength = this.trailOpacity * Math.max(tier?.trailStrength ?? 1, boost ? 1 : 0);
+    this.trail.visible = trailStrength > 0.01 && !(boost && this.boostReducedMotion);
     for (const streak of this.streaks) {
-      const phase = (time / streak.period + streak.phase) % 1;
+      const phase = (time / (streak.period * (boost ? 0.28 : 1)) + streak.phase) % 1;
       const envelope = MathUtils.smoothstep(phase, 0, 0.09) * (1 - MathUtils.smoothstep(phase, 0.48, 1));
-      streak.mesh.position.x = -(3.8 + phase * 1.4);
-      streak.mesh.position.y = streak.y;
-      streak.mesh.scale.x = streak.width * (1 - phase * 0.3);
-      streak.mesh.material.opacity = envelope * trailStrength * 0.75;
+      streak.mesh.position.x = -(3.8 + phase * (boost ? 8.5 : 1.4));
+      streak.mesh.position.y = streak.y * (boost ? 1.35 : 1);
+      streak.mesh.scale.set(streak.width * (1 - phase * 0.3) * (boost ? 3.8 : 1), streak.height * (boost ? 2.4 : 1), 1);
+      streak.mesh.material.opacity = envelope * trailStrength * (boost ? 1 : 0.75);
       streak.mesh.material.color.copy(accent);
       streak.mesh.visible = envelope > 0.02;
     }
@@ -385,6 +395,12 @@ export class HologramPacket {
         }
       });
     }
+  }
+
+  /** Adds paid-speed glow and motion while binary digit counts remain controlled by score. */
+  setBoost(boosting: boolean, reducedMotion = false): void {
+    this.boosting = boosting;
+    this.boostReducedMotion = reducedMotion;
   }
 
   setDeathProgress(progress: number | null): void {

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DIRECTIONS, type RaceMap, type RaceSnapshot } from '../simulation/types';
 import { PROTOCOL_VERSION } from './version';
+import { BOOST } from '../simulation/boost';
 
 export { PROTOCOL_VERSION } from './version';
 const direction = z.enum(DIRECTIONS);
@@ -26,6 +27,10 @@ const player = z
         connected: z.boolean(),
         score: integer,
         movement,
+        boosting: z.boolean(),
+        boostHeld: z.boolean(),
+        boostTicks: finite.nonnegative().max(BOOST.minimumTicks),
+        boostCostTicks: finite.nonnegative().lt(BOOST.ticksPerPoint),
         huntMs: finite.nonnegative(),
         protectionMs: finite.nonnegative(),
         deathMs: finite.nonnegative(),
@@ -166,8 +171,10 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start') }).strict(),
   z.object({ type: z.literal('development-close-wall'), matchId: identifier }).strict(),
     z
-        .object({ type: z.literal('input'), matchId: identifier, sequence: integer, targetTick: integer, direction })
-        .strict(),
+        .object({ type: z.literal('input'), matchId: identifier, sequence: integer, targetTick: integer,
+          direction: direction.optional(), boost: z.enum(['press', 'release', 'cancel']).optional() })
+        .strict()
+        .refine((input) => input.direction !== undefined || input.boost !== undefined),
   z.object({ type: z.literal('rematch') }).strict(),
   z.object({ type: z.literal('leave') }).strict(),
   z.object({ type: z.literal('ping'), sentAt: finite }).strict(),

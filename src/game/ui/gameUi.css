@@ -668,13 +668,18 @@
         opacity: 0.68;
     }
 }
-.packet-race-leave {
+.packet-race-leave,
+.packet-race-boost {
     position: absolute;
     right: max(12px, env(safe-area-inset-right));
     bottom: max(12px, env(safe-area-inset-bottom));
     z-index: 1;
     width: auto;
     pointer-events: auto;
+}
+.packet-race-boost {
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px);
+    flex-direction: column;
 }
 @media (max-width: 680px) {
     .packet-race-status {
@@ -690,6 +695,9 @@
     }
     .packet-race-leave {
         bottom: calc(max(12px, env(safe-area-inset-bottom)) + 54px);
+    }
+    .packet-race-boost {
+        bottom: calc(max(12px, env(safe-area-inset-bottom)) + 110px);
     }
 }
 .packet-dev-link {

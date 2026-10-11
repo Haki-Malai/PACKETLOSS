@@ -16,6 +16,100 @@ function binary(packet: HologramPacket, index: number): Mesh<BufferGeometry, Mes
 }
 
 describe('HologramPacket', () => {
+  it('adds boost glow, sparks, and a stronger trail at low score without unlocking binary details', () => {
+    const packet = new HologramPacket({ color: '#f065b9', character: 'antenna' });
+    const glow = packet.group.getObjectByName('score-glow') as Mesh<BufferGeometry, MeshBasicMaterial>;
+    const streak = packet.group.getObjectByName('glitch-000') as Mesh<BufferGeometry, MeshBasicMaterial>;
+    const eye = packet.group.getObjectByName('eye-left') as Mesh;
+    const spark = packet.group.getObjectByName('floating-pixel-0') as Mesh<BufferGeometry, MeshBasicMaterial>;
+    /** Measures peak brightness over a second without depending on the faster boosted streak's phase. */
+    const peakOpacity = () => {
+      let peak = 0;
+      for (let frame = 0; frame < 120; frame += 1) {
+        packet.sample(frame / 120);
+        peak = Math.max(peak, streak.material.opacity);
+      }
+      return peak;
+    };
+    packet.setScore(1);
+    packet.setMotion(1, 0, 1);
+    packet.sample(1.25);
+    const normalWidth = streak.scale.x;
+    const normalOpacity = peakOpacity();
+    expect(glow.visible).toBe(false);
+    expect(spark.visible).toBe(false);
+    expect(binary(packet, 0).visible).toBe(false);
+    packet.setBoost(true);
+    packet.sample(1.25);
+    expect(glow.visible).toBe(true);
+    expect(glow.material.color.getHexString()).toBe('f065b9');
+    expect(spark.visible).toBe(true);
+    expect(binary(packet, 0).visible).toBe(false);
+    expect(streak.scale.x).toBeGreaterThan(normalWidth);
+    expect(peakOpacity()).toBeGreaterThan(normalOpacity);
+    const pulse = glow.material.opacity;
+    packet.setPower(true, false, 1);
+    packet.sample(2);
+    expect(glow.material.opacity).not.toBe(pulse);
+    expect(eye.morphTargetInfluences![0]).toBe(1);
+    packet.setBoost(false);
+    packet.sample(2);
+    expect(glow.visible).toBe(false);
+    expect(spark.visible).toBe(false);
+    expect(binary(packet, 0).visible).toBe(false);
+    expect(eye.morphTargetInfluences![0]).toBe(1);
+    packet.setBoost(true);
+    packet.setDeathProgress(0.4);
+    packet.sample(2);
+    expect(glow.visible).toBe(false);
+    expect(spark.visible).toBe(false);
+    expect(binary(packet, 0).visible).toBe(false);
+    expect(packet.group.getObjectByName('motion-trail')!.visible).toBe(false);
+    packet.dispose();
+  });
+
+  it.each([
+    { score: 499, floating: 0, surface: 0 },
+    { score: 500, floating: 2, surface: 0 },
+    { score: 3500, floating: 6, surface: 1 },
+    { score: 10000, floating: 10, surface: 4 },
+  ])('keeps boosted binary details within the score progression at $score points', ({ score, floating, surface }) => {
+    const packet = new HologramPacket();
+    const floatingDigits = Array.from({ length: 10 }, (_, index) => binary(packet, index));
+    const surfaceDigits = Array.from({ length: 4 }, (_, index) => packet.group.getObjectByName(`surface-binary-${index}`)!);
+    packet.setScore(score);
+    packet.setBoost(true);
+    packet.sample(1);
+    expect(floatingDigits.filter((digit) => digit.visible)).toHaveLength(floating);
+    expect(surfaceDigits.filter((digit) => digit.visible)).toHaveLength(surface);
+    packet.setScore(499);
+    packet.sample(2);
+    expect([...floatingDigits, ...surfaceDigits].every((digit) => !digit.visible)).toBe(true);
+    packet.dispose();
+  });
+
+  it('replaces boost pulses, sparks, binary details, and streaks with a steady glow under reduced motion', () => {
+    const packet = new HologramPacket();
+    const glow = packet.group.getObjectByName('score-glow') as Mesh<BufferGeometry, MeshBasicMaterial>;
+    const trail = packet.group.getObjectByName('motion-trail')!;
+    packet.setScore(1);
+    packet.setMotion(1, 0, 1);
+    packet.setBoost(true, true);
+    packet.sample(1);
+    const opacity = glow.material.opacity;
+    const scale = glow.scale.clone();
+    packet.sample(2);
+    expect(glow.visible).toBe(true);
+    expect(glow.material.opacity).toBe(opacity);
+    expect(glow.scale.equals(scale)).toBe(true);
+    expect(trail.visible).toBe(false);
+    expect(packet.group.getObjectByName('floating-pixel-0')!.visible).toBe(false);
+    expect(binary(packet, 0).visible).toBe(false);
+    packet.setBoost(false);
+    packet.sample(2);
+    expect(glow.visible).toBe(false);
+    packet.dispose();
+  });
   it.each([
     [-10, 'quiet'], [NaN, 'quiet'], [249, 'quiet'], [250, 'trace'],
     [499, 'trace'], [500, 'spark'], [999, 'spark'], [1_000, 'signal'],
@@ -257,6 +351,7 @@ describe('HologramPacket', () => {
     const packet = new HologramPacket(appearance);
     packet.setScore(12_345);
     packet.setPower(true);
+    packet.setBoost(true);
     packet.sample(0);
     const resources = new Set<BufferGeometry | Material | Texture>();
     packet.group.traverse((object) => {

@@ -77,6 +77,7 @@ const snapshot: RaceSnapshot = {
             eliminatedAtTick: null,
             chain: 0,
             acknowledgedInput: 0,
+            boosting: false, boostHeld: false, boostTicks: 0, boostCostTicks: 0,
         },
         {
             id: 'player-2',
@@ -92,6 +93,7 @@ const snapshot: RaceSnapshot = {
             eliminatedAtTick: null,
             chain: 0,
             acknowledgedInput: 0,
+            boosting: false, boostHeld: false, boostTicks: 0, boostCostTicks: 0,
         },
     ],
     enemies: [],
@@ -154,7 +156,7 @@ describe('MultiplayerSocketClient', () => {
         expect(client.sendDirection('left')).toBeNull();
         client.disconnect();
     });
-    it('authenticates first and sends only sequenced direction intent during play', () => {
+    it('authenticates first and sends only sequenced gameplay intent during play', () => {
         const socket = new FakeSocket();
         const client = new MultiplayerSocketClient(() => socket);
         client.connect({
@@ -205,6 +207,13 @@ describe('MultiplayerSocketClient', () => {
         });
         expect(inputMessage).not.toContain('score');
         expect(inputMessage).not.toContain('position');
+        for (const [index, boost] of (['press', 'release', 'cancel'] as const).entries()) {
+            expect(client.sendBoost(boost)).toBe(index + 2);
+            expect(parseClientMessage(socket.sent[socket.sent.length - 1])).toEqual({
+                type: 'input', matchId: 'match-1', sequence: index + 2,
+                targetTick: expect.any(Number) as number, boost,
+            });
+        }
         client.closeNextWall();
         expect(parseClientMessage(socket.sent[socket.sent.length - 1]))
             .toEqual({ type: 'development-close-wall', matchId: 'match-1' });
@@ -343,14 +352,24 @@ describe('MultiplayerSocketClient', () => {
         expect(client.getUiSnapshot().race?.players[0].score).toBe(100);
 
         uiListener.mockClear();
-        const contracted = structuredClone(scored);
+        const boosted = structuredClone(scored);
+        boosted.tick += 1;
+        boosted.playTicks += 1;
+        Object.assign(boosted.players[0], { boosting: true, boostHeld: true, boostTicks: 6.5, boostCostTicks: 1 });
+        socket.message({ type: 'snapshot', snapshot: encodeRaceSnapshot(map, boosted), serverTimeMs: 2_034,
+            instanceRunId: 'run-1', processGeneration: 'generation-1' });
+        expect(uiListener).toHaveBeenCalledOnce();
+        expect(client.getUiSnapshot().race?.players[0].boosting).toBe(true);
+
+        uiListener.mockClear();
+        const contracted = structuredClone(boosted);
         contracted.tick += 1;
         contracted.playTicks += 1;
         contracted.shrinkStage = 1;
         socket.message({
             type: 'snapshot',
             snapshot: encodeRaceSnapshot(map, contracted),
-            serverTimeMs: 2_034,
+            serverTimeMs: 2_051,
             instanceRunId: 'run-1',
             processGeneration: 'generation-1',
         });
@@ -363,10 +382,11 @@ describe('MultiplayerSocketClient', () => {
         eliminated.playTicks += 1;
         eliminated.players[0].eliminatedAtTick = eliminated.playTicks;
         eliminated.players[0].deathMs = RACE.deathMs;
+        Object.assign(eliminated.players[0], { boosting: false, boostHeld: false, boostTicks: 0 });
         socket.message({
             type: 'snapshot',
             snapshot: encodeRaceSnapshot(map, eliminated),
-            serverTimeMs: 2_051,
+            serverTimeMs: 2_068,
             instanceRunId: 'run-1',
             processGeneration: 'generation-1',
         });

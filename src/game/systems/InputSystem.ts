@@ -9,7 +9,6 @@ interface PauseController {
 }
 
 const BROWSER_SCROLL_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
-const PAUSE_EVENT_KEYS = new Set([' ', 'Spacebar']);
 
 export class InputSystem {
   readonly updatePhase = 'beforeSimulation' as const;
@@ -74,8 +73,9 @@ export class InputSystem {
     }
   }
 
+  /** Reserves keyboard pause for Escape while leaving native button activation intact. */
   private isPauseToggleEvent(event: Pick<KeyboardEvent, 'code' | 'key'>): boolean {
-    return event.code === 'Escape' || event.code === 'Space' || PAUSE_EVENT_KEYS.has(event.key);
+    return event.code === 'Escape' || event.key === 'Escape';
   }
 
   /** Tracks swipe intent and, in development, the pointer position used by collision inspection. */

@@ -117,7 +117,7 @@ describe('InputSystem', () => {
     system.destroy();
   });
 
-  it('toggles pause on keyboard Space code and legacy Spacebar key', () => {
+  it('reserves keyboard pause for Escape and ignores Space code and legacy Spacebar key', () => {
     const { input, togglePause } = createHarness();
 
     const spacePreventDefault = vi.fn();
@@ -136,9 +136,11 @@ describe('InputSystem', () => {
       preventDefault: legacySpacePreventDefault,
     } as unknown as KeyboardEvent);
 
-    expect(togglePause).toHaveBeenCalledTimes(2);
-    expect(spacePreventDefault).toHaveBeenCalledTimes(1);
-    expect(legacySpacePreventDefault).toHaveBeenCalledTimes(1);
+    expect(togglePause).not.toHaveBeenCalled();
+    expect(spacePreventDefault).not.toHaveBeenCalled();
+    expect(legacySpacePreventDefault).not.toHaveBeenCalled();
+    input.emitKeyDown({ code: 'Escape', key: 'Escape', preventDefault: spacePreventDefault } as unknown as KeyboardEvent);
+    expect(togglePause).toHaveBeenCalledOnce();
   });
 
   it('prevents default browser behavior for directional arrow keys', () => {
