@@ -1,0 +1,355 @@
+{
+  "version": 1,
+  "title": "PACKETLOSS Powerups",
+  "createdDate": "2026-10-04",
+  "authoring": "Blender MCP / Blender 5.2.1 LTS",
+  "status": "Available in the development Asset Lab Powerups category; runtime gameplay is not integrated.",
+  "sourceBlend": "asset-sources/powerups/powerups.blend",
+  "coordinates": {
+    "up": "+Y",
+    "forward": "-Z",
+    "groundPlane": "XZ",
+    "tileSize": 16,
+    "units": "Existing game world units; no import rescale required.",
+    "root": "Stationary at ground origin; animate descendants only.",
+    "packetCenter": [
+      0,
+      6.15,
+      0
+    ],
+    "packetPickupAnchor": [
+      0,
+      8.7,
+      0
+    ]
+  },
+  "playback": {
+    "fps": 30,
+    "selectClipByName": true,
+    "looping": "Use LoopRepeat only where loop=true.",
+    "oneshots": "Use LoopOnce and clampWhenFinished; remove expired effects after clip duration.",
+    "clock": "Drive from the same paused/scaled game presentation clock.",
+    "blend": "Packet companion cast poses start and end neutral; use a short ease when blending poses.",
+    "sourceExport": {
+      "format": "GLB",
+      "yUp": true,
+      "animationMode": "SCENE",
+      "splitByObject": false,
+      "activeSceneOnly": true,
+      "selectedObjectsOnly": true,
+      "sceneName": "Set scene name to entry.clip for export.",
+      "frameStart": 0,
+      "frameEnd": "round(durationSeconds * 30)"
+    }
+  },
+  "materials": {
+    "extensions": [
+      "KHR_materials_emissive_strength"
+    ],
+    "textures": "None; self-contained mesh, material and transform/morph animation.",
+    "transparency": "Soft shells use standard alpha blend. Keep depthWrite disabled on transparent materials, as GLTFLoader does.",
+    "bloom": "Optional only. Review images use no compositor bloom.",
+    "layers": "Keep emissive surfaces and transparent shells in their authored order; do not flatten all materials to opaque."
+  },
+  "integration": {
+    "magnet": "Automatic after collection. Point attraction only. Loop magnet-field with packet-magnet while active. Rendered star motes are decorative; gameplay must move actual point instances.",
+    "blast": "Start packet-blast and blast-burst at the same time; outward release at 0.45 s. Radius is an art dimension, not a damage rule.",
+    "reverse-blast": "Start packet-reverse-blast and reverse-blast-vortex together; consuming field forms by 0.35 s. Placement and affected entities remain gameplay-owned.",
+    "laser": "Start packet-laser and laser-beam together; release at 0.48 s. Rotate an independent effect root toward aim. Authored beam extends 64 units forward from its muzzle.",
+    "missile": "Start packet-missile; at 0.36 s spawn missile-flight and missile-launch. Position the projectile root ahead of the Packet (suggested local offset [0,0,-5]); its model center is already 6.15 units above ground. Steer/translate the root using runtime homing. On impact stop flight and start missile-impact at the hit ground origin.",
+    "collection": "Use each kind-collect for a local pickup absorption preview: 0.18 s intake + 0.12 s pulse. The target is above the Packet top face. Runtime must adapt position/trajectory from the actual collected location.",
+    "packetCompanion": "The current player is procedural HologramPacket, not a GLB rig. These matching companion meshes demonstrate the complete casting poses. Reuse their packet-pose/eye transform curves in HologramPacket or deliberately load the companion; they do not automatically retarget onto the current player.",
+    "runtimeLoading": "The development Asset Lab loads these files through PowerupPreviewAssets. Gameplay ArcadeAssets only loads current enemy/multiplier folders; powerups are not available on a gameplay button."
+  },
+  "review": {
+    "still": "asset-sources/powerups/powerups-review.png",
+    "animation": "asset-sources/powerups/powerups-review.gif",
+    "note": "Pickup, effect and Packet rows use different display scales. Review animation repeats clips independently; exported one-shots do not loop."
+  },
+  "assets": [
+    {
+      "file": "magnet-pickup.glb",
+      "clip": "pickup_idle",
+      "durationSeconds": 6,
+      "loop": true,
+      "root": "magnet-pickup-root",
+      "kind": "magnet",
+      "role": "pickup",
+      "nominalDiameter": 4,
+      "activation": "automatic-points-only"
+    },
+    {
+      "file": "blast-pickup.glb",
+      "clip": "pickup_idle",
+      "durationSeconds": 6,
+      "loop": true,
+      "root": "blast-pickup-root",
+      "kind": "blast",
+      "role": "pickup",
+      "nominalDiameter": 4,
+      "activation": "stored-button"
+    },
+    {
+      "file": "reverse-blast-pickup.glb",
+      "clip": "pickup_idle",
+      "durationSeconds": 6,
+      "loop": true,
+      "root": "reverse-blast-pickup-root",
+      "kind": "reverse-blast",
+      "role": "pickup",
+      "nominalDiameter": 4,
+      "activation": "stored-button"
+    },
+    {
+      "file": "laser-pickup.glb",
+      "clip": "pickup_idle",
+      "durationSeconds": 6,
+      "loop": true,
+      "root": "laser-pickup-root",
+      "kind": "laser",
+      "role": "pickup",
+      "nominalDiameter": 4,
+      "activation": "stored-button"
+    },
+    {
+      "file": "missile-pickup.glb",
+      "clip": "pickup_idle",
+      "durationSeconds": 6,
+      "loop": true,
+      "root": "missile-pickup-root",
+      "kind": "missile",
+      "role": "pickup",
+      "nominalDiameter": 4,
+      "activation": "stored-button"
+    },
+    {
+      "file": "magnet-field.glb",
+      "clip": "magnet_active",
+      "durationSeconds": 2.4,
+      "loop": true,
+      "root": "magnet-field-root",
+      "kind": "magnet",
+      "role": "effect",
+      "radius": 28,
+      "affects": "points-only",
+      "notes": "Decorative bits show inward motion; runtime supplies real collected points."
+    },
+    {
+      "file": "blast-burst.glb",
+      "clip": "blast_activate",
+      "durationSeconds": 1.6,
+      "loop": false,
+      "root": "blast-burst-root",
+      "kind": "blast",
+      "role": "effect",
+      "radius": 32,
+      "releaseSeconds": 0.45
+    },
+    {
+      "file": "reverse-blast-vortex.glb",
+      "clip": "vortex_activate",
+      "durationSeconds": 2.2,
+      "loop": false,
+      "root": "reverse-blast-vortex-root",
+      "kind": "reverse-blast",
+      "role": "effect",
+      "radius": 32,
+      "releaseSeconds": 0.35,
+      "notes": "Inward collapse/consumption; no terrain or damage behavior is implemented."
+    },
+    {
+      "file": "laser-beam.glb",
+      "clip": "laser_activate",
+      "durationSeconds": 1.8,
+      "loop": false,
+      "root": "laser-beam-root",
+      "kind": "laser",
+      "role": "effect",
+      "length": 64,
+      "radius": 3.4,
+      "muzzle": [
+        0,
+        6.15,
+        -3
+      ],
+      "releaseSeconds": 0.48,
+      "notes": "Forward -Z. White core, translucent blue envelope, rotating filaments; collision length remains gameplay owned."
+    },
+    {
+      "file": "missile-flight.glb",
+      "clip": "missile_flight",
+      "durationSeconds": 0.8,
+      "loop": true,
+      "root": "missile-flight-root",
+      "kind": "missile",
+      "role": "projectile",
+      "projectileCenter": [
+        0,
+        6.15,
+        0
+      ],
+      "forward": "-Z",
+      "notes": "Translate/steer stationary root from game homing logic; flight animation only animates engine and local banking."
+    },
+    {
+      "file": "missile-launch.glb",
+      "clip": "missile_launch",
+      "durationSeconds": 0.6,
+      "loop": false,
+      "root": "missile-launch-root",
+      "kind": "missile",
+      "role": "launch",
+      "releaseSeconds": 0
+    },
+    {
+      "file": "missile-impact.glb",
+      "clip": "missile_impact",
+      "durationSeconds": 0.7,
+      "loop": false,
+      "root": "missile-impact-root",
+      "kind": "missile",
+      "role": "impact",
+      "radius": 10
+    },
+    {
+      "file": "packet-magnet.glb",
+      "clip": "packet-magnet-active",
+      "durationSeconds": 2.4,
+      "loop": true,
+      "root": "packet-magnet-root",
+      "releaseSeconds": 0.0,
+      "notes": "Fixed root; +Y forward in Blender / -Z in GLB; packet-pose center Z=6.15; transform-only keys baked at 30 fps. Seamless passive points-magnet loop.",
+      "kind": "magnet",
+      "role": "packet-companion"
+    },
+    {
+      "file": "packet-blast.glb",
+      "clip": "packet-blast-cast",
+      "durationSeconds": 1.6,
+      "loop": false,
+      "root": "packet-blast-root",
+      "releaseSeconds": 0.45,
+      "notes": "Fixed root; +Y forward in Blender / -Z in GLB; packet-pose center Z=6.15; transform-only keys baked at 30 fps. One-shot cast starts and ends at neutral; align effect release to releaseSeconds.",
+      "kind": "blast",
+      "role": "packet-companion"
+    },
+    {
+      "file": "packet-reverse-blast.glb",
+      "clip": "packet-vortex-cast",
+      "durationSeconds": 2.2,
+      "loop": false,
+      "root": "packet-reverse-blast-root",
+      "releaseSeconds": 0.35,
+      "notes": "Fixed root; +Y forward in Blender / -Z in GLB; packet-pose center Z=6.15; transform-only keys baked at 30 fps. One-shot cast starts and ends at neutral; align effect release to releaseSeconds.",
+      "kind": "reverse-blast",
+      "role": "packet-companion"
+    },
+    {
+      "file": "packet-laser.glb",
+      "clip": "packet-laser-cast",
+      "durationSeconds": 1.8,
+      "loop": false,
+      "root": "packet-laser-root",
+      "releaseSeconds": 0.48,
+      "notes": "Fixed root; +Y forward in Blender / -Z in GLB; packet-pose center Z=6.15; transform-only keys baked at 30 fps. One-shot cast starts and ends at neutral; align effect release to releaseSeconds.",
+      "kind": "laser",
+      "role": "packet-companion"
+    },
+    {
+      "file": "packet-missile.glb",
+      "clip": "packet-missile-cast",
+      "durationSeconds": 1.0,
+      "loop": false,
+      "root": "packet-missile-root",
+      "releaseSeconds": 0.36,
+      "notes": "Fixed root; +Y forward in Blender / -Z in GLB; packet-pose center Z=6.15; transform-only keys baked at 30 fps. One-shot cast starts and ends at neutral; align effect release to releaseSeconds.",
+      "kind": "missile",
+      "role": "packet-companion"
+    },
+    {
+      "file": "magnet-collect.glb",
+      "clip": "pickup_collect",
+      "durationSeconds": 0.3,
+      "loop": false,
+      "root": "magnet-collect-root",
+      "kind": "magnet",
+      "role": "collection",
+      "absorbSeconds": 0.18,
+      "target": [
+        0,
+        8.7,
+        0
+      ],
+      "notes": "Local absorption to canonical Packet anchor; place or warp travel from actual pickup during integration.",
+      "confirmationHeight": 8.72
+    },
+    {
+      "file": "blast-collect.glb",
+      "clip": "pickup_collect",
+      "durationSeconds": 0.3,
+      "loop": false,
+      "root": "blast-collect-root",
+      "kind": "blast",
+      "role": "collection",
+      "absorbSeconds": 0.18,
+      "target": [
+        0,
+        8.7,
+        0
+      ],
+      "notes": "Local absorption to canonical Packet anchor; place or warp travel from actual pickup during integration.",
+      "confirmationHeight": 8.72
+    },
+    {
+      "file": "reverse-blast-collect.glb",
+      "clip": "pickup_collect",
+      "durationSeconds": 0.3,
+      "loop": false,
+      "root": "reverse-blast-collect-root",
+      "kind": "reverse-blast",
+      "role": "collection",
+      "absorbSeconds": 0.18,
+      "target": [
+        0,
+        8.7,
+        0
+      ],
+      "notes": "Local absorption to canonical Packet anchor; place or warp travel from actual pickup during integration.",
+      "confirmationHeight": 8.72
+    },
+    {
+      "file": "laser-collect.glb",
+      "clip": "pickup_collect",
+      "durationSeconds": 0.3,
+      "loop": false,
+      "root": "laser-collect-root",
+      "kind": "laser",
+      "role": "collection",
+      "absorbSeconds": 0.18,
+      "target": [
+        0,
+        8.7,
+        0
+      ],
+      "notes": "Local absorption to canonical Packet anchor; place or warp travel from actual pickup during integration.",
+      "confirmationHeight": 8.72
+    },
+    {
+      "file": "missile-collect.glb",
+      "clip": "pickup_collect",
+      "durationSeconds": 0.3,
+      "loop": false,
+      "root": "missile-collect-root",
+      "kind": "missile",
+      "role": "collection",
+      "absorbSeconds": 0.18,
+      "target": [
+        0,
+        8.7,
+        0
+      ],
+      "notes": "Local absorption to canonical Packet anchor; place or warp travel from actual pickup during integration.",
+      "confirmationHeight": 8.72
+    }
+  ]
+}
