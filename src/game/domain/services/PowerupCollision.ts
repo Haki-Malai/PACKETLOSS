@@ -3,7 +3,7 @@ import { buildMazePenFootprint, buildMazeWallFootprint, extendMazeWallFootprint,
 import type { WorldMapData } from '../world/WorldState';
 import type { PowerupPoint } from '../../shared/offensivePowerups';
 
-export interface PowerupCollisionWorld { width: number; height: number; solid: Uint8Array }
+export interface PowerupCollisionWorld { width: number; height: number; solid: Uint8Array; tileSize: number }
 export interface PowerupWallHit { time: number; position: PowerupPoint }
 const EPSILON = 1e-9;
 
@@ -20,7 +20,7 @@ export function createPowerupCollisionWorld(map: WorldMapData,
         y * walls.width + (tile.x + 1) * map.tileWidth);
     }
   }
-  return walls;
+  return { ...walls, tileSize: map.tileWidth };
 }
 
 /** Samples a physical segment without allocating or crossing a teleport discontinuity. */

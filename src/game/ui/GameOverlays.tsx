@@ -90,7 +90,7 @@ const POWERUP_LABELS = {
     blast: 'Blast',
     'reverse-blast': 'Reverse blast',
     laser: 'Laser',
-    missile: 'Missile',
+    missile: 'Trace',
 } as const;
 
 /** Shared keyboard and touch inventory presentation for solo and authoritative multiplayer. */

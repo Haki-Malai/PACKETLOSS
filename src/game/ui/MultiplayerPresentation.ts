@@ -405,6 +405,7 @@ function createThreeStage({
                     const model = players.find((candidate) => candidate.color === player.color);
                     if (model) powerupActors.set(player.id, {
                         group: model.packet.group,
+                        direction: player.movement.direction,
                         setPose: (pose) => model.packet.setCastPose(pose),
                     });
                 }

@@ -103,7 +103,10 @@ export class RenderSystem {
     if (assets.powerups) {
       this.powerups = new PowerupPresentation(assets.powerups);
       this.scene.add(this.powerups.group);
-      this.powerupActors.set('packet', { group: this.packet, setPose: (pose) => assets.setPacketCastPose(this.packet, pose) });
+      this.powerupActors.set('packet', { group: this.packet,
+        /** Reads live steering so missile startup turns with the moving Packet. */
+        get direction() { return world.packet.direction.current; },
+        setPose: (pose) => assets.setPacketCastPose(this.packet, pose) });
     }
     for (const enemy of world.enemies) {
       const model = this.assets.createEnemy(enemy.key);

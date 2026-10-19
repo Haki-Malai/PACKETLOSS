@@ -29,11 +29,11 @@ export const WALL_TILE_IDS = [0, 1, 2, 5, 6, 7, 10, 14, 15, 23] as const;
 const PLAYER_SOURCE = 'src/game/infrastructure/three/HologramPacket.ts';
 const MAZE_SOURCE = 'src/game/infrastructure/three/MazeGeometry.ts';
 const POWERUP_NAMES: Record<string, string> = {
-  magnet: 'Magnet', blast: 'Blast', 'reverse-blast': 'Reverse blast', laser: 'Laser', missile: 'Homing missile',
+  magnet: 'Magnet', blast: 'Blast', 'reverse-blast': 'Reverse blast', laser: 'Laser', missile: 'Trace',
 };
 const POWERUP_STATES: Record<string, string> = {
   pickup: 'Pickup idle', collection: 'Collection', effect: 'Activation effect',
-  projectile: 'Flight loop', launch: 'Launch effect', impact: 'Impact effect', 'packet-companion': 'Packet animation',
+  projectile: 'Flight loop', launch: 'Startup assembly', impact: 'Impact effect', 'packet-companion': 'Packet animation',
 };
 
 /** Lists the authored GLBs with their manifest timing and a visible thumbnail pose. */

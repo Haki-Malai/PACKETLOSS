@@ -317,6 +317,49 @@ describe('Offensive powerup presentation', () => {
     for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
   });
 
+  it('attaches Trace assembly to the moving Packet and reveals its retained flight model only on release', async () => {
+    vi.stubGlobal('fetch', fetchModel);
+    const assets = await PowerupAssets.load(), presentation = new PowerupPresentation(assets);
+    const packet = new Group(); packet.position.set(24, 0, 24);
+    const owner: PowerupActorPresentation = { group: packet, direction: 'right', setPose: () => undefined };
+    const actors = new Map([['packet', owner]]), combat = createPowerupCombatState();
+    combat.casts.push({ id: 7, ownerId: 'packet', kind: 'missile', facing: 'right', elapsedMs: 100, origin: null });
+    presentation.sync(combat, [], actors);
+    const missile = presentation.group.getObjectByName('projectile:7')!;
+    const launch = presentation.group.getObjectByName('launch:7')!;
+    expect(missile.visible).toBe(false);
+    expect(launch.visible).toBe(true);
+    expect(missile.position.toArray()).toEqual([24, 0, 24]);
+    expect(launch.position.toArray()).toEqual([24, 0, 24]);
+    packet.position.set(56, 0, 48); owner.direction = 'down';
+    combat.casts[0].elapsedMs = 999;
+    presentation.sync(combat, [], actors);
+    expect(missile.position.toArray()).toEqual([56, 0, 48]);
+    expect(launch.position.toArray()).toEqual([56, 0, 48]);
+    expect(missile.rotation.y).toBe(-Math.PI);
+    expect(launch.rotation.y).toBe(-Math.PI);
+    presentation.sync(combat, [], actors, 10);
+    expect(presentation.group.getObjectByName('projectile:7')).toBe(missile);
+    expect(missile.visible).toBe(false);
+    expect(missile.position.toArray()).toEqual([56, 0, 48]);
+    combat.casts.length = 0;
+    combat.projectiles.push({ id: 7, ownerId: 'packet', targetId: null, x: 56, y: 48,
+      angle: Math.PI / 2, elapsedMs: 0, turns: [] });
+    presentation.sync(combat, [], actors);
+    expect(presentation.group.getObjectByName('projectile:7')).toBe(missile);
+    expect(presentation.group.getObjectByName('launch:7')).toBeUndefined();
+    expect(missile.visible).toBe(true);
+    packet.position.set(72, 0, 48); owner.direction = 'right';
+    combat.projectiles[0].y = 60; combat.projectiles[0].elapsedMs = 100;
+    presentation.sync(combat, [], actors);
+    expect(missile.position.toArray()).toEqual([56, 0, 60]);
+    expect(missile.rotation.y).toBe(-Math.PI);
+    combat.projectiles.length = 0;
+    presentation.sync(combat, [], actors);
+    expect(presentation.group.children).toHaveLength(0);
+    presentation.dispose(); assets.dispose();
+  });
+
   it('releases instance materials at expiry and template resources only when their owner is disposed', async () => {
     vi.stubGlobal('fetch', fetchModel);
     const assets = await PowerupAssets.load();

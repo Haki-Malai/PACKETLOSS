@@ -140,6 +140,26 @@ describe('solo offensive powerups', () => {
     } finally { harness.destroy(); }
   });
 
+  it('launches along the player corridor after a windup turn on the authored demo maze', () => {
+    const harness = new MechanicsDomainHarness({ fixture: 'demo-map', enemyCount: 0, autoStartSystems: false });
+    const system = new PowerupSystem(harness.world, harness.movementRules, new CollectibleSystem(harness.world));
+    try {
+      harness.movementRules.setEntityTile(harness.world.packet, { x: 2, y: 1 });
+      system.equipDevelopment('missile');
+      expect(system.activate()).toBe(true);
+      harness.world.packet.direction.next = 'down';
+      for (let frame = 0; frame < 60; frame += 1) {
+        harness.packetSystem.update(1000 / 60);
+        system.update(1000 / 60);
+      }
+      expect(harness.world.packet.direction.current).toBe('down');
+      expect(harness.world.powerupCombat.projectiles).toHaveLength(1);
+      const missile = harness.world.powerupCombat.projectiles[0];
+      expect(missile).toMatchObject({ x: 40, angle: Math.PI / 2 });
+      expect(missile.y).toBeCloseTo(84);
+    } finally { system.destroy(); harness.destroy(); }
+  });
+
   it('keeps retained Endless weapons and released effects aligned and replaces only evicted section content', () => {
     const stream = new EndlessMazeStream(73);
     const packet = new PacketEntity({ x: 12, y: 60 }, 10, 10);
@@ -156,7 +176,7 @@ describe('solo offensive powerups', () => {
     const originalY = retained.y;
     system.equipDevelopment('missile');
     system.activate();
-    system.update(360);
+    system.update(1000);
     const projectileY = world.powerupCombat.projectiles[0]?.y;
     const cornered = { id: world.powerupCombat.nextId++, ownerId: 'packet', targetId: null,
       x: packet.x, y: packet.y, angle: Math.PI / 2, elapsedMs: 200,

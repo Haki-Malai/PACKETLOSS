@@ -1,4 +1,5 @@
 import { Group, Mesh } from 'three';
+import type { Direction } from '../../domain/valueObjects/Direction';
 import {
   POWERUP_RULES, sampleLaserLength, samplePowerupRadius,
   type PowerupCombatState, type PowerupPickup, type PowerupKind,
@@ -7,6 +8,7 @@ import { PowerupAssets, type PowerupModel, type PowerupPose } from './PowerupAss
 
 export interface PowerupActorPresentation {
   group: Group;
+  direction?: Direction;
   setPose(_pose: PowerupPose | null): void;
 }
 
@@ -21,7 +23,7 @@ export class PowerupPresentation {
     this.group.name = 'offensive-powerups';
   }
 
-  /** Seeks stable effect IDs and bounded laser growth from simulation ages, preserving pause and late snapshots. */
+  /** Seeks simulation ages, showing Trace assembly on the Packet until authoritative release; pauses and late snapshots never advance combat. */
   sync(
     combat: PowerupCombatState | null,
     pickups: readonly PowerupPickup[],
@@ -43,8 +45,9 @@ export class PowerupPresentation {
         if (!actor) continue;
         const elapsed = cast.elapsedMs + lead;
         const rule = POWERUP_RULES[cast.kind];
-        if (elapsed >= rule.durationMs) continue;
-        const angle = facingAngle(cast.facing);
+        const attachedMissile = cast.kind === 'missile' && cast.origin === null;
+        if (elapsed >= rule.durationMs && !attachedMissile) continue;
+        const angle = facingAngle(attachedMissile ? actor.direction ?? cast.facing : cast.facing);
         const pose = this.get(`cast:${cast.id}`, cast.kind, 'packet-companion', used);
         pose.sample(elapsed);
         pose.group.position.copy(actor.group.position);
@@ -55,11 +58,24 @@ export class PowerupPresentation {
           if (object instanceof Mesh && object.name.startsWith('packet-pose')) object.visible = false;
         });
         actor.setPose(pose.pose(angle));
+        if (attachedMissile) {
+          const missile = this.get(`projectile:${cast.id}`, 'missile', 'projectile', used);
+          missile.group.position.copy(actor.group.position);
+          missile.group.rotation.y = modelRotation(angle);
+          missile.sample(0);
+          // The assembly clip owns the shard until its identical flight model detaches.
+          missile.group.visible = false;
+          const launch = this.get(`launch:${cast.id}`, 'missile', 'launch', used);
+          launch.group.position.copy(actor.group.position);
+          launch.group.rotation.y = modelRotation(angle);
+          launch.sample(Math.min(1, elapsed / rule.releaseMs) * POWERUP_RULES.missile.launchDurationMs);
+        }
       }
       for (const projectile of combat.projectiles) {
         const elapsed = projectile.elapsedMs + lead;
         if (elapsed >= POWERUP_RULES.missile.lifetimeMs) continue;
         const model = this.get(`projectile:${projectile.id}`, 'missile', 'projectile', used);
+        model.group.visible = true;
         model.group.position.set(projectile.x, 0, projectile.y);
         model.group.rotation.y = modelRotation(projectile.angle);
         model.sample(elapsed);
@@ -133,7 +149,7 @@ function modelRotation(angle: number): number {
   return -angle - Math.PI / 2;
 }
 
-/** Returns the common planar angle for a direction locked at activation. */
+/** Returns the common planar angle for a cast's locked direction or a startup missile's live heading. */
 function facingAngle(facing: string): number {
   return facing === 'up' ? -Math.PI / 2 : facing === 'down' ? Math.PI / 2 : facing === 'left' ? Math.PI : 0;
 }

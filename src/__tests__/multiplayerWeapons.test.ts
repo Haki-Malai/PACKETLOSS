@@ -195,6 +195,19 @@ describe('authoritative offensive weapons', () => {
     expect(game.snapshot().players.map((candidate) => candidate.score)).toEqual([0, 0]);
   });
 
+  it('uses the authoritative player heading when a missile releases after a windup turn', () => {
+    const { game } = gameFixture();
+    game.equipPowerup('alice', 'missile');
+    game.activate('alice', 1, 1);
+    game.step();
+    expect(game.input('alice', 1, 'down', game.tick + 1)).toBe(true);
+    steps(game, 59);
+    const snapshot = game.snapshot();
+    expect(snapshot.combat.projectiles).toHaveLength(1);
+    expect(snapshot.combat.projectiles[0].angle).toBe(Math.PI / 2);
+    expect(snapshot.combat.projectiles[0].x).toBeCloseTo(56);
+  });
+
   it('batches simultaneous casts so both opponents die in one elimination cohort', () => {
     const { game } = gameFixture();
     for (const id of ['alice', 'bob']) { game.equipPowerup(id, 'reverse-blast'); game.activate(id, 1, 1); }
@@ -231,11 +244,11 @@ describe('authoritative offensive weapons', () => {
 
   it('interpolates matching authoritative missiles between buffered snapshots', () => {
     const { game, map } = gameFixture({ protectionMs: 1000 });
-    game.equipPowerup('alice', 'missile'); game.activate('alice', 1, 1); steps(game, 27);
+    game.equipPowerup('alice', 'missile'); game.activate('alice', 1, 1); steps(game, 63);
     const first = game.snapshot(), sync = new MultiplayerSynchronization();
-    sync.acceptSnapshot(map, first, 'alice', 1, 450);
-    steps(game, 3); const second = game.snapshot(); sync.acceptSnapshot(map, second, 'alice', 2, 500);
-    const frame = sync.sample(575)!;
+    sync.acceptSnapshot(map, first, 'alice', 1, 1050);
+    steps(game, 3); const second = game.snapshot(); sync.acceptSnapshot(map, second, 'alice', 2, 1100);
+    const frame = sync.sample(1175)!;
     expect(frame.combat.projectiles[0].id).toBe(first.combat.projectiles[0].id);
     expect(frame.combat.projectiles[0].x).toBeGreaterThan(first.combat.projectiles[0].x);
     expect(frame.combat.projectiles[0].x).toBeLessThan(second.combat.projectiles[0].x);

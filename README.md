@@ -14,7 +14,7 @@ Recover data bits, avoid enemies, and use power cores to turn the chase around. 
 ## Controls
 
 - Move: arrow keys or WASD; swipe on mobile.
-- Use a held offensive weapon: E or the inventory button. Collect blast, reverse blast, laser, or missile; a new pickup replaces the single inventory slot. Laser holds Packet still for its full animation and reaches the first wall without a range cap. Weapon collection and kills add no score.
+- Use a held offensive weapon: E or the inventory button. Collect blast, reverse blast, laser, or missile; a new pickup replaces the single inventory slot. Laser holds Packet still for its full animation and reaches the first wall without a range cap. Missile follows nearby opponents along straight corridors, turns only at corners or junctions, and expires three seconds after launch, with no turn-count limit. Weapon collection and kills add no score.
 - Boost in Battle Royale: tap Space or the Boost button for a 125 ms burst; hold to continue. Movement doubles while spending 40 points per second only while actually moving; walls and laser movement locks cost nothing. Boost ends when score runs out.
 - Pause in solo play: Escape, the HUD pause button, or a click/tap on the game canvas. Resume through the pause menu or Escape; clicking its backdrop does not resume. Battle Royale cannot pause.
 - Navigate menus with Tab and Enter/Space; Escape returns from a submenu. Restarting or leaving an unfinished run requires confirmation.
@@ -24,6 +24,12 @@ Settings include menu motion and fullscreen where supported. Sound is a disabled
 
 ## Development
 
+Development commands are grouped under `dev:*`: `pnpm dev` runs the frontend alone,
+`pnpm dev:demo` selects the demo maze, and `pnpm dev:full` runs the complete local stack.
+The shortcuts below reuse the full-stack launcher and accept its additional options.
+Development, demo, and `pnpm preview` default to port **1337** and fail if their port
+is occupied. Run them separately or select an explicit port override.
+
 The full local stack uses Docker Compose: **DynamoDB Local**, two **AWS Node.js 22 Lambda runtime emulators**, the HTTP gateway, Node.js 24 game server, and Vite. Start Docker Desktop or Colima first (`colima start --cpu 4 --memory 4` on this machine), then:
 
 ```sh
@@ -32,11 +38,11 @@ node scripts/dev-full.mjs
 pnpm dev:full
 ```
 
-Node.js 24 runs the game server and toolchain; API Lambdas use Node.js 22, matching the runtime supported by the pinned infrastructure provider. No AWS account, LocalStack subscription, or cloud credentials are needed. The first run downloads images and dependencies; later runs use cached images. Open **http://127.0.0.1:5173** or **http://localhost:5173**, enter a name, and choose **Play as guest**. Multiplayer becomes **Ready** automatically; no owner login, region startup, or local cooldown is required.
+Node.js 24 runs the game server and toolchain; API Lambdas use Node.js 22, matching the runtime supported by the pinned infrastructure provider. No AWS account, LocalStack subscription, or cloud credentials are needed. The first run downloads images and dependencies; later runs use cached images. Open **http://127.0.0.1:1337** or **http://localhost:1337**, enter a name, and choose **Play as guest**. Multiplayer becomes **Ready** automatically; no owner login, region startup, or local cooldown is required.
 
 | Service | Address |
 | --- | --- |
-| Browser | http://127.0.0.1:5173 |
+| Browser | http://127.0.0.1:1337 |
 | Lambda HTTP gateway | http://127.0.0.1:8787 |
 | Game HTTP / WebSocket | http://127.0.0.1:8080 / ws://127.0.0.1:8080/ws |
 | Private game administration | http://127.0.0.1:8081 (requires generated token) |
@@ -49,7 +55,7 @@ Guests have independent identities and persistent scores. Reusing a name never t
 
 Create a multiplayer room and two randomly named **BOT** players automatically join and ready up, leaving one spare seat for a friend. Ready yourself and press Start. Bots run in the local Node service and use guest authentication, single-use tickets, real WebSockets, and directional inputs to collect pickups; the server applies the normal scoring, collision, and respawn rules. They ready again after Rematch and leave when no human participants or reconnect reservations remain. Bots never create rooms or start matches. Use `--bots 0` for manual multi-browser tests, or `--bots 3` for a full four-player solo test; `PACKETLOSS_DEV_BOTS` also accepts 0–3. Production has no automated players.
 
-Use `pnpm dev:full -- --multi` to enter Battle Royale directly with the configured bots (two by default), bypassing account and room menus. It restores your local identity or creates a Developer guest, starts as soon as the bots are ready, and replaces your previous match with a fresh stage-zero match on every page refresh. Press **C** to close the next wall immediately; the countdown skips to its deadline without advancing player movement or effect timers. These matches do not save results. `--multi` requires at least one bot and cannot be combined with `--solo`.
+Use `pnpm dev:multi` to enter Battle Royale directly with the configured bots (two by default), bypassing account and room menus. It restores your local identity or creates a Developer guest, starts as soon as the bots are ready, and replaces your previous match with a fresh stage-zero match on every page refresh. Press **C** to close the next wall immediately; the countdown skips to its deadline without advancing player movement or effect timers. These matches do not save results. `--multi` requires at least one bot and cannot be combined with `--solo`.
 
 Development gameplay keys **1**, **2**, **3**, and **4** equip blast, reverse blast, laser, and missile respectively. Press **E** to use the held weapon. Multiplayer grants require the local development server capability and affect only the requesting player; production rejects them.
 
@@ -58,12 +64,12 @@ Use `--solo` for a development-only one-player Battle Royale. It disables bots a
 For account testing, seeded emails are `owner@packetloss.local` and `friend1@packetloss.local` through `friend3@packetloss.local`, all with password `packetloss-dev`. New local passwords may be any non-empty string up to 128 characters. Confirmation and recovery use `000000`; no email is sent. Production policies are unchanged.
 
 ```sh
-pnpm dev:full -- --detach  # Keep containers running in the background
-pnpm dev:full -- --solo    # Start a one-player Battle Royale from Create room
-pnpm dev:full -- --multi   # Start immediately with bots; refresh resets; C closes a wall
+pnpm dev:detach  # Keep containers running in the background
+pnpm dev:solo    # Start a one-player Battle Royale from Create room
+pnpm dev:multi   # Start immediately with bots; refresh resets; C closes a wall
 pnpm dev:full -- --bots 0  # Disable automatic players for games with friends
-pnpm dev:full -- --stop    # Stop; preserve database and outbox
-pnpm dev:full -- --reset   # Explicitly erase local data and start fresh
+pnpm dev:stop    # Stop; preserve database and outbox
+pnpm dev:reset   # Explicitly erase local data and start fresh
 ```
 
 `--web-port`, `--api-port`, `--game-port`, and `--admin-port` override published ports. `--help` lists options. The matching `PACKETLOSS_DEV_*_PORT` environment variables work too. Ctrl+C stops a foreground run without erasing data. To inspect logs:

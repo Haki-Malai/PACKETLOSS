@@ -1,6 +1,7 @@
 import { DIRECTION_VECTORS, type Direction } from '../domain/valueObjects/Direction';
 import { expandingCircleContact, firstPowerupWallHit, interpolatePowerupPoint, sweepPowerupBodies,
   type PowerupCollisionWorld } from '../domain/services/PowerupCollision';
+import { missileCenterDistance, missileHeading, steerMissile } from '../domain/services/MissileNavigation';
 import { POWERUP_RULES, sampleLaserLength, samplePowerupRadius, type PowerupCast,
   type PowerupCombatActor, type PowerupCombatState, type PowerupEffect, type PowerupHit,
   type PowerupKind, type PowerupPoint, type PowerupProjectile } from '../shared/offensivePowerups';
@@ -10,7 +11,7 @@ const EPSILON = 1e-9;
 interface IntervalActor extends PowerupCombatActor { endpoint?: PowerupPoint }
 interface TimedHit extends PowerupHit { timeMs: number }
 interface MissileMotion {
-  duration: number; angle: number; targetId: string | null;
+  duration: number; angle: number; targetId: string | null; turned: boolean;
   from: PowerupPoint; to: PowerupPoint; contact: number; victim?: PowerupCombatActor;
 }
 
@@ -23,7 +24,8 @@ export function createPowerupCombatState(): PowerupCombatState {
 export function clonePowerupCombatState(state: PowerupCombatState): PowerupCombatState {
   return { ...state,
     casts: state.casts.map((cast) => ({ ...cast, origin: cast.origin ? { ...cast.origin } : null })),
-    projectiles: state.projectiles.map((projectile) => ({ ...projectile })),
+    projectiles: state.projectiles.map((projectile) => ({ ...projectile,
+      turns: projectile.turns.map((turn) => ({ ...turn })) })),
     effects: state.effects.map((effect) => ({ ...effect, ...(effect.source ? { source: { ...effect.source } } : {}) })),
   };
 }
@@ -54,7 +56,7 @@ export function addPowerupCollection(state: PowerupCombatState, ownerId: string,
     source: { ...source }, angle: 0, elapsedMs: 0, durationMs: 300, radius: 0, length: 0 });
 }
 
-/** Advances casts and swept hits using world units; kills are returned together for mode-owned outcomes. */
+/** Advances casts and swept hits, splitting missile center turns; kills are returned together for mode-owned outcomes. */
 export function stepPowerupCombat(state: PowerupCombatState, deltaMs: number,
   actors: readonly PowerupCombatActor[], walls: PowerupCollisionWorld,
   playerSpeedWorldUnitsPerSecond: number): PowerupHit[] {
@@ -63,6 +65,10 @@ export function stepPowerupCombat(state: PowerupCombatState, deltaMs: number,
   let elapsed = 0;
   while (elapsed < deltaMs - EPSILON) {
     let stepMs = Math.min(MAX_COMBAT_STEP_MS, deltaMs - elapsed);
+    if (playerSpeedWorldUnitsPerSecond > 0) for (const projectile of state.projectiles) {
+      stepMs = Math.min(stepMs, missileCenterDistance(projectile, projectile.angle, walls.tileSize)
+        / (playerSpeedWorldUnitsPerSecond * POWERUP_RULES.missile.speedMultiplier) * 1000);
+    }
     for (const actor of actors) {
       const boundary = actor.teleportMotion ? actor.teleportMotion.fraction * deltaMs : Infinity;
       if (boundary > elapsed + EPSILON) stepMs = Math.min(stepMs, boundary - elapsed);
@@ -190,23 +196,18 @@ function laserReach(effect: PowerupEffect, age: number, walls: PowerupCollisionW
   return sampleLaserLength(age, wall ? length * wall.time : length);
 }
 
-/** Spawns ahead of the caster only after checking the whole physical launch segment. */
+/** Detaches the startup missile from the caster's current corridor position, preserving its presentation identity. */
 function launchMissile(state: PowerupCombatState, cast: PowerupCast, actors: readonly PowerupCombatActor[],
   walls: PowerupCollisionWorld, hits: Map<string, TimedHit>, remainingMs: number, speed: number): void {
   const origin = cast.origin!;
   const rule = POWERUP_RULES.missile;
-  const angle = directionAngle(cast.facing);
-  const muzzle = muzzlePoint({ ...origin, angle }, rule.muzzle);
-  state.effects.push({ id: state.nextId++, ownerId: cast.ownerId, kind: 'missile', role: 'launch',
-    ...muzzle, angle, elapsedMs: remainingMs, durationMs: rule.launchDurationMs, radius: 0, length: 0 });
-  const wall = firstPowerupWallHit(walls, origin, muzzle, rule.radius);
-  if (wall) { missileImpact(state, cast.ownerId, wall.position, angle, remainingMs); return; }
+  const angle = directionAngle(actors.find((actor) => actor.id === cast.ownerId)?.direction ?? cast.facing);
   const target = eligibleTargets(actors, cast.ownerId, hits).map((actor) => ({ actor,
     distance: Math.hypot((actor.previous ?? actor).x - origin.x, (actor.previous ?? actor).y - origin.y) }))
     .filter((candidate) => candidate.distance <= rule.targetRange)
     .sort((a, b) => a.distance - b.distance || a.actor.id.localeCompare(b.actor.id))[0]?.actor;
-  const projectile: PowerupProjectile = { id: state.nextId++, ownerId: cast.ownerId,
-    targetId: target?.id ?? null, ...muzzle, angle, elapsedMs: 0 };
+  const projectile: PowerupProjectile = { id: cast.id, ownerId: cast.ownerId,
+    targetId: target?.id ?? null, ...origin, angle, elapsedMs: 0, turns: [] };
   state.projectiles.push(projectile);
   moveMissile(state, projectile, remainingMs, actors, walls, speed, hits);
 }
@@ -225,27 +226,23 @@ function advanceMissiles(state: PowerupCombatState, deltaMs: number, actors: rea
   }
 }
 
-/** Samples steering and first contact without mutating projectiles or reserving a future casualty. */
+/** Samples cardinal corridor travel and center steering, self-destructing at dead ends without crossing walls. */
 function previewMissile(state: PowerupCombatState, projectile: PowerupProjectile, deltaMs: number,
   actors: readonly PowerupCombatActor[], walls: PowerupCollisionWorld, speed: number,
   hits: ReadonlyMap<string, TimedHit>): MissileMotion {
   const rule = POWERUP_RULES.missile;
   const duration = Math.min(deltaMs, rule.lifetimeMs - projectile.elapsedMs);
   const intervalStartMs = state.clockMs - deltaMs;
-  const target = actors.find((actor) => actor.id === projectile.targetId && actor.active && !actor.protected
-    && (hits.get(actor.id)?.timeMs ?? Infinity) >= intervalStartMs - EPSILON);
-  let angle = projectile.angle;
-  if (target) {
-    const desired = Math.atan2(target.y - projectile.y, target.x - projectile.x);
-    const difference = Math.atan2(Math.sin(desired - angle), Math.cos(desired - angle));
-    const maximum = rule.turnRadiansPerSecond * duration / 1000;
-    angle += Math.max(-maximum, Math.min(maximum, difference));
-  }
+  const steering = steerMissile(walls, projectile, eligibleTargets(actors, projectile.ownerId, hits, intervalStartMs));
+  const direction = steering.direction ?? missileHeading(projectile.angle);
+  const angle = directionAngle(direction);
   const from = { x: projectile.x, y: projectile.y };
-  const distance = speed * rule.speedMultiplier * duration / 1000;
-  const to = { x: from.x + Math.cos(angle) * distance, y: from.y + Math.sin(angle) * distance };
+  const turned = angle !== projectile.angle;
+  const distance = steering.direction === null ? 0 : speed * rule.speedMultiplier * duration / 1000;
+  const vector = DIRECTION_VECTORS[direction];
+  const to = { x: from.x + vector.dx * distance, y: from.y + vector.dy * distance };
   const wall = firstPowerupWallHit(walls, from, to, rule.radius);
-  let contact = wall?.time ?? Infinity;
+  let contact = steering.direction === null ? 0 : wall?.time ?? Infinity;
   let victim: PowerupCombatActor | undefined;
   for (const actor of actors.filter((actor) => actor.active && actor.id !== projectile.ownerId)) {
     const endpoint = deltaMs > EPSILON ? interpolatePowerupPoint(actor.previous ?? actor, actor, duration / deltaMs) : actor;
@@ -253,17 +250,18 @@ function previewMissile(state: PowerupCombatState, projectile: PowerupProjectile
     if (time === null || (hits.get(actor.id)?.timeMs ?? Infinity) < intervalStartMs + duration * time - EPSILON) continue;
     if (time < contact - EPSILON) { contact = time; victim = actor; }
   }
-  return { duration, angle, targetId: target?.id ?? null, from, to, contact, victim };
+  return { duration, angle, targetId: steering.targetId, turned, from, to, contact, victim };
 }
 
-/** Applies a sampled missile path, choosing a wall before an equally timed opponent hit. */
+/** Records cardinal turns and applies travel until impact, a dead end, or harmless lifetime self-destruction. */
 function moveMissile(state: PowerupCombatState, projectile: PowerupProjectile, deltaMs: number,
   actors: readonly PowerupCombatActor[], walls: PowerupCollisionWorld, speed: number,
   hits: Map<string, TimedHit>, sampled?: MissileMotion): void {
   const rule = POWERUP_RULES.missile;
   if (projectile.elapsedMs >= rule.lifetimeMs) return;
   const motion = sampled ?? previewMissile(state, projectile, deltaMs, actors, walls, speed, hits);
-  const { duration, angle, targetId, from, to, contact, victim } = motion;
+  const { duration, angle, targetId, turned, from, to, contact, victim } = motion;
+  if (turned) projectile.turns.push({ ...from, angle, elapsedMs: projectile.elapsedMs });
   projectile.angle = angle;
   projectile.targetId = targetId;
   if (contact !== Infinity) {
@@ -274,7 +272,13 @@ function moveMissile(state: PowerupCombatState, projectile: PowerupProjectile, d
       timeMs: state.clockMs - deltaMs + duration * contact });
     missileImpact(state, projectile.ownerId, point, projectile.angle, Math.max(0, duration * (1 - contact)));
     projectile.elapsedMs = rule.lifetimeMs;
-  } else { Object.assign(projectile, to); projectile.elapsedMs += duration; }
+  } else {
+    Object.assign(projectile, to);
+    projectile.elapsedMs += duration;
+    if (projectile.elapsedMs >= rule.lifetimeMs - EPSILON) {
+      missileImpact(state, projectile.ownerId, to, projectile.angle, Math.max(0, deltaMs - duration));
+    }
+  }
 }
 
 /** Retains the earliest physical hit even when a later contact was discovered first. */

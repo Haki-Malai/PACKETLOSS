@@ -184,7 +184,7 @@ export class DataRace {
     this.state.rankings = [];
   }
 
-  /** Advances one authoritative 60 Hz step, holding laser casters still until their animation completes. */
+  /** Advances one authoritative 60 Hz step, holding laser casters through their animation and supplying current missile release headings. */
   step(): void {
     if (this.state.phase === 'finished' || this.state.phase === 'aborted') return;
     this.state.tick += 1;
@@ -223,6 +223,7 @@ export class DataRace {
     }
     this.shrinkIfDue();
     const actors = this.state.players.map((player) => ({ id: player.id, ...this.worldPosition(player),
+      direction: player.movement.direction,
       radius: SPRITE_SIZE.packet / 2, active: player.eliminatedAtTick === null,
       protected: player.protectionMs > 0 || (player.portalBlinkMs ?? 0) > 0,
       previous: previous.get(player.id), teleported: teleported.has(player.id), teleportMotion: teleported.get(player.id) }));

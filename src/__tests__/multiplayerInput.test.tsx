@@ -62,7 +62,7 @@ describe('multiplayer shared input', () => {
     document.body.append(field);
     fireEvent.keyDown(field, { code: 'KeyE' });
     field.remove();
-    fireEvent.click(screen.getByRole('button', { name: 'Use Missile' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use Trace' }));
     expect(harness.activatePowerup).toHaveBeenCalledTimes(2);
     harness.connection.race.combat.casts.push({ id: 1, ownerId: harness.connection.playerId,
       kind: 'missile', facing: 'right', elapsedMs: 0, origin: null });

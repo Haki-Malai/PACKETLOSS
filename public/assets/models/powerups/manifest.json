@@ -3,7 +3,7 @@
   "title": "PACKETLOSS Powerups",
   "createdDate": "2026-10-04",
   "authoring": "Blender MCP / Blender 5.2.1 LTS",
-  "status": "Blast, reverse blast, laser, and missile are integrated into gameplay; magnet remains available only in the development Asset Lab.",
+  "status": "Blast, reverse blast, laser, and Trace are integrated into gameplay; magnet remains available only in the development Asset Lab.",
   "sourceBlend": "asset-sources/powerups/powerups.blend",
   "coordinates": {
     "up": "+Y",
@@ -56,7 +56,7 @@
     "blast": "Start packet-blast and blast-burst at the same time; outward release at 0.45 s. Runtime samples the expanding shock front and collision from the shared 32-unit gameplay envelope.",
     "reverse-blast": "Start packet-reverse-blast and reverse-blast-vortex together; a lethal 32-unit pulse releases at 0.35 s before the inward-collapse animation. Placement remains gameplay-owned.",
     "laser": "Start packet-laser and laser-beam together; release at 0.48 s and hold the Packet's position and facing through 1.8 s. Mechanically attach the attack origin ahead of its caster while rotating an independent effect root toward aim. Scale the authored 64-unit beam to the first wall or arena boundary without a gameplay range cap.",
-    "missile": "Start packet-missile; at 0.36 s spawn missile-flight and missile-launch. Position the projectile root ahead of the Packet (suggested local offset [0,0,-5]); its model center is already 6.15 units above ground. Steer/translate the root using runtime homing. On impact stop flight and start missile-impact at the hit ground origin.",
+    "missile": "Trace uses the compatible missile key and filenames. Start packet-missile and missile-launch together. Retarget the 0.6-second assembly clip across the full one-second startup, following the moving Packet and its current heading. Hide the retained missile-flight model during assembly; reveal it at release from the same ground origin with no forward offset. Its shard center is 10.2 units above ground, clear of the Packet. Translate and steer only the stationary root along gameplay-owned cardinal segments. On impact or expiry, replace flight with the harmless visual corruption burst; damage remains direct-contact only.",
     "collection": "Use each kind-collect for a local pickup absorption preview: 0.18 s intake + 0.12 s pulse. The target is above the Packet top face. Runtime must adapt position/trajectory from the actual collected location.",
     "packetCompanion": "Runtime applies the authored packet-pose and eye transform curves to the existing procedural HologramPacket, preserving player color and appearance. Companion body and eye meshes remain hidden while charge decorations follow the player.",
     "runtimeLoading": "ArcadeAssets owns offensive powerup assets for gameplay; PowerupPreviewAssets shares their loading and disposal helpers for the development Asset Lab. Magnet remains preview-only."
@@ -120,7 +120,8 @@
       "kind": "missile",
       "role": "pickup",
       "nominalDiameter": 4,
-      "activation": "stored-button"
+      "activation": "stored-button",
+      "sourceBlend": "asset-sources/powerups/trace.blend"
     },
     {
       "file": "magnet-field.glb",
@@ -185,11 +186,12 @@
       "role": "projectile",
       "projectileCenter": [
         0,
-        6.15,
+        10.2,
         0
       ],
       "forward": "-Z",
-      "notes": "Translate/steer stationary root from game homing logic; flight animation only animates engine and local banking."
+      "notes": "Trace faceted data shard with a cyan-white core and a seamless broken-pixel trail. The root stays stationary; gameplay owns position and cardinal heading.",
+      "sourceBlend": "asset-sources/powerups/trace.blend"
     },
     {
       "file": "missile-launch.glb",
@@ -199,7 +201,9 @@
       "root": "missile-launch-root",
       "kind": "missile",
       "role": "launch",
-      "releaseSeconds": 0
+      "releaseSeconds": 0.6,
+      "sourceBlend": "asset-sources/powerups/trace.blend",
+      "notes": "Pixel assembly ends with the same shard geometry and transform as flight. Sample this 0.6-second authored clip across the one-second startup and hold its final pose while waiting for authoritative release."
     },
     {
       "file": "missile-impact.glb",
@@ -209,7 +213,9 @@
       "root": "missile-impact-root",
       "kind": "missile",
       "role": "impact",
-      "radius": 10
+      "radius": 10,
+      "sourceBlend": "asset-sources/powerups/trace.blend",
+      "notes": "White checksum flash, cyan/pink scanline tears, and square data fragments. Visual only: no splash damage."
     },
     {
       "file": "packet-magnet.glb",
@@ -261,10 +267,11 @@
       "durationSeconds": 1.0,
       "loop": false,
       "root": "packet-missile-root",
-      "releaseSeconds": 0.36,
-      "notes": "Fixed root; +Y forward in Blender / -Z in GLB; packet-pose center Z=6.15; transform-only keys baked at 30 fps. One-shot cast starts and ends at neutral; align effect release to releaseSeconds.",
+      "releaseSeconds": 1,
+      "notes": "One-second Trace charge with upward data motes, restrained body compression, and eye focus. The Packet pose starts and ends neutral; the assembly model supplies the shard.",
       "kind": "missile",
-      "role": "packet-companion"
+      "role": "packet-companion",
+      "sourceBlend": "asset-sources/powerups/trace.blend"
     },
     {
       "file": "magnet-collect.glb",
@@ -349,7 +356,8 @@
         0
       ],
       "notes": "Local absorption to canonical Packet anchor; place or warp travel from actual pickup during integration.",
-      "confirmationHeight": 8.72
+      "confirmationHeight": 8.72,
+      "sourceBlend": "asset-sources/powerups/trace.blend"
     }
   ]
 }

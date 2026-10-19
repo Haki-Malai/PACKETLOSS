@@ -20,6 +20,7 @@ const movement = z
     .strict();
 const powerupKind = z.enum(OFFENSIVE_POWERUPS);
 const point = z.object({ x: finite, y: finite }).strict();
+const missileAngle = z.union([z.literal(0), z.literal(Math.PI / 2), z.literal(Math.PI), z.literal(-Math.PI / 2)]);
 const pickup = z.object({ id: integer, cell: integer, kind: z.enum(['bit', 'core', ...OFFENSIVE_POWERUPS]) }).strict();
 const combat = z.object({
     clockMs: finite.nonnegative(),
@@ -27,7 +28,9 @@ const combat = z.object({
     casts: z.array(z.object({ id: integer, ownerId: identifier, kind: powerupKind, facing: direction,
         elapsedMs: finite.nonnegative(), origin: point.nullable() }).strict()).max(4),
     projectiles: z.array(z.object({ id: integer, ownerId: identifier, targetId: identifier.nullable(),
-        x: finite, y: finite, angle: finite, elapsedMs: finite.nonnegative() }).strict()).max(256),
+        x: finite, y: finite, angle: missileAngle, elapsedMs: finite.nonnegative(),
+        turns: z.array(z.object({ x: finite, y: finite, angle: missileAngle,
+            elapsedMs: finite.nonnegative() }).strict()).max(256) }).strict()).max(256),
     effects: z.array(z.object({ id: integer, ownerId: identifier, kind: powerupKind,
         role: z.enum(['attack', 'launch', 'impact', 'collection']), x: finite, y: finite, angle: finite,
         elapsedMs: finite.nonnegative(), durationMs: finite.nonnegative(), radius: finite.nonnegative(),

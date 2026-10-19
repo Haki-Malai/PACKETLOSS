@@ -1,5 +1,5 @@
 import { clonePowerupCombatState } from './PowerupCombat';
-import type { PowerupCombatState } from '../shared/offensivePowerups';
+import type { PowerupCombatState, PowerupProjectile } from '../shared/offensivePowerups';
 import { battleArenaMapAtStage } from './BattleArenaMap';
 import { position } from './movement';
 import { correctedPoint, crossedPortal, powerupMovementLockTick, RacePresentationClock,
@@ -12,6 +12,21 @@ export interface SynchronizationDiagnostics {
   snapshotAgeMs: number;
   pendingInputs: number;
   interpolationUnderruns: number;
+}
+
+/** Samples only the authoritative straight segments and outgoing headings recorded at missile corners. */
+function interpolateMissile(projectile: PowerupProjectile, next: PowerupProjectile, alpha: number): void {
+  const age = projectile.elapsedMs + (next.elapsedMs - projectile.elapsedMs) * alpha;
+  const points = [projectile, ...next.turns.filter((turn) => turn.elapsedMs >= projectile.elapsedMs), next];
+  const from = [...points].reverse().find((point) => point.elapsedMs <= age) ?? projectile;
+  const to = points.find((point) => point.elapsedMs > age) ?? next;
+  const duration = to.elapsedMs - from.elapsedMs;
+  const progress = duration > 0 ? Math.max(0, Math.min(1, (age - from.elapsedMs) / duration)) : 0;
+  projectile.x = from.x + (to.x - from.x) * progress;
+  projectile.y = from.y + (to.y - from.y) * progress;
+  projectile.angle = from.angle;
+  projectile.elapsedMs = age;
+  projectile.turns = next.turns.filter((turn) => turn.elapsedMs <= age).map((turn) => ({ ...turn }));
 }
 export interface MultiplayerRenderState {
   actors: ReadonlyMap<string, ActorSample>;
@@ -225,7 +240,7 @@ export class MultiplayerSynchronization {
       && this.diagnostics.snapshotAgeMs >= SYNCHRONIZATION.maxPredictionTicks * RACE.stepMs };
   }
 
-  /** Interpolates matching authoritative missile identities without inventing motion or damaging outcomes. */
+  /** Interpolates authoritative missile segments through recorded corners without inventing damaging outcomes. */
   private sampleCombat(target: number): { combat: PowerupCombatState; combatTimeMs: number } {
     const before = [...this.snapshots].reverse().find((snapshot) => snapshot.tick <= target)
       ?? this.snapshots[0] ?? this.race!;
@@ -240,10 +255,7 @@ export class MultiplayerSynchronization {
     for (const projectile of combat.projectiles) {
       const next = after.combat.projectiles.find((candidate) => candidate.id === projectile.id);
       if (!next) continue;
-      projectile.x += (next.x - projectile.x) * alpha;
-      projectile.y += (next.y - projectile.y) * alpha;
-      const turn = Math.atan2(Math.sin(next.angle - projectile.angle), Math.cos(next.angle - projectile.angle));
-      projectile.angle += turn * alpha;
+      interpolateMissile(projectile, next, alpha);
     }
     for (const effect of combat.effects) {
       const next = after.combat.effects.find((candidate) => candidate.id === effect.id);

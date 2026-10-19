@@ -4,7 +4,7 @@ import { steerMissile } from '../game/domain/services/MissileNavigation';
 import type { WorldMapData } from '../game/domain/world/WorldState';
 import { activatePowerup, cancelPowerupCast, clonePowerupCombatState, createPowerupCombatState,
   stepPowerupCombat } from '../game/simulation/PowerupCombat';
-import { placePowerupPickups, type PowerupCombatActor } from '../game/shared/offensivePowerups';
+import { POWERUP_RULES, placePowerupPickups, type PowerupCombatActor } from '../game/shared/offensivePowerups';
 
 /** Creates an independently authored empty room, optionally divided by a one-unit wall. */
 function room(wallX?: number): PowerupCollisionWorld {
@@ -226,7 +226,7 @@ describe('shared offensive combat', () => {
     const state = createPowerupCombatState();
     activatePowerup(state, 'owner', 'missile', 'right');
     const actors = [actor('owner', 32), actor('target', 96)];
-    expect(stepPowerupCombat(state, 1000, actors, room(80), 60)).toEqual([]);
+    expect(stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs + 640, actors, room(80), 60)).toEqual([]);
     expect(state.projectiles).toEqual([]);
     expect(state.effects.find((effect) => effect.role === 'impact')).toMatchObject({ x: 78, y: 64 });
   });
@@ -234,9 +234,9 @@ describe('shared offensive combat', () => {
   it('locks the nearest eligible target, stays straight between centers, and continues after losing it', () => {
     const state = createPowerupCombatState();
     activatePowerup(state, 'owner', 'missile', 'right');
-    const actors = [actor('owner', 64), { ...actor('protected', 64, 54), protected: true },
+    const actors = [actor('owner', 64), { ...actor('protected', 64, 52), protected: true },
       actor('near', 64, 44), actor('far', 100)];
-    stepPowerupCombat(state, 360, actors, room(), 60);
+    stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs, actors, room(), 60);
     expect(state.projectiles[0].targetId).toBe('near');
     stepPowerupCombat(state, 100, actors, room(), 60);
     const angle = state.projectiles[0].angle;
@@ -245,7 +245,7 @@ describe('shared offensive combat', () => {
     expect(state.projectiles[0]).toMatchObject({ targetId: null, angle });
     const outside = createPowerupCombatState();
     activatePowerup(outside, 'owner', 'missile', 'right');
-    stepPowerupCombat(outside, 360, [actor('owner', 64), actor('beyond-eight-tiles', 193)], room(), 60);
+    stepPowerupCombat(outside, POWERUP_RULES.missile.releaseMs, [actor('owner', 64), actor('beyond-eight-tiles', 193)], room(), 60);
     expect(outside.projectiles[0].targetId).toBeNull();
   });
 
@@ -253,25 +253,25 @@ describe('shared offensive combat', () => {
     const state = createPowerupCombatState(), walls = missileCorridor();
     const actors = [actor('owner', 24, 24), actor('target', 88, 88)];
     activatePowerup(state, 'owner', 'missile', 'right');
-    stepPowerupCombat(state, 360, actors, walls, 60);
+    stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs, actors, walls, 60);
     stepPowerupCombat(state, 200, actors, walls, 60);
-    expect(state.projectiles[0].x).toBeCloseTo(53);
+    expect(state.projectiles[0].x).toBeCloseTo(48);
     expect(state.projectiles[0]).toMatchObject({ y: 24, angle: 0, turns: [], targetId: 'target' });
     stepPowerupCombat(state, 100, actors, walls, 60);
     expect(state.projectiles[0].x).toBeCloseTo(56);
-    expect(state.projectiles[0].y).toBeCloseTo(33);
+    expect(state.projectiles[0].y).toBeCloseTo(28);
     expect(state.projectiles[0].angle).toBe(Math.PI / 2);
     expect(state.projectiles[0].turns).toEqual([expect.objectContaining({ y: 24, angle: Math.PI / 2 })]);
     expect(state.projectiles[0].turns[0].x).toBeCloseTo(56);
-    expect(state.projectiles[0].turns[0].elapsedMs).toBeCloseTo(225);
-    stepPowerupCombat(state, 200, actors, walls, 60);
-    expect(state.projectiles[0].x).toBeCloseTo(57);
+    expect(state.projectiles[0].turns[0].elapsedMs).toBeCloseTo(800 / 3);
+    stepPowerupCombat(state, 250, actors, walls, 60);
+    expect(state.projectiles[0].x).toBeCloseTo(58);
     expect(state.projectiles[0].y).toBeCloseTo(56);
     expect(state.projectiles[0].turns).toHaveLength(2);
     const checkpoint = clonePowerupCombatState(state);
     expect(stepPowerupCombat(state, 300, actors, walls, 60)).toEqual([]);
     expect(state.projectiles[0].x).toBeCloseTo(88);
-    expect(state.projectiles[0].y).toBeCloseTo(61);
+    expect(state.projectiles[0].y).toBeCloseTo(62);
     expect(state.projectiles[0].turns).toHaveLength(3);
     stepPowerupCombat(checkpoint, 300, actors, walls, 60);
     expect(checkpoint).toEqual(state);
@@ -287,20 +287,79 @@ describe('shared offensive combat', () => {
     const state = createPowerupCombatState(), walls = missileCorridor(true);
     activatePowerup(state, 'owner', 'missile', 'right');
     const actors = [actor('owner', 24, 24)];
-    stepPowerupCombat(state, 360, actors, walls, 60);
+    stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs, actors, walls, 60);
     stepPowerupCombat(state, 200, actors, walls, 60);
-    expect(state.projectiles[0].x).toBeCloseTo(53);
+    expect(state.projectiles[0].x).toBeCloseTo(48);
     expect(state.projectiles[0]).toMatchObject({ y: 24, angle: 0, turns: [], targetId: null });
     stepPowerupCombat(state, 500, actors, walls, 60);
-    expect(state.projectiles[0].x).toBeCloseTo(81);
+    expect(state.projectiles[0].x).toBeCloseTo(76);
     expect(state.projectiles[0].y).toBeCloseTo(56);
     expect(state.projectiles[0].turns).toHaveLength(2);
+  });
+
+  it.each([54, 56])('launches at x=%i without skipping the forced corner or striking its wall', (x) => {
+    const state = createPowerupCombatState(), walls = missileCorridor();
+    const actors = [actor('owner', x, 24)];
+    activatePowerup(state, 'owner', 'missile', 'right');
+    stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs + 100, actors, walls, 60);
+    expect(state.projectiles).toHaveLength(1);
+    expect(state.projectiles[0]).toMatchObject({ x: 56, angle: Math.PI / 2 });
+    expect(state.projectiles[0].y).toBeCloseTo(x - 20);
+    expect(state.effects.some((effect) => effect.role === 'impact')).toBe(false);
+  });
+
+  it('launches along the current corridor when the caster turns during the windup', () => {
+    const state = createPowerupCombatState(), walls = missileCorridor();
+    activatePowerup(state, 'owner', 'missile', 'right');
+    stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs + 100, [{ ...actor('owner', 56, 36), direction: 'down' }], walls, 60);
+    expect(state.projectiles).toHaveLength(1);
+    expect(state.projectiles[0]).toMatchObject({ x: 56, angle: Math.PI / 2 });
+    expect(state.projectiles[0].y).toBeCloseTo(48);
+  });
+
+  it('self-destructs at a dead-end center instead of reversing or flying into its wall', () => {
+    const state = createPowerupCombatState(), walls = missileCorridor();
+    activatePowerup(state, 'owner', 'missile', 'left');
+    stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs + 200, [actor('owner', 40, 24)], walls, 60);
+    expect(state.projectiles).toEqual([]);
+    expect(state.effects.find((effect) => effect.role === 'impact')).toMatchObject({ x: 24, y: 24, radius: 0 });
+  });
+
+  it.each([{ y: 71, hit: true }, { y: 71.001, hit: false }])('uses its own two-unit collision radius at target y=$y', ({ y, hit }) => {
+    const state = createPowerupCombatState();
+    activatePowerup(state, 'owner', 'missile', 'right');
+    expect(stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs + 440, [actor('owner', 32), actor('target', 80, y)], room(), 60))
+      .toEqual(hit ? [{ targetId: 'target', position: { x: 80, y } }] : []);
+  });
+
+  it('travels through a passage that clears the missile body but not the Packet body', () => {
+    const state = createPowerupCombatState(), walls = missileCorridor();
+    for (let y = 16; y < 32; y += 1) {
+      if (y < 20 || y >= 28) walls.solid.fill(1, y * walls.width + 32, y * walls.width + 48);
+    }
+    activatePowerup(state, 'owner', 'missile', 'right');
+    stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs + 100, [actor('owner', 24, 24)], walls, 60);
+    expect(state.projectiles).toHaveLength(1);
+    expect(state.projectiles[0].x).toBeCloseTo(36);
+    expect(state.projectiles[0]).toMatchObject({ y: 24, angle: 0 });
+    expect(state.effects).toEqual([]);
+  });
+
+  it('self-destructs harmlessly when every corridor is blocked', () => {
+    const state = createPowerupCombatState(), walls = missileCorridor();
+    walls.solid.fill(1);
+    for (let y = 16; y < 32; y += 1) walls.solid.fill(0, y * walls.width + 48, y * walls.width + 64);
+    const actors = [actor('owner', 56, 24), actor('outside', 72, 24)];
+    activatePowerup(state, 'owner', 'missile', 'right');
+    expect(stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs, actors, walls, 60)).toEqual([]);
+    expect(state.projectiles).toEqual([]);
+    expect(state.effects.find((effect) => effect.role === 'impact')).toMatchObject({ x: 56, y: 24, radius: 0 });
   });
 
   it('acquires a newly located target at a junction and kills it after a straight corner turn', () => {
     const state = createPowerupCombatState(), walls = missileCorridor(true);
     activatePowerup(state, 'owner', 'missile', 'right');
-    stepPowerupCombat(state, 360, [actor('owner', 24, 24)], walls, 60);
+    stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs, [actor('owner', 24, 24)], walls, 60);
     const hits = stepPowerupCombat(state, 400, [actor('owner', 24, 24), actor('target', 40, 48)], walls, 60);
     expect(hits).toEqual([{ targetId: 'target', position: { x: 40, y: 48 } }]);
     expect(state.projectiles).toEqual([]);
@@ -326,24 +385,26 @@ describe('shared offensive combat', () => {
     const state = createPowerupCombatState(), walls = missileCorridor();
     const actors = [actor('owner', 24, 24)];
     activatePowerup(state, 'owner', 'missile', 'right');
-    stepPowerupCombat(state, 360, actors, walls, 60);
+    stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs, actors, walls, 60);
     for (let elapsed = 0; elapsed < 2999; elapsed += deltaMs) {
       stepPowerupCombat(state, Math.min(deltaMs, 2999 - elapsed), actors, walls, 60);
     }
-    expect(state.projectiles[0].x).toBeCloseTo(107.12);
+    expect(state.projectiles[0].x).toBeCloseTo(112.12);
     expect(state.projectiles[0].y).toBeCloseTo(24);
     expect(state.projectiles[0].angle).toBe(Math.PI);
     expect(state.projectiles[0].elapsedMs).toBeCloseTo(2999);
     expect(state.projectiles[0].turns).toHaveLength(8);
     expect(stepPowerupCombat(state, 1, actors, walls, 60)).toEqual([]);
     expect(state.projectiles).toEqual([]);
-    expect(state.effects.some((effect) => effect.role === 'impact')).toBe(false);
+    expect(state.effects.find((effect) => effect.role === 'impact')).toMatchObject({ radius: 0 });
+    stepPowerupCombat(state, 700, actors, walls, 60);
+    expect(state.effects).toEqual([]);
   });
 
-  it('prevents the missile muzzle offset from crossing a nearby wall', () => {
+  it('self-destructs if new geometry already overlaps the launch body', () => {
     const state = createPowerupCombatState();
     activatePowerup(state, 'owner', 'missile', 'right');
-    expect(stepPowerupCombat(state, 360, [actor('owner', 78), actor('target', 100)], room(80), 60)).toEqual([]);
+    expect(stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs, [actor('owner', 78), actor('target', 100)], room(80), 60)).toEqual([]);
     expect(state.projectiles).toEqual([]);
     expect(state.effects.find((effect) => effect.role === 'impact')).toMatchObject({ x: 78, y: 64 });
   });
@@ -352,7 +413,7 @@ describe('shared offensive combat', () => {
     const run = (protectedTarget: boolean) => {
       const state = createPowerupCombatState();
       activatePowerup(state, 'owner', 'missile', 'right');
-      const hits = stepPowerupCombat(state, 1000,
+      const hits = stepPowerupCombat(state, POWERUP_RULES.missile.releaseMs + 640,
         [actor('owner', 32), { ...actor('target', 70), protected: protectedTarget }], room(100), 60);
       return { state, hits };
     };
@@ -402,14 +463,32 @@ describe('shared offensive combat', () => {
     expect(run(true)).toEqual([]);
   });
 
-  it('captures facing at activation and origin at the exact release while moving', () => {
+  it('uses the exact release position while moving, falling back to cast facing without an actor heading', () => {
     const state = createPowerupCombatState();
     expect(activatePowerup(state, 'owner', 'missile', 'right')).toBe(true);
     expect(activatePowerup(state, 'owner', 'laser', 'left')).toBe(false);
-    stepPowerupCombat(state, 400, [{ ...actor('owner', 100), previous: { x: 40, y: 64 } }], room(), 60);
-    expect(state.casts[0].origin?.x).toBeCloseTo(94);
+    stepPowerupCombat(state, 1300, [{ ...actor('owner', 118), previous: { x: 40, y: 64 } }], room(), 60);
+    expect(state.casts).toEqual([]);
     expect(state.projectiles[0].angle).toBe(0);
-    expect(state.projectiles[0].x).toBeCloseTo(103.8);
+    expect(state.projectiles[0].x).toBeCloseTo(136);
+  });
+
+  it('waits for the complete startup before releasing from the moving Packet and starting its flight clock', () => {
+    const state = createPowerupCombatState(), walls = room();
+    activatePowerup(state, 'owner', 'missile', 'right');
+    stepPowerupCombat(state, 999, [{ ...actor('owner', 100), previous: { x: 40, y: 64 }, direction: 'right' }], walls, 60);
+    expect(state.projectiles).toEqual([]);
+    expect(state.casts).toHaveLength(1);
+    expect(state.casts[0].origin).toBeNull();
+    const id = state.casts[0].id;
+    stepPowerupCombat(state, 1, [{ ...actor('owner', 100.06), previous: { x: 100, y: 64 }, direction: 'right' }], walls, 60);
+    expect(state.casts).toEqual([]);
+    expect(state.projectiles).toEqual([{ id, ownerId: 'owner', targetId: null,
+      x: 100.06, y: 64, angle: 0, elapsedMs: 0, turns: [] }]);
+    expect(state.effects).toEqual([]);
+    stepPowerupCombat(state, 100, [{ ...actor('owner', 94.06), direction: 'left' }], walls, 60);
+    expect(state.projectiles[0].x).toBeCloseTo(112.06);
+    expect(state.projectiles[0].elapsedMs).toBeCloseTo(100);
   });
 
   it('sweeps both sides of a portal while excluding the jump between them', () => {

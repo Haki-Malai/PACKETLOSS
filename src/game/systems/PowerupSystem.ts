@@ -122,14 +122,15 @@ export class PowerupSystem {
     this.publish();
   }
 
-  /** Rebases retained pickups, released effects, missiles, and actor history with the rolling maze. */
+  /** Rebases retained pickups, released effects, missile corner history, and actor history with the rolling maze. */
   shiftEndlessSection(section: ResidentEndlessSection, rows: number, slot: number): void {
     const pixels = rows * this.world.tileSize;
     const inside = (point: PowerupPoint): boolean => point.y >= 0 && point.y < this.world.map.heightInPixels;
     this.world.powerupPickups = this.world.powerupPickups.map((pickup) =>
       ({ ...pickup, y: pickup.y + pixels })).filter(inside);
     const state = this.world.powerupCombat;
-    state.projectiles = state.projectiles.map((projectile) => ({ ...projectile, y: projectile.y + pixels })).filter(inside);
+    state.projectiles = state.projectiles.map((projectile) => ({ ...projectile, y: projectile.y + pixels,
+      turns: projectile.turns.map((turn) => ({ ...turn, y: turn.y + pixels })) })).filter(inside);
     state.effects = state.effects.map((effect) => ({ ...effect, y: effect.y + pixels,
       ...(effect.source ? { source: { ...effect.source, y: effect.source.y + pixels } } : {}) })).filter(inside);
     state.casts.forEach((cast) => { if (cast.origin) cast.origin.y += pixels; });
@@ -191,7 +192,7 @@ export class PowerupSystem {
       kind: OFFENSIVE_POWERUPS[random.int(OFFENSIVE_POWERUPS.length)] });
   }
 
-  /** Adapts actor centers and rejects teleport gaps as physical travel during swept collision. */
+  /** Adapts actor centers and current headings, rejecting teleport gaps as physical travel during swept collision. */
   private actors(): PowerupCombatActor[] {
     const entities = [{ id: PACKET_ID, entity: this.world.packet, active: this.canControl() },
       ...this.world.enemies.map((entity, index) => ({ id: this.enemyId(index), entity,
@@ -201,6 +202,7 @@ export class PowerupSystem {
       const previous = this.previousPositions.get(id);
       const teleportMotion = this.portals?.getTeleportMotion(entity, this.world.tick);
       return { id, x: entity.x, y: entity.y, radius: Math.min(entity.displayWidth, entity.displayHeight) / 2,
+        direction: typeof entity.direction === 'string' ? entity.direction : entity.direction.current,
         active, previous, teleportMotion, teleported: Boolean(previous
           && Math.hypot(entity.x - previous.x, entity.y - previous.y) > this.world.tileSize) };
     });

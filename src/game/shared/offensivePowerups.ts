@@ -16,6 +16,8 @@ export interface PowerupCast {
 }
 export interface PowerupProjectile extends PowerupPoint {
   id: number; ownerId: string; targetId: string | null; angle: number; elapsedMs: number;
+  /** Ordered corner positions, outgoing headings, and missile ages in milliseconds for replay. */
+  turns: Array<PowerupPoint & { elapsedMs: number; angle: number }>;
 }
 export interface PowerupEffect extends PowerupPoint {
   id: number; ownerId: string; kind: PowerupKind;
@@ -29,6 +31,7 @@ export interface PowerupCombatState {
 }
 export interface PowerupCombatActor extends PowerupPoint {
   id: string; radius: number; active: boolean; protected?: boolean;
+  direction?: Direction;
   previous?: PowerupPoint; teleported?: boolean;
   teleportMotion?: { departure: PowerupPoint; arrival: PowerupPoint; fraction: number };
 }
@@ -38,9 +41,9 @@ export const POWERUP_RULES = {
   blast: { releaseMs: 450, durationMs: 1600, activeUntilMs: 1600, growUntilMs: 1200, radius: 64 },
   'reverse-blast': { releaseMs: 350, durationMs: 2200, activeUntilMs: 350, radius: 32 },
   laser: { releaseMs: 480, durationMs: 1800, activeUntilMs: 1500, radius: 3.4, laserGrowMs: 170, authoredLength: 64, muzzle: 3 },
-  missile: { releaseMs: 360, durationMs: 1000, activeUntilMs: 360, radius: 2,
-    speedMultiplier: 2, turnRadiansPerSecond: Math.PI * 2, lifetimeMs: 3000,
-    targetRange: 128, muzzle: 5, launchDurationMs: 600, impactDurationMs: 700 },
+  missile: { releaseMs: 1000, durationMs: 1000, activeUntilMs: 1000, radius: 2,
+    speedMultiplier: 2, lifetimeMs: 3000,
+    targetRange: 128, launchDurationMs: 600, impactDurationMs: 700 },
 } as const;
 
 /** Recognizes offensive pickups without treating ordinary points as weapons. */

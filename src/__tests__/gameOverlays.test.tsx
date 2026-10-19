@@ -19,11 +19,11 @@ describe('React game overlays', () => {
         const page = render(<Hud onPause={vi.fn()} gameState={store} onActivatePowerup={onActivate} />);
         expect(screen.getByRole('button', { name: 'Weapon inventory empty' }).hasAttribute('disabled')).toBe(true);
         act(() => store.setPowerupStatus({ kind: 'missile', casting: false }));
-        const use = screen.getByRole('button', { name: 'Use Missile' });
+        const use = screen.getByRole('button', { name: 'Use Trace' });
         fireEvent.click(use);
         expect(onActivate).toHaveBeenCalledOnce();
         act(() => store.setPowerupStatus({ kind: 'laser', casting: true }));
-        expect(screen.queryByRole('button', { name: 'Use Missile' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Use Trace' })).toBeNull();
         const laser = screen.getByRole('button', { name: 'Use Laser' });
         expect(laser.hasAttribute('disabled')).toBe(true);
         fireEvent.click(laser);

@@ -412,44 +412,44 @@
       "file": "missile-collect.glb",
       "errors": [],
       "warnings": [],
-      "bytes": 97532,
+      "bytes": 24668,
       "root": "missile-collect-root",
       "extensions": [
         "KHR_materials_emissive_strength"
       ],
-      "meshes": 7,
-      "triangles": 2940,
+      "meshes": 15,
+      "triangles": 162,
       "clips": [
         {
           "name": "pickup_collect",
           "duration": 0.30000001192092896,
           "loop": false,
-          "tracks": 8,
-          "sampledPoses": 13,
+          "tracks": 12,
+          "sampledPoses": 19,
           "bounds": {
             "min": [
-              -3.3838,
-              2.2101,
-              -3.3838
+              -1.5252,
+              3.0915,
+              -2.294
             ],
             "max": [
-              3.3833,
-              8.7893,
-              3.3838
+              1.44,
+              8.792,
+              1.44
             ]
           }
         }
       ],
       "bounds": {
         "min": [
-          -3.3838,
-          2.2101,
-          -3.3838
+          -1.5252,
+          3.0915,
+          -2.294
         ],
         "max": [
-          3.3833,
-          8.7893,
-          3.3838
+          1.44,
+          8.792,
+          1.44
         ]
       }
     },
@@ -457,44 +457,44 @@
       "file": "missile-flight.glb",
       "errors": [],
       "warnings": [],
-      "bytes": 102732,
+      "bytes": 38996,
       "root": "missile-flight-root",
       "extensions": [
         "KHR_materials_emissive_strength"
       ],
-      "meshes": 12,
-      "triangles": 2852,
+      "meshes": 21,
+      "triangles": 234,
       "clips": [
         {
           "name": "missile_flight",
           "duration": 0.800000011920929,
           "loop": true,
-          "tracks": 15,
-          "sampledPoses": 26,
+          "tracks": 21,
+          "sampledPoses": 48,
           "bounds": {
             "min": [
-              -1.6147,
-              4.5353,
-              -2.4
+              -2.2455,
+              10.025,
+              -3.7
             ],
             "max": [
-              1.6147,
-              7.7647,
-              9.3866
+              2.2455,
+              10.928,
+              7.5312
             ]
           }
         }
       ],
       "bounds": {
         "min": [
-          -1.6147,
-          4.5353,
-          -2.4
+          -2.2455,
+          10.025,
+          -3.7
         ],
         "max": [
-          1.6147,
-          7.7647,
-          9.3866
+          2.2455,
+          10.928,
+          7.5312
         ]
       }
     },
@@ -502,44 +502,44 @@
       "file": "missile-impact.glb",
       "errors": [],
       "warnings": [],
-      "bytes": 144416,
+      "bytes": 59308,
       "root": "missile-impact-root",
       "extensions": [
         "KHR_materials_emissive_strength"
       ],
-      "meshes": 18,
-      "triangles": 3032,
+      "meshes": 31,
+      "triangles": 372,
       "clips": [
         {
           "name": "missile_impact",
           "duration": 0.699999988079071,
           "loop": false,
-          "tracks": 50,
-          "sampledPoses": 25,
+          "tracks": 61,
+          "sampledPoses": 41,
           "bounds": {
             "min": [
-              -10,
-              0.7567,
-              -10
+              -6.8002,
+              8.9998,
+              -6.8002
             ],
             "max": [
-              10,
-              8.1738,
-              10
+              6.8003,
+              11.4001,
+              6.8002
             ]
           }
         }
       ],
       "bounds": {
         "min": [
-          -10,
-          0.7567,
-          -10
+          -6.8002,
+          8.9998,
+          -6.8002
         ],
         "max": [
-          10,
-          8.1738,
-          10
+          6.8003,
+          11.4001,
+          6.8002
         ]
       }
     },
@@ -547,44 +547,44 @@
       "file": "missile-launch.glb",
       "errors": [],
       "warnings": [],
-      "bytes": 80300,
+      "bytes": 53736,
       "root": "missile-launch-root",
       "extensions": [
         "KHR_materials_emissive_strength"
       ],
-      "meshes": 10,
-      "triangles": 2416,
+      "meshes": 27,
+      "triangles": 306,
       "clips": [
         {
           "name": "missile_launch",
           "duration": 0.6000000238418579,
           "loop": false,
-          "tracks": 22,
-          "sampledPoses": 21,
+          "tracks": 50,
+          "sampledPoses": 36,
           "bounds": {
             "min": [
-              -3.0106,
-              3.1394,
-              -10
+              -6.7253,
+              9.0998,
+              -3.7
             ],
             "max": [
-              3.0104,
-              9.1606,
-              6
+              6.7253,
+              11.7201,
+              4.2002
             ]
           }
         }
       ],
       "bounds": {
         "min": [
-          -3.0106,
-          3.1394,
-          -10
+          -6.7253,
+          9.0998,
+          -3.7
         ],
         "max": [
-          3.0104,
-          9.1606,
-          6
+          6.7253,
+          11.7201,
+          4.2002
         ]
       }
     },
@@ -592,44 +592,44 @@
       "file": "missile-pickup.glb",
       "errors": [],
       "warnings": [],
-      "bytes": 90036,
+      "bytes": 26924,
       "root": "missile-pickup-root",
       "extensions": [
         "KHR_materials_emissive_strength"
       ],
-      "meshes": 6,
-      "triangles": 2356,
+      "meshes": 15,
+      "triangles": 162,
       "clips": [
         {
           "name": "pickup_idle",
           "duration": 6,
           "loop": true,
           "tracks": 2,
-          "sampledPoses": 181,
+          "sampledPoses": 349,
           "bounds": {
             "min": [
-              -2.7367,
-              1.9259,
-              -2.7291
+              -2.3023,
+              2.6205,
+              -2.3023
             ],
             "max": [
-              2.7112,
-              4.4741,
-              2.7291
+              2.3023,
+              3.8229,
+              2.3023
             ]
           }
         }
       ],
       "bounds": {
         "min": [
-          -2.7367,
-          1.9259,
-          -2.7291
+          -2.3023,
+          2.6205,
+          -2.3023
         ],
         "max": [
-          2.7112,
-          4.4741,
-          2.7291
+          2.3023,
+          3.8229,
+          2.3023
         ]
       }
     },
@@ -772,44 +772,44 @@
       "file": "packet-missile.glb",
       "errors": [],
       "warnings": [],
-      "bytes": 347196,
+      "bytes": 300256,
       "root": "packet-missile-root",
       "extensions": [
         "KHR_materials_emissive_strength"
       ],
-      "meshes": 15,
-      "triangles": 6236,
+      "meshes": 16,
+      "triangles": 5172,
       "clips": [
         {
           "name": "packet-missile-cast",
           "duration": 1,
           "loop": false,
-          "tracks": 34,
-          "sampledPoses": 33,
+          "tracks": 20,
+          "sampledPoses": 59,
           "bounds": {
             "min": [
-              -5.5019,
-              3.7808,
-              -4.0431
+              -4.8002,
+              3.9133,
+              -3.0002
             ],
             "max": [
-              5.5019,
-              8.8378,
-              4.223
+              4.8002,
+              9.7002,
+              3.0002
             ]
           }
         }
       ],
       "bounds": {
         "min": [
-          -5.5019,
-          3.7808,
-          -4.0431
+          -4.8002,
+          3.9133,
+          -3.0002
         ],
         "max": [
-          5.5019,
-          8.8378,
-          4.223
+          4.8002,
+          9.7002,
+          3.0002
         ]
       }
     },
@@ -1008,22 +1008,22 @@
     "magnet-collect.glb": "812d5958ed8d6538b1dd5ee039af09661c09732497e316e198fa8958bec6a49c",
     "magnet-field.glb": "8f32a0e839adf7371be8af776877adf837940a56c0d6e3751ef9851b7c6e5800",
     "magnet-pickup.glb": "7dca63708d72e8c965c83dd314065480e7aac484bf1f8aec93ab5c050a5fd72a",
-    "missile-collect.glb": "936efba14510840eb26c3c9c23e89b321ad2ede8cc1413a4e6eaad01a4ee9591",
-    "missile-flight.glb": "87a1bd9301afc49d0b34e74024043bf09aa7743b4edcfde0f6a7dc2360a1c0b4",
-    "missile-impact.glb": "2403a2320a1915beedb0d494c90b4a579d9f1c6028cf38363dc847386582a92d",
-    "missile-launch.glb": "2a4ba0e2806d1dee2924289772f833f168d214ac78bebd14096b1b4a934504a2",
-    "missile-pickup.glb": "4ae2b7c97ea5368df53be94495de920e817c923ab07470df3a5e3128323237bb",
+    "missile-collect.glb": "6abf253cbfd8ca0ec63afb0c74c1390e19a5d872c4f7e99c5e87907e2a5c86d0",
+    "missile-flight.glb": "136cdfb058468149c1ae21ee6df021cd5bf750ccfa2c979bbcdf23c53975ae40",
+    "missile-impact.glb": "4a6c2773c5585d686d701ae1525b82a9db031f50446b4b0177cb181908563c48",
+    "missile-launch.glb": "f116d38bfc9d6a175387e182a44348a92baaeb831787deea54ed6ef75b00a2e4",
+    "missile-pickup.glb": "2e812dca25a54700a94baf942a220e8646e0e3edac3baaaa90cfa9d4c01e7884",
     "packet-blast.glb": "4539aac0772845c8f843c54c9e01f2ded6c26fd55ed9a17f20de8c258a3a007e",
     "packet-laser.glb": "96ebc9609a1b54fc03b1ae706642d5cfdacfad0af2af5b2f1389a6b0aa645595",
     "packet-magnet.glb": "93c1c78f91ae7e3ced931541cee102aca823d00eb16ceb11416ef907ec4982d2",
-    "packet-missile.glb": "3017dce3e2e22e5ec079ca729f6006c4ce1bc511c1b71c71b5336a14f1390de5",
+    "packet-missile.glb": "7e5761fe9eda6d6eca21679d55b1509e004ef76e50ca260532fbda774ad8bcd1",
     "packet-reverse-blast.glb": "2cdfa1178bd5f969c4250cb55389730659459c04c0f42c82608a51d190a55a47",
     "reverse-blast-collect.glb": "54248f4310e1fcdfd48294cfe74cdd5788211b9042005ed212b25239092fa302",
     "reverse-blast-pickup.glb": "37b0933b3a253de1bc3d539169e8d8e9e1537b4ccd5fe35d14956d873aaffafc",
     "reverse-blast-vortex.glb": "5fecb3fac09560d30dd0e13ce7e8eee3d20d961b00270fc25f276b54c7d73916"
   },
   "geometryAudit": {
-    "triangles": 101712,
+    "triangles": 88288,
     "degenerateTriangles": 0,
     "clips": 22,
     "loopingClips": 8,
@@ -1034,5 +1034,24 @@
     "confirmationCenterY": 8.72,
     "minimumConfirmationEdgeY": 8.656,
     "neutralPacketTopY": 8.4125
+  },
+  "traceAudit": {
+    "date": "2026-10-18",
+    "sourceBlend": "asset-sources/powerups/trace.blend",
+    "review": "asset-sources/powerups/trace-review.png",
+    "files": [
+      "missile-pickup.glb",
+      "missile-flight.glb",
+      "missile-launch.glb",
+      "missile-impact.glb",
+      "packet-missile.glb",
+      "missile-collect.glb"
+    ],
+    "method": "Reparsed all six Trace GLBs with Three.js; checked finite animation tracks, manifest timing, stationary roots, every triangle, external-resource absence, full-timeline bounds, and loop endpoint matrices. Other weapon audit entries are retained.",
+    "handoff": {
+      "matchedShardMeshes": 11,
+      "maxWorldVertexDifference": 1.9217681834245538e-7
+    },
+    "castNeutralPoseMaxMatrixDifference": 0
   }
 }
