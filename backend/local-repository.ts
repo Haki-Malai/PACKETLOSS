@@ -73,7 +73,7 @@ export class LocalRepository
     readonly profiles: DynamoProfileRepository;
     /** Use explicit local credentials, with an injectable store for boundary tests. */
     constructor(endpoint: string, store = new DynamoStore(localClient(endpoint))) {
-        super(store, localMultiplayerSettings('http://127.0.0.1:5173', 'ws://127.0.0.1:8080/ws'));
+        super(store, localMultiplayerSettings('http://127.0.0.1:1337', 'ws://127.0.0.1:8080/ws'));
         this.profiles = new DynamoProfileRepository(store, LOCAL_TABLES.profiles);
     }
     /** Retain passwords and profiles when bootstrap encounters existing seeded accounts. */

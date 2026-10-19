@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const LOOPBACK = '127.0.0.1';
-const DEFAULT_PORTS = { web: 5173, api: 8787, game: 8080, admin: 8081 };
+const DEFAULT_PORTS = { web: 1337, api: 8787, game: 8080, admin: 8081 };
 
 /** Parses launcher flags while keeping every service loopback-only. */
 export function parseOptions(arguments_) {
@@ -160,7 +160,7 @@ async function main() {
             ? 'Solo Battle Royale: create a room to start immediately without bots or saved results.'
             : `Local bots: ${options.bots}. Create a room; bots join and ready automatically. You start the match.`);
         console.log('Code reloads automatically: frontend, game server, gateway, and Node Lambdas. Game reloads interrupt local matches.');
-        console.log('Data persists between runs. Stop: pnpm dev:full -- --stop');
+        console.log('Data persists between runs. Stop: pnpm dev:stop');
         if (!options.detached) {
             await run(
                 compose.command,

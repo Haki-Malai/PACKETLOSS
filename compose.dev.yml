@@ -7,7 +7,7 @@ x-local-environment: &local-environment
   PACKETLOSS_DEV_INTERNAL_TOKEN: ${PACKETLOSS_DEV_INTERNAL_TOKEN:?Use node scripts/dev-full.mjs}
   PACKETLOSS_DEV_RUN_ID: ${PACKETLOSS_DEV_RUN_ID:?Use node scripts/dev-full.mjs}
   PACKETLOSS_DEV_PROCESS_GENERATION: ${PACKETLOSS_DEV_PROCESS_GENERATION:?Use node scripts/dev-full.mjs}
-  PACKETLOSS_DEV_SITE_ORIGIN: http://127.0.0.1:${PACKETLOSS_DEV_WEB_PORT:-5173}
+  PACKETLOSS_DEV_SITE_ORIGIN: http://127.0.0.1:${PACKETLOSS_DEV_WEB_PORT:-1337}
   PACKETLOSS_DEV_WEBSOCKET_URL: ws://127.0.0.1:${PACKETLOSS_DEV_GAME_PORT:-8080}/ws
   AWS_EC2_METADATA_DISABLED: "true"
 
@@ -165,13 +165,13 @@ services:
     build:
       context: .
       dockerfile: dev/Node.Dockerfile
-    command: ["pnpm", "dev", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]
+    command: ["pnpm", "dev", "--host", "0.0.0.0", "--port", "1337", "--strictPort"]
     environment:
       VITE_API_URL: http://127.0.0.1:${PACKETLOSS_DEV_API_PORT:-8787}
       VITE_LOCAL_DEVELOPMENT: "1"
       VITE_DEV_MULTI: ${PACKETLOSS_DEV_MULTI:-0}
     ports:
-      - "127.0.0.1:${PACKETLOSS_DEV_WEB_PORT:-5173}:5173"
+      - "127.0.0.1:${PACKETLOSS_DEV_WEB_PORT:-1337}:1337"
     volumes:
       - ./src:/app/src:ro
       - ./public:/app/public:ro

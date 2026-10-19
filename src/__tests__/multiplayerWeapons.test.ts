@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DataRace } from '../game/simulation/DataRace';
 import { createMovement, move, position, type MovementTeleport } from '../game/simulation/movement';
-import { RACE, type Direction, type RaceMap, type RaceSnapshot } from '../game/simulation/types';
+import { RACE, SYNCHRONIZATION, type Direction, type RaceMap, type RaceSnapshot } from '../game/simulation/types';
 import { createBattleArenaMap } from '../game/simulation/BattleArenaMap';
 import { isPowerupKind, OFFENSIVE_POWERUPS } from '../game/shared/offensivePowerups';
 import { decodeRaceSnapshot, encodeRaceSnapshot, parseClientMessage, parseServerMessage } from '../game/protocol/messages';
@@ -239,6 +239,61 @@ describe('authoritative offensive weapons', () => {
     expect(frame.combat.projectiles[0].id).toBe(first.combat.projectiles[0].id);
     expect(frame.combat.projectiles[0].x).toBeGreaterThan(first.combat.projectiles[0].x);
     expect(frame.combat.projectiles[0].x).toBeLessThan(second.combat.projectiles[0].x);
+  });
+
+  it('replays both corners from coalesced missile snapshots without diagonal interpolation or mutation', () => {
+    const { game, map } = gameFixture(), sync = new MultiplayerSynchronization();
+    const first = game.snapshot();
+    first.tick = 60; first.combat.clockMs = 1000;
+    first.combat.projectiles = [{ id: 99, ownerId: 'alice', targetId: 'bob',
+      x: 50, y: 24, angle: 0, elapsedMs: 100, turns: [] }];
+    const second = structuredClone(first);
+    second.tick = 75; second.combat.clockMs = 1250;
+    second.combat.projectiles[0] = { ...first.combat.projectiles[0], x: 64, y: 40, elapsedMs: 350,
+      turns: [{ x: 56, y: 24, angle: Math.PI / 2, elapsedMs: 150 },
+        { x: 56, y: 40, angle: 0, elapsedMs: 150 + 1000 * 16 / 120 }] };
+    const originals = structuredClone([first, second]);
+    sync.acceptSnapshot(map, first, 'alice', 1, 1000);
+    sync.acceptSnapshot(map, second, 'alice', 2, 1250);
+    const delay = SYNCHRONIZATION.interpolationTicks * RACE.stepMs;
+    const vertical = sync.sample(1250 + delay - 100)!.combat.projectiles[0];
+    expect(vertical.x).toBeCloseTo(56);
+    expect(vertical.y).toBeCloseTo(36);
+    expect(vertical.angle).toBe(Math.PI / 2);
+    expect(vertical.turns).toHaveLength(1);
+    const horizontal = sync.sample(1250 + delay - 50)!.combat.projectiles[0];
+    expect(horizontal.x).toBeCloseTo(58);
+    expect(horizontal.y).toBeCloseTo(40);
+    expect(horizontal.angle).toBe(0);
+    expect(horizontal.turns).toHaveLength(2);
+    expect([first, second]).toEqual(originals);
+  });
+
+  it('restores and round trips detached missile corner history and rejects invalid flight records', () => {
+    const { game, map } = gameFixture({ protectionMs: 1000 });
+    const checkpoint = game.snapshot();
+    checkpoint.combat.projectiles = [{ id: 99, ownerId: 'alice', targetId: 'bob',
+      x: 79, y: 88, angle: Math.PI, elapsedMs: 1100,
+      turns: [{ x: 56, y: 24, angle: Math.PI / 2, elapsedMs: 225 },
+        { x: 56, y: 56, angle: 0, elapsedMs: 225 + 1000 * 32 / 120 },
+        { x: 88, y: 56, angle: Math.PI / 2, elapsedMs: 225 + 1000 * 64 / 120 },
+        { x: 88, y: 88, angle: Math.PI, elapsedMs: 1025 }] }];
+    checkpoint.combat.nextId = 100;
+    game.restore(checkpoint);
+    const restored = game.snapshot();
+    const envelope = { type: 'snapshot', publication: 1, snapshot: encodeRaceSnapshot(map, restored),
+      serverTimeMs: 0, instanceRunId: 'run', processGeneration: 'process' };
+    const parsed = parseServerMessage(JSON.stringify(envelope));
+    expect(parsed?.type === 'snapshot' && decodeRaceSnapshot(map, parsed.snapshot)).toEqual(restored);
+    checkpoint.combat.projectiles[0].turns[0].x = -1;
+    restored.combat.projectiles[0].turns[0].x = -2;
+    expect(game.snapshot().combat.projectiles[0].turns[0].x).toBe(56);
+    const diagonal = structuredClone(envelope);
+    diagonal.snapshot.combat.projectiles[0].angle = Math.PI / 4;
+    expect(parseServerMessage(JSON.stringify(diagonal))).toBeNull();
+    const invalidCorner = structuredClone(envelope);
+    invalidCorner.snapshot.combat.projectiles[0].turns[0].angle = Math.PI / 4;
+    expect(parseServerMessage(JSON.stringify(invalidCorner))).toBeNull();
   });
 
   it('round trips weapon pickups, casts, inventory and acknowledgements through strict compact snapshots', () => {

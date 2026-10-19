@@ -24,7 +24,7 @@ describe('multiplayer protocol validation', () => {
         };
     expect(parseClientMessage(JSON.stringify(authenticate))).toEqual(authenticate);
     expect(parseServerMessage(JSON.stringify(authenticated))).toEqual(authenticated);
-        for (const version of [1, 2, 3, 4, 5, 6, 7, 8]) {
+        for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
             expect(parseClientMessage(JSON.stringify({ ...authenticate, version }))).toBeNull();
             expect(parseServerMessage(JSON.stringify({ ...authenticated, version }))).toBeNull();
         }

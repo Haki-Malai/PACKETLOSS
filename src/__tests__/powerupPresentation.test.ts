@@ -296,7 +296,7 @@ describe('Offensive powerup presentation', () => {
     const presentation = new PowerupPresentation(assets);
     const combat = createPowerupCombatState();
     combat.clockMs = 1000;
-    combat.projectiles.push({ id: 8, ownerId: 'packet', targetId: null, x: 16, y: 32, angle: 0, elapsedMs: 2950 });
+    combat.projectiles.push({ id: 8, ownerId: 'packet', targetId: null, x: 16, y: 32, angle: 0, elapsedMs: 2950, turns: [] });
     presentation.sync(combat, [], new Map(), 1049);
     const missile = presentation.group.getObjectByName('projectile:8')!;
     expect(missile).toBeDefined();

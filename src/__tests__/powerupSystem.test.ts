@@ -158,6 +158,10 @@ describe('solo offensive powerups', () => {
     system.activate();
     system.update(360);
     const projectileY = world.powerupCombat.projectiles[0]?.y;
+    const cornered = { id: world.powerupCombat.nextId++, ownerId: 'packet', targetId: null,
+      x: packet.x, y: packet.y, angle: Math.PI / 2, elapsedMs: 200,
+      turns: [{ x: packet.x, y: packet.y - 16, angle: Math.PI / 2, elapsedMs: 100 }] };
+    world.powerupCombat.projectiles.push(cornered);
     const { rows } = stream.shift('down');
     packet.tile.y += rows;
     packet.y += rows * 16;
@@ -171,6 +175,10 @@ describe('solo offensive powerups', () => {
     expect(world.powerupPickups.some((pickup) => pickup.sectionIndex === -2)).toBe(false);
     expect(world.powerupPickups.some((pickup) => pickup.sectionIndex === 3)).toBe(true);
     if (projectileY !== undefined) expect(world.powerupCombat.projectiles[0]?.y).toBe(projectileY + rows * 16);
+    expect(world.powerupCombat.projectiles.find((projectile) => projectile.id === cornered.id)).toEqual({
+      ...cornered, y: cornered.y + rows * 16,
+      turns: [{ ...cornered.turns[0], y: cornered.turns[0].y + rows * 16 }],
+    });
     system.destroy();
   });
 });
