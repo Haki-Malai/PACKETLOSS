@@ -10,6 +10,7 @@ Recover data bits, avoid enemies, and use power cores to turn the chase around. 
 - [Architecture](docs/ARCHITECTURE.md) — runtime structure, system order, rendering, and module boundaries.
 - [Coding guide](docs/CODING.md) — JSDoc conventions for non-JSX functions.
 - [Testing](docs/TESTING.md) — local checks, focused tests, and debugging shortcuts.
+- [Blender agent skills](.agents/skills/README.md) — project-local animation, GLB export, optimization, and asset checks.
 
 ## Controls
 

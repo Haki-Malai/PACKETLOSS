@@ -289,7 +289,7 @@ export class HologramPacket {
     this.sample(0);
   }
 
-  /** Samples score, casting, and directional laser death from absolute time without moving the gameplay root. */
+  /** Samples score-controlled binary details, boost glow and sparks, power, casting, and directional laser death without advancing gameplay or moving its root; identity colors and angry-eye placement remain unchanged outside the hit flash. */
   sample(timeSeconds: number): void {
     if (this.disposed) return;
     this.laserImpact = laserImpacts.get(this.group) ?? null;
