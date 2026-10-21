@@ -43,6 +43,26 @@ Inspect the stills and representative start/middle/end frames, check dimensions 
 
 Present the completed options and **wait for the user's selection before final refinement or integration**. Ask for A/B/C or a specific combination, with a brief recommendation. Reuse a selection already given; if the user explicitly delegates the choice, select and explain it without asking again. Preserve candidate IDs and previews across revisions so comparisons remain meaningful.
 
+## Deliver previews in chat or an explicitly requested PR
+
+**Default: show the comparison sheet, individual animated previews, and short option descriptions in chat.** Do not create a branch, publish files, or open a PR just because this skill is active.
+
+Within this asset-preview task only:
+
+- “Open a PR” or “put the previews in a PR” requests a preview PR as well as the normal chat presentation.
+- “PR only” requests the same preview generation, delivered in the PR instead of duplicating the previews in chat. Return only a concise status and the PR link in chat, plus any blocker or required reporting.
+- An unrelated PR request must not trigger asset generation or this delivery mode. A request to edit this skill's PR behavior does not itself request a PR.
+
+When explicitly requested, prepare the previews first, then create a **draft PR targeting dev** from a dedicated preview branch based on the current remote dev. Use gh for repository/PR context and follow the repository's remote-action and git rules. Keep unrelated working-tree changes out of the branch. Reuse an existing PR only when it belongs to this same preview task; do not overwrite an unrelated PR. Do not merge or write directly to dev.
+
+Keep the PR limited to review artifacts in docs/asset-previews/<task-slug>/ (comparison PNG, individual GIFs/PNGs, and a short index). This is the PR-mode exception to keeping previews only in temporary storage. Keep large editable drafts local unless explicitly requested. Do not replace shipped GLBs or implement any option before the selection step.
+
+Use a short title such as “preview: Firewall design options”. The body should contain one or two sentences describing the asset and the differences being explored, the labeled A/B/C stills and animated previews with one sentence per option, and a brief validation/limitations note. State that these are drafts awaiting selection. Use repository-hosted image URLs tied to the preview commit, with direct file links as fallbacks; never use local filesystem paths or temporary-machine URLs. Preserve repository access controls and do not upload private previews to a public third-party host. If only timestamped frame strips could be produced, label that limitation in the PR too.
+
+Prepare the exact multiline body in a file for gh's body-file input. After creation or update, re-read the PR to verify its base is dev, its head is the intended preview branch, and its body and referenced preview files are present and accessible through the authenticated repository connection. Do not claim inline animation playback was verified unless it was actually observed. If publication fails, retain the completed local artifacts and report the blocker; “PR only” is not permission to claim delivery or silently switch to chat previews.
+
+Keep the selection gate above in every delivery mode. Opening the preview PR does not select an option or authorize final integration.
+
 ## Refine and integrate the selected option
 
 Refine the chosen draft, preserving its approved silhouette and motion. Use [blender-asset-qa](../blender-asset-qa/SKILL.md), [blender-game-optimization](../blender-game-optimization/SKILL.md), and [blender-export-pipelines](../blender-export-pipelines/SKILL.md) as applicable. Project contracts override generic presets. Check actual loader support before adding compression or glTF extensions; do not assume the upstream web preset matches this project.

@@ -1,0 +1,4 @@
+Derived from openai/skills, skills/.curated/security-threat-model, revision 49f948faa9258a0c61caceaf225e179651397431.
+Licensed under Apache-2.0; see LICENSE.txt.
+PACKETLOSS modifications (2026-10-21): added repository scope and replaced unconditional context confirmation with targeted clarification of material unknowns in SKILL.md and references/prompt-template.md.
+- Made output proportional to the requested review and report-file creation opt-in.
