@@ -62,7 +62,7 @@ export class EnemyPacketCollisionSystem {
     }
 
     if (collision.outcome === 'packet-hit') {
-      this.applyPacketHitOutcome();
+      this.hitPacket();
       return;
     }
 
@@ -72,8 +72,9 @@ export class EnemyPacketCollisionSystem {
 
   destroy(): void {}
 
-  /** Starts Packet death and drops any movement distance deferred at the contact boundary. */
-  private applyPacketHitOutcome(): void {
+  /** Starts one death from an accepted enemy or weapon hit, discarding deferred movement at contact. */
+  hitPacket(): void {
+    if (!this.world.isMoving || this.world.outcome || this.world.packet.deathAnimationRemainingMs > 0) return;
     this.world.gameState.loseLife();
     this.movementRules.discardPendingDistance(this.world.packet);
     this.world.packet.enemyEatRemainingMs = 0;

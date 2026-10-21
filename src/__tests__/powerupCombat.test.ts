@@ -5,6 +5,8 @@ import type { WorldMapData } from '../game/domain/world/WorldState';
 import { activatePowerup, cancelPowerupCast, clonePowerupCombatState, createPowerupCombatState,
   stepPowerupCombat } from '../game/simulation/PowerupCombat';
 import { POWERUP_RULES, placePowerupPickups, type PowerupCombatActor } from '../game/shared/offensivePowerups';
+import { createBattleArenaMap, createBattleArenaWorldMap } from '../game/simulation/BattleArenaMap';
+import { EndlessMazeStream } from '../game/domain/world/EndlessMazeStream';
 
 /** Creates an independently authored empty room, optionally divided by a one-unit wall. */
 function room(wallX?: number): PowerupCollisionWorld {
@@ -88,6 +90,9 @@ describe('offensive collision geometry', () => {
   it('preserves the authored open portal mouth even with blocking perimeter metadata', () => {
     const walls = createPowerupCollisionWorld(terrain(23));
     expect(firstPowerupWallHit(walls, { x: 24, y: 24 }, { x: 54, y: 24 }, 2)).toBeNull();
+    expect(firstPowerupWallHit(walls, { x: 24, y: 24 }, { x: 100, y: 24 }, 3.4, 'beam')).toBeNull();
+    expect(firstPowerupWallHit(walls, { x: 24, y: 24 }, { x: 100, y: 24 }, 2)?.position)
+      .toEqual({ x: 62, y: 24 });
     expect(walls.solid[16 * walls.width + 47]).toBe(1);
   });
 
@@ -153,14 +158,21 @@ describe('shared offensive combat', () => {
     expect(stepPowerupCombat(state, 16, [actor('owner', 64), actor('late', 92)], room(), 60)).toEqual([]);
   });
 
-  it('pulses reverse blast only once, honoring protection', () => {
+  it('pulses reverse blast once through walls at the full blast radius, then finishes its shorter cast', () => {
     const state = createPowerupCombatState();
     activatePowerup(state, 'owner', 'reverse-blast', 'right');
     const protectedActor = { ...actor('protected', 82), protected: true };
-    const actors = [actor('owner', 64), actor('near', 92), protectedActor, actor('later', 120)];
-    const hits = stepPowerupCombat(state, 350, actors, room(80), 60);
-    expect(hits.map((hit) => hit.targetId)).toEqual(['near']);
-    expect(stepPowerupCombat(state, 500, [actors[0], actor('later', 70)], room(), 60)).toEqual([]);
+    const actors = [actor('owner', 64), actor('near', 92), protectedActor,
+      actor('edge', 133), actor('miss', 133.001), actor('later', 140)];
+    expect(stepPowerupCombat(state, 349, actors, room(80), 60)).toEqual([]);
+    const hits = stepPowerupCombat(state, 1, actors, room(80), 60);
+    expect(hits.map((hit) => hit.targetId)).toEqual(['near', 'edge']);
+    expect(state.effects[0].radius).toBe(64);
+    expect(stepPowerupCombat(state, 500, [actors[0], actor('later', 70),
+      { ...protectedActor, protected: false }], room(), 60)).toEqual([]);
+    stepPowerupCombat(state, 250, [actors[0]], room(), 60);
+    expect(state.effects).toEqual([]);
+    expect(state.casts).toEqual([]);
   });
 
   it('grows laser reach and hits all aligned targets before the wall', () => {
@@ -194,16 +206,20 @@ describe('shared offensive combat', () => {
   });
 
   it.each([
-    { facing: 'right' as const, x: 40, y: 64, reach: 213 },
-    { facing: 'left' as const, x: 220, y: 64, reach: 217 },
-    { facing: 'down' as const, x: 128, y: 40, reach: 149 },
-    { facing: 'up' as const, x: 128, y: 160, reach: 157 },
-  ])('ends an uncapped $facing laser at the current world boundary', ({ facing, x, y, reach }) => {
-    const state = createPowerupCombatState();
-    activatePowerup(state, 'owner', 'laser', facing);
-    stepPowerupCombat(state, 650, [actor('owner', x, y)], room(), 60);
-    expect(state.effects[0].length).toBeCloseTo(reach);
-  });
+    { facing: 'right' as const, x: 255, y: 64, targetX: 400, targetY: 64, behindX: 40, behindY: 64 },
+    { facing: 'left' as const, x: 1, y: 64, targetX: -150, targetY: 64, behindX: 220, behindY: 64 },
+    { facing: 'down' as const, x: 128, y: 191, targetX: 128, targetY: 350, behindX: 128, behindY: 40 },
+    { facing: 'up' as const, x: 128, y: 1, targetX: 128, targetY: -150, behindX: 128, behindY: 160 },
+  ])('continues a $facing laser straight beyond an open map edge, even with its muzzle outside',
+    ({ facing, x, y, targetX, targetY, behindX, behindY }) => {
+      const state = createPowerupCombatState();
+      activatePowerup(state, 'owner', 'laser', facing);
+      const hits = stepPowerupCombat(state, 650, [actor('owner', x, y), actor('beyond-edge', targetX, targetY),
+        actor('behind', behindX, behindY)], room(), 60);
+      expect(hits.map((hit) => hit.targetId)).toEqual(['beyond-edge']);
+      expect(state.effects[0].length).toBeGreaterThan(400);
+      expect(Number.isFinite(state.effects[0].length)).toBe(true);
+    });
 
   it('cannot release a laser through an obstruction inside its muzzle offset', () => {
     const state = createPowerupCombatState();
@@ -212,14 +228,94 @@ describe('shared offensive combat', () => {
     expect(state.effects[0].length).toBe(0);
   });
 
+  it.each([
+    { facing: 'right' as const, x: 120, y: 72, from: { x: 0, y: 4 }, to: { x: 15, y: 4 }, contact: [115, 72], angle: 0 },
+    { facing: 'left' as const, x: 120, y: 72, from: { x: 0, y: 4 }, to: { x: 15, y: 4 }, contact: [125, 72], angle: Math.PI },
+    { facing: 'down' as const, x: 136, y: 96, from: { x: 8, y: 0 }, to: { x: 8, y: 11 }, contact: [136, 91], angle: Math.PI / 2 },
+    { facing: 'up' as const, x: 136, y: 96, from: { x: 8, y: 0 }, to: { x: 8, y: 11 }, contact: [136, 101], angle: -Math.PI / 2 },
+  ])('returns a $facing laser and records one impact on the back of its caster', ({ facing, x, y, from, to, contact, angle }) => {
+    const state = createPowerupCombatState();
+    const walls = { ...room(), portalPairs: [{ from, to }] };
+    const owner = { ...actor('owner', x, y), protected: true };
+    activatePowerup(state, 'owner', 'laser', facing);
+    expect(stepPowerupCombat(state, 650, [owner], walls, 60)).toEqual([]);
+    expect(state.effects[0].laserSegments).toHaveLength(2);
+    expect(stepPowerupCombat(state, 170, [owner], walls, 60)).toEqual([{ targetId: 'owner', position: { x, y } }]);
+    const impact = state.effects.find((effect) => effect.role === 'impact')!;
+    expect(impact).toMatchObject({ kind: 'laser', ownerId: 'owner', targetId: 'owner', angle });
+    expect(impact.x).toBeCloseTo(contact[0]);
+    expect(impact.y).toBeCloseTo(contact[1]);
+    expect(impact.elapsedMs).toBeGreaterThan(0);
+    expect(impact.elapsedMs).toBeLessThan(170);
+    const age = impact.elapsedMs;
+    stepPowerupCombat(state, 100, [{ ...owner, active: false }], walls, 60);
+    expect(state.effects.filter((effect) => effect.role === 'impact')).toHaveLength(1);
+    expect(impact.elapsedMs).toBeCloseTo(age + 100);
+  });
+
+  it('places grazing laser contact on the beam edge and never flashes for protected targets or near misses', () => {
+    const state = createPowerupCombatState();
+    activatePowerup(state, 'owner', 'laser', 'right');
+    const hits = stepPowerupCombat(state, 650, [actor('owner', 40), actor('grazed', 120, 72.4),
+      actor('missed', 140, 72.5), { ...actor('shielded', 160), protected: true }], room(230), 60);
+    expect(hits.map(({ targetId }) => targetId)).toEqual(['grazed']);
+    const impacts = state.effects.filter((effect) => effect.role === 'impact');
+    expect(impacts).toHaveLength(1);
+    expect(impacts[0].x).toBeCloseTo(120, 4);
+    expect(impacts[0].y).toBeCloseTo(67.4);
+  });
+
+  it('respects walls before and after portals without damaging the teleport gap or protected opponents', () => {
+    const pairs = [{ from: { x: 0, y: 4 }, to: { x: 15, y: 4 } }];
+    const owner = actor('owner', 120, 72);
+    const blocked = createPowerupCombatState();
+    activatePowerup(blocked, 'owner', 'laser', 'right');
+    expect(stepPowerupCombat(blocked, 820, [owner], { ...room(200), portalPairs: pairs }, 60)).toEqual([]);
+    expect(blocked.effects[0].laserSegments).toHaveLength(1);
+    const returned = createPowerupCombatState();
+    activatePowerup(returned, 'owner', 'laser', 'right');
+    const targets = [owner, actor('at-exit', 30, 72), actor('off-beam', 90, 90),
+      { ...actor('protected', 40, 72), protected: true }];
+    expect(stepPowerupCombat(returned, 820, targets, { ...room(60), portalPairs: pairs }, 60)
+      .map((hit) => hit.targetId)).toEqual(['at-exit']);
+    expect(returned.effects[0].laserSegments?.[1]).toMatchObject({ x: 0, y: 72, length: 60, end: 'wall' });
+  });
+
+  it.each([0, 5, 20])('routes through the actual arena portals at shrink stage %i before retired cells can block it', (stage) => {
+    const map = createBattleArenaWorldMap(createBattleArenaMap(19), stage);
+    const walls = createPowerupCollisionWorld(map);
+    const state = createPowerupCombatState();
+    const owner = actor('owner', 392, 408);
+    activatePowerup(state, 'owner', 'laser', 'right');
+    expect(stepPowerupCombat(state, 820, [owner], walls, 60).map((hit) => hit.targetId)).toEqual(['owner']);
+    expect(state.effects[0].laserSegments).toHaveLength(2);
+  });
+
+  it.each([1000 / 60, 1000 / 120, 1000 / 144])('returns through an Endless wordmark portal at %f ms steps', (stepMs) => {
+    const stream = new EndlessMazeStream(73);
+    const pair = stream.map.portalPairs![0];
+    const state = createPowerupCombatState();
+    const owner = actor('owner', 200, (pair.from.y + 0.5) * 16);
+    const walls = createPowerupCollisionWorld(stream.map);
+    activatePowerup(state, 'owner', 'laser', 'right');
+    let hit = false;
+    for (let elapsed = 0; elapsed < 850; elapsed += stepMs) {
+      if (stepPowerupCombat(state, stepMs, [{ ...owner, active: !hit }], walls, 60).length) {
+        expect(elapsed + stepMs).toBeGreaterThan(650);
+        hit = true;
+      }
+    }
+    expect(hit).toBe(true);
+  });
+
   it('keeps a released laser mechanically tethered when its caster is rebased or relocated', () => {
     const state = createPowerupCombatState();
     activatePowerup(state, 'owner', 'laser', 'right');
-    stepPowerupCombat(state, 700, [actor('owner', 40)], room(), 60);
-    stepPowerupCombat(state, 20, [actor('owner', 80)], room(), 60);
+    stepPowerupCombat(state, 700, [actor('owner', 40)], room(250), 60);
+    stepPowerupCombat(state, 20, [actor('owner', 80)], room(250), 60);
     expect(state.effects[0]).toMatchObject({ x: 80, y: 64, angle: 0 });
     expect(state.casts[0].origin).toEqual({ x: 80, y: 64 });
-    expect(state.effects[0].length).toBeCloseTo(173);
+    expect(state.effects[0].length).toBeCloseTo(167);
   });
 
   it('selects a wall before a homing target and records the exact impact', () => {
@@ -445,11 +541,12 @@ describe('shared offensive combat', () => {
     state.projectiles.push({ id: state.nextId++, ownerId: 'missile', targetId: null,
       x: 72.9, y: 64, angle: 0, elapsedMs: 0, turns: [] });
     const hits = stepPowerupCombat(state, 1000 / 120, [actor('area', 20, 20), actor('missile', 20, 100),
-      { ...actor('target', 80.5), previous: { x: 80, y: 64 } }], room(), 60);
+      { ...actor('target', 80.5), previous: { x: 80, y: 64 } }], room(255), 60);
     expect(hits).toHaveLength(1);
     expect(hits[0].position.x).toBeCloseTo(80.1, 8);
     expect(state.projectiles).toEqual([]);
     expect(state.effects.some((effect) => effect.role === 'impact')).toBe(true);
+    expect(state.effects.some((effect) => effect.kind === 'laser' && effect.role === 'impact')).toBe(false);
   });
 
   it('detects a crossing target while excluding the teleport gap', () => {
@@ -566,14 +663,14 @@ describe('shared offensive combat', () => {
     state.projectiles.push({ id: state.nextId++, ownerId: 'attacker', targetId: null,
       x: 56.52, y: 64, angle: 0, elapsedMs: 0, turns: [] });
     expect(stepPowerupCombat(state, 4, [actor('victim', 64), actor('attacker', 20), actor('bystander', 90)], room(), 60)
-      .map((hit) => hit.targetId).sort()).toEqual(['bystander', 'victim']);
+      .map((hit) => hit.targetId).sort()).toEqual(['attacker', 'bystander', 'victim']);
   });
 
   it('clips a released beam when the topology gains a wall, with damage and reach changing together', () => {
     const state = createPowerupCombatState();
     activatePowerup(state, 'owner', 'laser', 'right');
     stepPowerupCombat(state, 700, [actor('owner', 40)], room(), 60);
-    expect(state.effects[0].length).toBeCloseTo(213);
+    expect(state.effects[0].length).toBeGreaterThan(256);
     expect(stepPowerupCombat(state, 20, [actor('owner', 40), actor('blocked', 100)], room(80), 60)).toEqual([]);
     expect(state.effects[0].length).toBeCloseTo(37);
   });
@@ -592,13 +689,6 @@ describe('shared offensive combat', () => {
     expect(stepPowerupCombat(state, 8, [actor('owner', 20), { ...actor('crossing', 40), radius: 1,
       previous: { x: 60, y: 64 } }], room(), 0)).toEqual([]);
     expect(state.projectiles).toEqual([]);
-  });
-
-  it('includes the exact reverse pulse radius boundary and excludes a near miss without splash damage', () => {
-    const state = createPowerupCombatState();
-    activatePowerup(state, 'owner', 'reverse-blast', 'right');
-    expect(stepPowerupCombat(state, 350, [actor('owner', 64), actor('edge', 101), actor('miss', 101.001)], room(), 60)
-      .map((hit) => hit.targetId)).toEqual(['edge']);
   });
 
   it('places distinct mirrored pairs without mutating candidate positions', () => {

@@ -23,12 +23,24 @@ interface FloatingPiece {
 const CYAN = 0x00aeff;
 const GOLD = 0xffc34d;
 const GOLD_COLOR = new Color(GOLD);
+const LASER_FLASH_COLOR = new Color(0xffffff);
 const PICKUP_RIM_COLOR = new Color(0xb8f9ff);
 const HUNTER_RIM_COLOR = new Color(0xfff1ba);
 
 export interface PacketAppearance {
   color: string;
   character: 'antenna' | 'goggles' | 'crest' | 'headphones';
+}
+
+/** Confirmed incoming world heading and milliseconds since laser contact. */
+export interface PacketLaserImpact { angle: number; elapsedMs: number }
+
+const laserImpacts = new WeakMap<Group, PacketLaserImpact>();
+
+/** Supplies contact through stable scene identity without requiring new methods on retained asset instances. */
+export function setPacketLaserImpact(group: Group, impact: PacketLaserImpact | null): void {
+  if (impact) laserImpacts.set(group, impact);
+  else laserImpacts.delete(group);
 }
 
 /** A shaded solid body with readable floating details, sampled only from the game clock. */
@@ -72,6 +84,8 @@ export class HologramPacket {
   private frame = 0;
   private trailOpacity = 0;
   private deathProgress: number | null = null;
+  private laserImpact: PacketLaserImpact | null = null;
+  private readonly impactOffset = new Vector3();
   private powered = false;
   private powerWarning = false;
   private powerAmount: number | undefined;
@@ -275,9 +289,10 @@ export class HologramPacket {
     this.sample(0);
   }
 
-  /** Samples score-controlled binary details, boost glow and sparks, power, and casting cosmetics without advancing gameplay or changing identity colors; angry eyes retain their placement and size. */
+  /** Samples score, casting, and directional laser death from absolute time without moving the gameplay root. */
   sample(timeSeconds: number): void {
     if (this.disposed) return;
+    this.laserImpact = laserImpacts.get(this.group) ?? null;
     const time = Math.max(0, timeSeconds);
     const tier = this.scoreTier;
     const boost = this.boosting && this.deathProgress === null;
@@ -369,10 +384,11 @@ export class HologramPacket {
     if (this.castPose && this.deathProgress === null) this.sampleCastPose(this.castPose);
     this.deathEffect.visible = this.deathProgress !== null;
     if (this.deathProgress !== null) this.sampleDeath(this.deathProgress);
+    if (this.deathProgress !== null && this.laserImpact) this.sampleLaserDeath(this.laserImpact);
     this.sampledPosition.copy(this.model.position);
   }
 
-  /** Faces details toward the camera while applying aim-locked cast movement to the solid body. */
+  /** Faces details toward the camera and applies cast or laser-hit offsets in their world direction. */
   faceCamera(camera: Camera): void {
     this.model.position.copy(this.sampledPosition);
     this.group.getWorldQuaternion(this.inverseRoot).invert();
@@ -390,6 +406,21 @@ export class HologramPacket {
       this.model.position.add(this.castOffset);
     }
     for (const echo of this.deathEchoes) echo.quaternion.copy(this.cameraRotation);
+    if (this.deathProgress !== null && this.laserImpact) {
+      const { angle, elapsedMs } = this.laserImpact;
+      const recoil = 3 * MathUtils.smoothstep(elapsedMs, 0, 95);
+      this.impactOffset.set(Math.cos(angle) * recoil, 0, Math.sin(angle) * recoil).applyQuaternion(this.inverseRoot);
+      this.model.position.add(this.impactOffset);
+      const scatter = MathUtils.smoothstep(elapsedMs, 80, 700);
+      for (const [index, echo] of this.deathEchoes.entries()) {
+        const side = index === 0 ? -1 : 1;
+        const forward = scatter * (3 + index * 3);
+        this.impactOffset.set(Math.cos(angle) * forward - Math.sin(angle) * side * scatter * 2,
+          scatter * (1.4 + index), Math.sin(angle) * forward + Math.cos(angle) * side * scatter * 2)
+          .applyQuaternion(this.cameraRotation);
+        echo.position.copy(this.impactOffset);
+      }
+    }
     this.model.getWorldPosition(this.viewCenter).applyMatrix4(camera.matrixWorldInverse);
     this.glitchCenter.value = this.viewCenter.y;
     // Project real ground movement into the same camera plane as the floating details.
@@ -481,6 +512,7 @@ export class HologramPacket {
     }
   }
 
+  /** Samples ordinary digital death, resetting slice transforms before any directional laser reaction. */
   private sampleDeath(progress: number): void {
     // Quantized, seeded jumps remain identical when paused or scrubbed in the asset inspector.
     const tick = Math.floor(progress * 24);
@@ -501,7 +533,8 @@ export class HologramPacket {
     }
     for (const [index, echo] of this.deathEchoes.entries()) {
       echo.visible = burst && !dropout;
-      echo.position.x = (index === 0 ? -1 : 1) * (0.2 + noise(tick * 3 + index + 1060) * 1.2) * intensity;
+      echo.position.set((index === 0 ? -1 : 1) * (0.2 + noise(tick * 3 + index + 1060) * 1.2) * intensity, 0, 0);
+      echo.scale.set(1.2, 1, 1);
     }
     for (const [index, digit] of this.digits.entries()) {
       const value = noise(tick * 31 + index * 17 + 1070) < 0.5 ? 0 : 1;
@@ -516,6 +549,26 @@ export class HologramPacket {
     this.deathScanline.position.y = terminal ? 0 : 2.1 - noise(tick + 1100) * 4.2;
     this.deathScanline.scale.x = terminal ? 7 * (1 - MathUtils.smoothstep(progress, 0.84, 0.98)) : 4 + noise(tick + 1110) * 3;
     this.deathScanline.material.opacity = terminal ? 0.8 : 0.3;
+  }
+
+  /** Flashes and compresses the struck body, then breaks its existing glitch slices apart along the beam. */
+  private sampleLaserDeath({ angle, elapsedMs }: PacketLaserImpact): void {
+    const flash = 1 - MathUtils.smoothstep(elapsedMs, 35, 160);
+    const compression = Math.sin(Math.min(1, elapsedMs / 180) * Math.PI);
+    const breakup = MathUtils.smoothstep(elapsedMs, 160, 700);
+    this.model.position.x = 0;
+    this.body.visible = elapsedMs < 320;
+    this.body.scale.multiply(this.impactOffset.set(1 - Math.abs(Math.cos(angle)) * compression * 0.3,
+      1 + compression * 0.2, 1 - Math.abs(Math.sin(angle)) * compression * 0.3));
+    this.glitchActive.value = elapsedMs >= 70 ? 1 : 0;
+    for (const material of this.pickupRims) material.color.lerp(LASER_FLASH_COLOR, flash);
+    for (const echo of this.deathEchoes) {
+      echo.visible = elapsedMs >= 70 && elapsedMs < 720;
+      echo.scale.set(1.2 * (1 - breakup * 0.8), 1 - breakup * 0.8, 1 - breakup * 0.8);
+    }
+    this.deathScanline.visible = false;
+    for (const digit of this.digits) digit.mesh.material.opacity *= 1 - breakup;
+    for (const pixel of this.pixels) pixel.material.opacity *= 1 - breakup;
   }
 
   private clipGlitchBands(material: Material, band: number): void {

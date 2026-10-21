@@ -24,6 +24,15 @@ export interface PowerupEffect extends PowerupPoint {
   role: 'attack' | 'launch' | 'impact' | 'collection';
   angle: number; elapsedMs: number; durationMs: number; radius: number; length: number;
   source?: PowerupPoint;
+  laserSegments?: PowerupLaserSegment[];
+  /** Actor receiving a confirmed laser impact; placement and age come from swept contact. */
+  targetId?: string;
+}
+/** A physical beam span; a delayed span starts at the linked portal without crossing the teleport gap. */
+export interface PowerupLaserSegment extends PowerupPoint {
+  length: number;
+  delayMs: number;
+  end: 'wall' | 'portal' | 'open';
 }
 export interface PowerupCombatState {
   clockMs: number; nextId: number;
@@ -37,13 +46,16 @@ export interface PowerupCombatActor extends PowerupPoint {
 }
 export interface PowerupHit { targetId: string; position: PowerupPoint }
 
+const BLAST_RADIUS = 64;
+
 export const POWERUP_RULES = {
-  blast: { releaseMs: 450, durationMs: 1600, activeUntilMs: 1600, growUntilMs: 1200, radius: 64 },
-  'reverse-blast': { releaseMs: 350, durationMs: 2200, activeUntilMs: 350, radius: 32 },
-  laser: { releaseMs: 480, durationMs: 1800, activeUntilMs: 1500, radius: 3.4, laserGrowMs: 170, authoredLength: 64, muzzle: 3 },
+  blast: { releaseMs: 450, durationMs: 1600, activeUntilMs: 1600, growUntilMs: 1200, radius: BLAST_RADIUS },
+  'reverse-blast': { releaseMs: 350, durationMs: 1100, activeUntilMs: 350, radius: BLAST_RADIUS },
+  laser: { releaseMs: 480, durationMs: 1800, activeUntilMs: 1500, radius: 3.4, laserGrowMs: 170,
+    authoredLength: 64, muzzle: 3, impactDurationMs: 900 },
   missile: { releaseMs: 1000, durationMs: 1000, activeUntilMs: 1000, radius: 2,
     speedMultiplier: 2, lifetimeMs: 3000,
-    targetRange: 128, launchDurationMs: 600, impactDurationMs: 700 },
+    targetRange: 128, impactDurationMs: 700 },
 } as const;
 
 /** Recognizes offensive pickups without treating ordinary points as weapons. */

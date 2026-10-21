@@ -34,7 +34,10 @@ const combat = z.object({
     effects: z.array(z.object({ id: integer, ownerId: identifier, kind: powerupKind,
         role: z.enum(['attack', 'launch', 'impact', 'collection']), x: finite, y: finite, angle: finite,
         elapsedMs: finite.nonnegative(), durationMs: finite.nonnegative(), radius: finite.nonnegative(),
-        length: finite.nonnegative(), source: point.optional() }).strict()).max(512),
+        length: finite.nonnegative(), source: point.optional(), targetId: identifier.optional(),
+        laserSegments: z.array(z.object({ x: finite, y: finite, length: finite.nonnegative(),
+            delayMs: finite.nonnegative(), end: z.enum(['wall', 'portal', 'open']) }).strict()).min(1).max(2).optional(),
+    }).strict()).max(512),
 }).strict();
 const player = z
     .object({

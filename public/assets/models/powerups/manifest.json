@@ -3,7 +3,7 @@
   "title": "PACKETLOSS Powerups",
   "createdDate": "2026-10-04",
   "authoring": "Blender MCP / Blender 5.2.1 LTS",
-  "status": "Blast, reverse blast, laser, and Trace are integrated into gameplay; magnet remains available only in the development Asset Lab.",
+  "status": "Powerup GLBs are the canonical geometry and animation source for gameplay and the Asset Lab; magnet remains preview-only.",
   "sourceBlend": "asset-sources/powerups/powerups.blend",
   "coordinates": {
     "up": "+Y",
@@ -44,7 +44,8 @@
   },
   "materials": {
     "extensions": [
-      "KHR_materials_emissive_strength"
+      "KHR_materials_emissive_strength",
+      "KHR_materials_unlit"
     ],
     "textures": "None; self-contained mesh, material and transform/morph animation.",
     "transparency": "Soft shells use standard alpha blend. Keep depthWrite disabled on transparent materials, as GLTFLoader does.",
@@ -53,13 +54,13 @@
   },
   "integration": {
     "magnet": "Automatic after collection. Point attraction only. Loop magnet-field with packet-magnet while active. Rendered star motes are decorative; gameplay must move actual point instances.",
-    "blast": "Start packet-blast and blast-burst at the same time; outward release at 0.45 s. Runtime samples the expanding shock front and collision from the shared 32-unit gameplay envelope.",
-    "reverse-blast": "Start packet-reverse-blast and reverse-blast-vortex together; a lethal 32-unit pulse releases at 0.35 s before the inward-collapse animation. Placement remains gameplay-owned.",
-    "laser": "Start packet-laser and laser-beam together; release at 0.48 s and hold the Packet's position and facing through 1.8 s. Mechanically attach the attack origin ahead of its caster while rotating an independent effect root toward aim. Scale the authored 64-unit beam to the first wall or arena boundary without a gameplay range cap.",
-    "missile": "Trace uses the compatible missile key and filenames. Start packet-missile and missile-launch together. Retarget the 0.6-second assembly clip across the full one-second startup, following the moving Packet and its current heading. Hide the retained missile-flight model during assembly; reveal it at release from the same ground origin with no forward offset. Its shard center is 10.2 units above ground, clear of the Packet. Translate and steer only the stationary root along gameplay-owned cardinal segments. On impact or expiry, replace flight with the harmless visual corruption burst; damage remains direct-contact only.",
+    "blast": "Play packet-blast and blast-burst directly at the same age. The GLB shock front follows the 64-unit cubic damage envelope from 0.45 to 1.2 s and retires at 1.6 s; no runtime replacement effect.",
+    "reverse-blast": "Play packet-reverse-blast and reverse-blast-vortex directly at the same age. A lethal 64-unit pulse releases at 0.35 s; a soft dark well contracts to nothing by 1.1 s without further hits or opponent displacement.",
+    "laser": "Play packet-laser and laser-beam at the same age. Hold the Packet through 1.8 s. The GLB contains beam growth, DNA, and contact particles. Runtime adapts only the laser-span length and impact placement to the first solid wall, with straight off-map travel through open portals.",
+    "missile": "Trace uses the compatible missile key and filenames. Play the one-second packet-missile and missile-launch clips directly while following the moving Packet and its heading. Hold the final assembly pose until authoritative release, then reveal missile-flight at the same origin. Root motion and collision remain gameplay-owned; impact is a harmless visual burst.",
     "collection": "Use each kind-collect for a local pickup absorption preview: 0.18 s intake + 0.12 s pulse. The target is above the Packet top face. Runtime must adapt position/trajectory from the actual collected location.",
     "packetCompanion": "Runtime applies the authored packet-pose and eye transform curves to the existing procedural HologramPacket, preserving player color and appearance. Companion body and eye meshes remain hidden while charge decorations follow the player.",
-    "runtimeLoading": "ArcadeAssets owns offensive powerup assets for gameplay; PowerupPreviewAssets shares their loading and disposal helpers for the development Asset Lab. Magnet remains preview-only."
+    "runtimeLoading": "PowerupAssets and PowerupPreviewAssets both play the canonical GLBs through PowerupModel. Authored geometry, colors, and clip timing are shared; only placement, aiming, beam reach, and companion pose retargeting depend on gameplay."
   },
   "review": {
     "still": "asset-sources/powerups/powerups-review.png",
@@ -143,20 +144,21 @@
       "root": "blast-burst-root",
       "kind": "blast",
       "role": "effect",
-      "radius": 32,
-      "releaseSeconds": 0.45
+      "radius": 64,
+      "releaseSeconds": 0.45,
+      "notes": "Canonical exported GLB: amber bands, central flash, and exact cubic expansion; replaces the older Blender export."
     },
     {
       "file": "reverse-blast-vortex.glb",
       "clip": "vortex_activate",
-      "durationSeconds": 2.2,
+      "durationSeconds": 1.1,
       "loop": false,
       "root": "reverse-blast-vortex-root",
       "kind": "reverse-blast",
       "role": "effect",
-      "radius": 32,
+      "radius": 64,
       "releaseSeconds": 0.35,
-      "notes": "Inward collapse follows the gameplay-owned lethal pulse; it does not move opponents or modify terrain."
+      "notes": "Canonical exported GLB: one solid dark radial well with a narrow, smoothly feathered rim in its original vivid violet palette. No white flash, orbit lines, streams, or data fragments. Contracts completely by 1.1 s; the lethal pulse remains gameplay-owned."
     },
     {
       "file": "laser-beam.glb",
@@ -174,7 +176,7 @@
         -3
       ],
       "releaseSeconds": 0.48,
-      "notes": "Forward -Z. White core, translucent blue envelope, rotating filaments; collision length remains gameplay owned."
+      "notes": "Canonical GLB includes the full beam, DNA, shared laser-span growth, and animated wall-contact flare/ring/sparks. Runtime only adapts beam reach and contact placement to gameplay."
     },
     {
       "file": "missile-flight.glb",
@@ -196,14 +198,14 @@
     {
       "file": "missile-launch.glb",
       "clip": "missile_launch",
-      "durationSeconds": 0.6,
+      "durationSeconds": 1,
       "loop": false,
       "root": "missile-launch-root",
       "kind": "missile",
       "role": "launch",
-      "releaseSeconds": 0.6,
+      "releaseSeconds": 1,
       "sourceBlend": "asset-sources/powerups/trace.blend",
-      "notes": "Pixel assembly ends with the same shard geometry and transform as flight. Sample this 0.6-second authored clip across the one-second startup and hold its final pose while waiting for authoritative release."
+      "notes": "Canonical one-second assembly clip: direct playback in gameplay and the Asset Lab. Final shard geometry matches missile-flight; hold the final pose while waiting for authoritative release."
     },
     {
       "file": "missile-impact.glb",
@@ -235,18 +237,18 @@
       "loop": false,
       "root": "packet-blast-root",
       "releaseSeconds": 0.45,
-      "notes": "Fixed root; +Y forward in Blender / -Z in GLB; packet-pose center Z=6.15; transform-only keys baked at 30 fps. One-shot cast starts and ends at neutral; align effect release to releaseSeconds.",
+      "notes": "Fixed root; +Y forward in Blender / -Z in GLB; packet-pose center Z=6.15; transform-only keys baked at 30 fps. One-shot cast starts and ends at neutral; align effect release to releaseSeconds. GLB pose revised to stay centered and upright: uniform compression through 0.40 s, outward pop at the 0.45 s release, and neutral by 0.90 s; eyes stay open. This pose revision is applied to the exported GLB, not powerups.blend.",
       "kind": "blast",
       "role": "packet-companion"
     },
     {
       "file": "packet-reverse-blast.glb",
       "clip": "packet-vortex-cast",
-      "durationSeconds": 2.2,
+      "durationSeconds": 1.1,
       "loop": false,
       "root": "packet-reverse-blast-root",
       "releaseSeconds": 0.35,
-      "notes": "Fixed root; +Y forward in Blender / -Z in GLB; packet-pose center Z=6.15; transform-only keys baked at 30 fps. One-shot cast starts and ends at neutral; align effect release to releaseSeconds.",
+      "notes": "Fixed root; +Y forward in Blender / -Z in GLB; packet-pose center Z=6.15; transform-only keys baked at 30 fps. One-shot cast starts and ends at neutral; align effect release to releaseSeconds. Recovery is retimed in this GLB to finish at 1.1 s while preserving the 0.35 s release; the older Blender source is not authoritative.",
       "kind": "reverse-blast",
       "role": "packet-companion"
     },
@@ -359,5 +361,6 @@
       "confirmationHeight": 8.72,
       "sourceBlend": "asset-sources/powerups/trace.blend"
     }
-  ]
+  ],
+  "sourceAuthority": "Shipped GLBs are canonical. Blender project files are historical authoring sources and may predate the exported animation revisions."
 }

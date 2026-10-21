@@ -1,10 +1,11 @@
 import { Group, Mesh } from 'three';
 import type { Direction } from '../../domain/valueObjects/Direction';
 import {
-  POWERUP_RULES, sampleLaserLength, samplePowerupRadius,
+  POWERUP_RULES, sampleLaserLength,
   type PowerupCombatState, type PowerupPickup, type PowerupKind,
 } from '../../shared/offensivePowerups';
 import { PowerupAssets, type PowerupModel, type PowerupPose } from './PowerupAssets';
+import { setPacketLaserImpact } from './HologramPacket';
 
 export interface PowerupActorPresentation {
   group: Group;
@@ -23,7 +24,7 @@ export class PowerupPresentation {
     this.group.name = 'offensive-powerups';
   }
 
-  /** Seeks simulation ages, showing Trace assembly on the Packet until authoritative release; pauses and late snapshots never advance combat. */
+  /** Seeks confirmed impacts and portal spans; pauses, rewind, and late snapshots never replay a hit. */
   sync(
     combat: PowerupCombatState | null,
     pickups: readonly PowerupPickup[],
@@ -32,7 +33,10 @@ export class PowerupPresentation {
   ): void {
     if (this.disposed) return;
     const used = new Set<string>();
-    for (const actor of actors.values()) actor.setPose(null);
+    for (const actor of actors.values()) {
+      actor.setPose(null);
+      setPacketLaserImpact(actor.group, null);
+    }
     for (const pickup of pickups) {
       const model = this.get(`pickup:${pickup.id}:${pickup.kind}`, pickup.kind, 'pickup', used);
       model.group.position.set(pickup.x, 0, pickup.y);
@@ -68,7 +72,7 @@ export class PowerupPresentation {
           const launch = this.get(`launch:${cast.id}`, 'missile', 'launch', used);
           launch.group.position.copy(actor.group.position);
           launch.group.rotation.y = modelRotation(angle);
-          launch.sample(Math.min(1, elapsed / rule.releaseMs) * POWERUP_RULES.missile.launchDurationMs);
+          launch.sample(Math.min(elapsed, rule.releaseMs));
         }
       }
       for (const projectile of combat.projectiles) {
@@ -83,18 +87,60 @@ export class PowerupPresentation {
       for (const effect of combat.effects) {
         const elapsed = effect.elapsedMs + lead;
         if (elapsed >= effect.durationMs) continue;
+        if (effect.kind === 'laser' && effect.role === 'impact') {
+          const target = effect.targetId ? actors.get(effect.targetId) : undefined;
+          if (target) setPacketLaserImpact(target.group, { angle: effect.angle, elapsedMs: elapsed });
+          // Reuse the authored contact burst on its own short clock, independent of the firing beam's age.
+          if (elapsed < 550) {
+            const rule = POWERUP_RULES.laser;
+            const contactStart = rule.releaseMs + rule.laserGrowMs;
+            const flash = this.get(`effect:${effect.id}`, 'laser', 'effect', used);
+            flash.group.position.set(effect.x, 0, effect.y);
+            flash.group.rotation.y = modelRotation(effect.angle);
+            flash.sample(contactStart + elapsed / 550 * (rule.durationMs - contactStart));
+            showLaserContact(flash.scene, 1.6);
+          }
+          continue;
+        }
         const role = effect.role === 'attack' ? 'effect' : effect.role;
         const model = this.get(`effect:${effect.id}`, effect.kind, role, used);
         model.group.position.set(effect.x, 0, effect.y);
         model.group.rotation.y = modelRotation(effect.angle);
         model.sample(elapsed);
-        if (effect.kind === 'blast' && effect.role === 'attack') {
-          model.setBlastRadius(samplePowerupRadius('blast', elapsed));
-        }
         if (effect.kind === 'laser' && effect.role === 'attack' && elapsed >= POWERUP_RULES.laser.releaseMs) {
-          const growth = sampleLaserLength(effect.elapsedMs, 1);
-          const length = growth > 0 ? sampleLaserLength(elapsed, effect.length / growth) : effect.length;
-          model.clipLaser(effect.x, effect.y, effect.angle, length);
+          if (effect.laserSegments) {
+            const rule = POWERUP_RULES.laser;
+            const dx = Math.cos(effect.angle), dy = Math.sin(effect.angle);
+            for (const [index, segment] of effect.laserSegments.entries()) {
+              const length = sampleLaserLength(elapsed - segment.delayMs, segment.length);
+              if (index > 0 && length <= 0) continue;
+              const beam = index === 0 ? model : this.get(`beam:${effect.id}:${index}`, 'laser', 'effect', used);
+              const x = segment.x - dx * rule.muzzle, y = segment.y - dy * rule.muzzle;
+              beam.group.position.set(x, 0, y);
+              beam.group.rotation.y = modelRotation(effect.angle);
+              beam.sample(elapsed);
+              beam.clipLaser(x, y, effect.angle, length, {
+                impact: segment.end === 'wall' && elapsed >= rule.releaseMs + rule.laserGrowMs + segment.delayMs,
+                continuation: index > 0,
+              });
+            }
+            const [entry, exit] = effect.laserSegments;
+            if (exit && elapsed >= rule.releaseMs + exit.delayMs) {
+              for (const [index, point] of [
+                { x: entry.x + dx * entry.length, y: entry.y + dy * entry.length }, exit,
+              ].entries()) {
+                const flash = this.get(`portal:${effect.id}:${index}`, 'laser', 'effect', used);
+                flash.group.position.set(point.x, 0, point.y);
+                flash.group.rotation.y = modelRotation(effect.angle + (index === 0 ? 0 : Math.PI));
+                flash.sample(elapsed);
+                showLaserContact(flash.scene, 1.4);
+              }
+            }
+          } else {
+            const growth = sampleLaserLength(effect.elapsedMs, 1);
+            const length = growth > 0 ? sampleLaserLength(elapsed, effect.length / growth) : effect.length;
+            model.clipLaser(effect.x, effect.y, effect.angle, length);
+          }
         }
         if (effect.role === 'collection' && effect.source) {
           const actor = actors.get(effect.ownerId);
@@ -141,6 +187,18 @@ export class PowerupPresentation {
       this.group.add(model.group);
     }
     return model;
+  }
+}
+
+/** Places the authored flare at a portal or body contact through the stable scene API, above the passing beam. */
+function showLaserContact(scene: Group, scale: number): void {
+  const muzzle = scene.getObjectByName('muzzle-anchor');
+  if (muzzle) muzzle.visible = false;
+  const impact = scene.getObjectByName('laser-wall-impact');
+  if (impact) {
+    impact.position.set(0, 6.15, 0);
+    impact.scale.multiplyScalar(scale);
+    impact.traverse((object) => { if (object instanceof Mesh) object.renderOrder = 5; });
   }
 }
 

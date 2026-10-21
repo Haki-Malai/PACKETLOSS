@@ -6,6 +6,7 @@ import { PortalService } from '../game/domain/services/PortalService';
 import { WorldState } from '../game/domain/world/WorldState';
 import { CollectibleSystem } from '../game/systems/CollectibleSystem';
 import { PowerupSystem } from '../game/systems/PowerupSystem';
+import { EnemyPacketCollisionSystem } from '../game/systems/EnemyPacketCollisionSystem';
 import { PacketMovementSystem } from '../game/systems/PacketMovementSystem';
 import { EndlessMazeStream } from '../game/domain/world/EndlessMazeStream';
 import { createCollisionTile, createMapFixture } from './fixtures/pointLayoutFixtures';
@@ -36,6 +37,38 @@ function collectAt(harness: ReturnType<typeof corridor>, index = 0): void {
 }
 
 describe('solo offensive powerups', () => {
+  it.each(['default-map', 'demo-map'] as const)('uses portal return damage and the normal death/respawn flow on %s', (fixture) => {
+    const harness = new MechanicsDomainHarness({ fixture, enemyCount: 0, autoStartSystems: false });
+    const { world, movementRules } = harness;
+    const collision = new EnemyPacketCollisionSystem(world, movementRules, undefined,
+      () => system.reset(), () => system.clearForDeath());
+    const system = new PowerupSystem(world, movementRules, new CollectibleSystem(world),
+      undefined, undefined, harness.portalService, () => collision.hitPacket());
+    try {
+      const pair = world.map.portalPairs!.find(({ from, to }) => from.y === to.y)!;
+      const left = Math.min(pair.from.x, pair.to.x);
+      movementRules.setEntityTile(world.packet, { x: left + 2, y: pair.from.y });
+      world.packet.direction.current = 'left';
+      const position = { x: world.packet.x, y: world.packet.y };
+      const before = world.gameState.getSnapshot();
+      system.equipDevelopment('laser'); system.activate();
+      system.update(650);
+      expect(world.packet.deathAnimationRemainingMs).toBe(0);
+      world.isMoving = false; system.update(500);
+      expect(world.powerupCombat.clockMs).toBeCloseTo(650);
+      world.isMoving = true; system.update(170);
+      expect(world.packet).toMatchObject({ ...position, deathAnimationRemainingMs: 900 });
+      expect(world.gameState.getSnapshot()).toEqual({ score: before.score, lives: before.lives - 1 });
+      expect(world.powerupCombat.casts).toEqual([]);
+      system.update(100);
+      expect(world.gameState.getSnapshot().lives).toBe(before.lives - 1);
+      collision.update(900);
+      expect(world.packet.deathAnimationRemainingMs).toBe(0);
+      expect(world.packet.tile).toEqual(world.packetSpawnTile);
+      expect(world.powerupCombat.effects).toEqual([]);
+    } finally { system.destroy(); harness.destroy(); }
+  });
+
   it('places two of each weapon away from cores, multipliers, and spawns without affecting scored completion', () => {
     const { world, collectibles, powerups } = corridor();
     expect(world.powerupPickups).toHaveLength(8);
@@ -182,6 +215,13 @@ describe('solo offensive powerups', () => {
       x: packet.x, y: packet.y, angle: Math.PI / 2, elapsedMs: 200,
       turns: [{ x: packet.x, y: packet.y - 16, angle: Math.PI / 2, elapsedMs: 100 }] };
     world.powerupCombat.projectiles.push(cornered);
+    const beam = { id: world.powerupCombat.nextId++, ownerId: 'packet', kind: 'laser' as const,
+      role: 'attack' as const, x: packet.x, y: packet.y, angle: 0, elapsedMs: 700, durationMs: 1800,
+      radius: 3.4, length: 100, laserSegments: [
+        { x: packet.x + 3, y: packet.y, length: 100, delayMs: 0, end: 'portal' as const },
+        { x: 0, y: packet.y, length: 400, delayMs: 170, end: 'portal' as const },
+      ] };
+    world.powerupCombat.effects.push(beam);
     const { rows } = stream.shift('down');
     packet.tile.y += rows;
     packet.y += rows * 16;
@@ -199,6 +239,8 @@ describe('solo offensive powerups', () => {
       ...cornered, y: cornered.y + rows * 16,
       turns: [{ ...cornered.turns[0], y: cornered.turns[0].y + rows * 16 }],
     });
+    expect(world.powerupCombat.effects.find((effect) => effect.id === beam.id)?.laserSegments)
+      .toEqual(beam.laserSegments.map((segment) => ({ ...segment, y: segment.y + rows * 16 })));
     system.destroy();
   });
 });

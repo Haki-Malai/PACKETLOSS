@@ -184,7 +184,7 @@ export class DataRace {
     this.state.rankings = [];
   }
 
-  /** Advances one authoritative 60 Hz step, holding laser casters through their animation and supplying current missile release headings. */
+  /** Advances authoritative combat and movement, letting released effects finish during terminal death animation. */
   step(): void {
     if (this.state.phase === 'finished' || this.state.phase === 'aborted') return;
     this.state.tick += 1;
@@ -218,6 +218,8 @@ export class DataRace {
         });
     }
     if (outcomeLocked) {
+      // Released effects finish alongside the death animation without accepting further victims.
+      stepPowerupCombat(this.state.combat, RACE.stepMs, [], this.walls, RACE.playerSpeed * TILE_SIZE);
       if (this.state.playTicks >= RACE.matchTicks || this.terminalPresentationComplete()) this.finish();
       return;
     }

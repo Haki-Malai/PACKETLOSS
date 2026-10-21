@@ -221,7 +221,8 @@ export class GameCompositionRoot {
         : stream ? new EndlessBonusSystem(world, stream, endlessSeed)
           : new ScoreBonusSystem(world, collectibleSystem, SCORE_BONUS_TILES[mapVariant]);
       const powerupSystem = this.options.tutorialLesson ? undefined
-        : new PowerupSystem(world, movementRules, collectibleSystem, scoreBonusSystem, stream, portalService);
+        : new PowerupSystem(world, movementRules, collectibleSystem, scoreBonusSystem, stream, portalService,
+          () => enemyPacketCollisionSystem.hitPacket());
       const inputSystem = new InputSystem(input, world, runtimeControl, !this.options.tutorialLesson, powerupSystem);
       const mazeHazardSystem = new MazeHazardSystem(world, movementRules, gameplayRng, collectibleSystem);
       const packetSystem = new PacketMovementSystem(world, movementRules, portalService);

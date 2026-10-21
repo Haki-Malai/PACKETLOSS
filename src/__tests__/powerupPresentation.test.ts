@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PowerupAssets, OFFENSIVE_POWERUP_ASSETS, type PowerupAssetRole } from '../game/infrastructure/three/PowerupAssets';
 import { PowerupPresentation, type PowerupActorPresentation } from '../game/infrastructure/three/PowerupPresentation';
 import { HologramPacket } from '../game/infrastructure/three/HologramPacket';
-import { EnemyEffects } from '../game/infrastructure/three/EnemyEffects';
 import { createPowerupCombatState } from '../game/simulation/PowerupCombat';
 import { isPowerupKind, samplePowerupRadius, type PowerupEffect } from '../game/shared/offensivePowerups';
 
@@ -17,11 +16,122 @@ async function fetchModel(url: string): Promise<Response> {
 /** Builds an authored attack timeline independently of simulation internals. */
 function attack(kind: PowerupEffect['kind'], elapsedMs: number): PowerupEffect {
   return { id: 1, ownerId: 'packet', kind, role: 'attack', x: 20, y: 40, angle: 0,
-    elapsedMs, durationMs: 1800, radius: kind === 'blast' ? 64 : 32, length: 12 };
+    elapsedMs, durationMs: 1800, radius: kind === 'blast' || kind === 'reverse-blast' ? 64 : 32, length: 12 };
 }
 
 describe('Offensive powerup presentation', () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it.each([0, Math.PI / 2, Math.PI, -Math.PI / 2])('seeks a directional body impact at angle %f without moving the gameplay root', async (angle) => {
+    vi.stubGlobal('fetch', fetchModel);
+    const assets = await PowerupAssets.load(), presentation = new PowerupPresentation(assets);
+    const packet = new HologramPacket();
+    packet.group.position.set(120, 0, 72);
+    packet.group.rotation.y = -angle;
+    const actors = new Map<string, PowerupActorPresentation>([['packet', { group: packet.group,
+      setPose: (pose) => packet.setCastPose(pose) }]]);
+    const camera = new Camera();
+    camera.position.set(0, 300, 200); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
+    packet.sample(1); packet.faceCamera(camera);
+    const neutral = packet.model.getWorldPosition(new Vector3());
+    const combat = createPowerupCombatState();
+    const impact: PowerupEffect = { ...attack('laser', 95), role: 'impact', targetId: 'packet',
+      angle, x: 120 - Math.cos(angle) * 5, y: 72 - Math.sin(angle) * 5, durationMs: 900, radius: 5 };
+    combat.effects.push(impact);
+    packet.setDeathProgress(95 / 900);
+    presentation.sync(combat, [], actors);
+    packet.sample(1); packet.faceCamera(camera);
+    const recoil = packet.model.getWorldPosition(new Vector3()).sub(neutral);
+    expect(recoil.x).toBeCloseTo(Math.cos(angle) * 3);
+    expect(recoil.z).toBeCloseTo(Math.sin(angle) * 3);
+    expect(packet.group.position.toArray()).toEqual([120, 0, 72]);
+    const flash = presentation.group.getObjectByName('effect:1')!;
+    const contact = flash.getObjectByName('laser-wall-impact')!;
+    expect(contact.getWorldPosition(new Vector3()).x).toBeCloseTo(impact.x);
+    expect(contact.getWorldPosition(new Vector3()).z).toBeCloseTo(impact.y);
+    expect(flash.getObjectByName('muzzle-anchor')!.visible).toBe(false);
+    const core = contact.getObjectByName('laser-impact-core') as Mesh<BufferGeometry, Material>;
+    expect(core.renderOrder).toBeGreaterThan(4);
+    expect(contact.scale.x).toBeGreaterThan(0);
+    const materialDispose = vi.spyOn(core.material, 'dispose'), geometryDispose = vi.spyOn(core.geometry, 'dispose');
+    const frozen = packet.model.getWorldPosition(new Vector3());
+    presentation.sync(combat, [], actors); packet.sample(1); packet.faceCamera(camera); packet.faceCamera(camera);
+    expect(packet.model.getWorldPosition(new Vector3()).distanceTo(frozen)).toBeLessThan(1e-8);
+    const body = packet.group.getObjectByName('hologram-body')!;
+    const slice = packet.group.getObjectByName('death-slice-0')!;
+    impact.elapsedMs = 350;
+    presentation.sync(combat, [], actors); packet.sample(1); packet.faceCamera(camera);
+    expect(body.visible).toBe(false);
+    expect(slice.visible).toBe(true);
+    const drift = slice.getWorldPosition(new Vector3()).sub(packet.model.getWorldPosition(new Vector3()));
+    expect(drift.x * Math.cos(angle) + drift.z * Math.sin(angle)).toBeGreaterThan(0);
+    impact.elapsedMs = 750;
+    presentation.sync(combat, [], actors); packet.sample(1);
+    expect(slice.visible).toBe(false);
+    expect(presentation.group.children).toHaveLength(0);
+    expect(materialDispose).toHaveBeenCalledOnce();
+    expect(geometryDispose).not.toHaveBeenCalled();
+    impact.elapsedMs = 95;
+    presentation.sync(combat, [], actors); packet.sample(1); packet.faceCamera(camera);
+    expect(body.visible).toBe(true);
+    expect(packet.model.getWorldPosition(new Vector3()).distanceTo(frozen)).toBeLessThan(1e-8);
+    combat.effects = [];
+    packet.setDeathProgress(null);
+    presentation.sync(combat, [], actors); packet.sample(1); packet.faceCamera(camera);
+    expect(packet.model.getWorldPosition(new Vector3()).distanceTo(neutral)).toBeLessThan(1e-8);
+    presentation.dispose(); assets.dispose(); packet.dispose();
+    expect(geometryDispose).toHaveBeenCalledOnce();
+  });
+
+  it('presents and rewinds portal returns with retained models that lack the new portal method', async () => {
+    vi.stubGlobal('fetch', fetchModel);
+    const assets = await PowerupAssets.load();
+    const create = assets.create.bind(assets);
+    // Reproduce a retained asset factory whose model instances predate the portal presentation method.
+    vi.spyOn(assets, 'create').mockImplementation((kind, role) => {
+      const model = create(kind, role);
+      Object.defineProperty(model, 'showLaserPortal', { value: undefined });
+      return model;
+    });
+    const presentation = new PowerupPresentation(assets);
+    const combat = createPowerupCombatState();
+    combat.effects.push({ ...attack('laser', 649), laserSegments: [
+      { x: 23, y: 40, length: 105, delayMs: 0, end: 'portal' },
+      { x: 0, y: 40, length: 128, delayMs: 170, end: 'portal' },
+    ] });
+    presentation.sync(combat, [], new Map());
+    expect(presentation.group.getObjectByName('beam:1:1')).toBeUndefined();
+    expect(presentation.group.getObjectByName('portal:1:0')).toBeUndefined();
+    expect(presentation.group.getObjectByName('laser-wall-impact')!.visible).toBe(false);
+    combat.effects[0].elapsedMs = 735;
+    presentation.sync(combat, [], new Map());
+    presentation.group.updateMatrixWorld(true);
+    const beam = presentation.group.getObjectByName('beam:1:1')!;
+    expect(beam.getObjectByName('charge-white-core')!.visible).toBe(false);
+    const core = beam.getObjectByName('beam-white-core') as Mesh<BufferGeometry, Material>;
+    expect(new Box3().setFromObject(core, true).max.x).toBeCloseTo(64, 1);
+    for (const [index, x] of [[0, 128], [1, 0]]) {
+      const flash = presentation.group.getObjectByName(`portal:1:${index}`)!;
+      expect(flash.getObjectByName('muzzle-anchor')!.visible).toBe(false);
+      const contact = flash.getObjectByName('laser-wall-impact')!;
+      expect(contact.getWorldPosition(new Vector3()).x).toBeCloseTo(x);
+      expect(contact.scale.x).toBeGreaterThan(0);
+    }
+    const frozen = new Box3().setFromObject(core, true);
+    presentation.sync(combat, [], new Map());
+    presentation.group.updateMatrixWorld(true);
+    expect(new Box3().setFromObject(core, true).equals(frozen)).toBe(true);
+    const materialDispose = vi.spyOn(core.material, 'dispose');
+    const geometryDispose = vi.spyOn(core.geometry, 'dispose');
+    combat.effects[0].elapsedMs = 649;
+    presentation.sync(combat, [], new Map());
+    expect(presentation.group.getObjectByName('beam:1:1')).toBeUndefined();
+    expect(presentation.group.getObjectByName('portal:1:0')).toBeUndefined();
+    expect(materialDispose).toHaveBeenCalledOnce();
+    expect(geometryDispose).not.toHaveBeenCalled();
+    presentation.dispose(); assets.dispose();
+    expect(geometryDispose).toHaveBeenCalledOnce();
+  });
 
   it('loads the offensive manifest clips, loops pickups, and independently rewinds a clamped effect', async () => {
     const fetch = vi.fn(fetchModel);
@@ -49,6 +159,26 @@ describe('Offensive powerup presentation', () => {
     const first = new Box3().setFromObject(pickup.scene);
     pickup.sample(6550);
     expect(new Box3().setFromObject(pickup.scene).min.distanceTo(first.min)).toBeLessThan(0.001);
+    assets.dispose();
+  });
+
+  it('keeps the blast upright and centered through charge, outward release, and recovery', async () => {
+    vi.stubGlobal('fetch', fetchModel);
+    const assets = await PowerupAssets.load();
+    const model = assets.create('blast', 'packet-companion');
+    model.sample(0);
+    const neutral = model.pose(0);
+    for (const time of [350, 450, 900, 1600]) {
+      model.sample(time);
+      const pose = model.pose(0);
+      expect(pose.position.distanceTo(neutral.position)).toBeLessThan(0.0001);
+      expect(pose.rotation.angleTo(neutral.rotation)).toBeLessThan(0.0001);
+      expect(pose.scale.x).toBeCloseTo(pose.scale.y);
+      expect(pose.scale.z).toBeCloseTo(pose.scale.y);
+      if (time === 350) expect(pose.scale.x).toBeLessThan(1);
+      else if (time === 450) expect(pose.scale.x).toBeGreaterThan(1);
+      else expect(pose.scale.distanceTo(neutral.scale)).toBeLessThan(0.0001);
+    }
     assets.dispose();
   });
 
@@ -100,10 +230,9 @@ describe('Offensive powerup presentation', () => {
     const blast = assets.create('blast', 'effect');
     blast.sample(700);
     const radius = samplePowerupRadius('blast', 700);
-    blast.setBlastRadius(radius);
     blast.group.updateMatrixWorld(true);
     const ring = blast.scene.getObjectByName('blast-pulse-front')!;
-    const ringBounds = new Box3().setFromObject(ring);
+    const ringBounds = new Box3().setFromObject(ring, true);
     expect(ringBounds.max.x).toBeCloseTo(radius);
     expect(ringBounds.min.z).toBeCloseTo(-radius);
     const beam = assets.create('laser', 'effect');
@@ -149,58 +278,47 @@ describe('Offensive powerup presentation', () => {
     assets.dispose();
   });
 
-  it('reuses Ping for blast without recoloring it, freezes and rewinds impact accents, and releases only owned resources', async () => {
+  it('plays the dark reverse well inward, recovers its cast, and releases only instance materials', async () => {
     vi.stubGlobal('fetch', fetchModel);
     const assets = await PowerupAssets.load();
     const presentation = new PowerupPresentation(assets);
-    const ping = new EnemyEffects();
-    ping.sync([{ kind: 'ping', x: 8, y: 8, radius: 128, ageMs: 300, durationMs: 600 }], []);
-    const pingRing = ping.group.getObjectByName('ping-pulse') as Mesh<BufferGeometry, MeshBasicMaterial>;
-    const pingDisposals = [pingRing.geometry, pingRing.material].map((resource) => vi.spyOn(resource, 'dispose'));
+    const cast = assets.create('reverse-blast', 'packet-companion');
+    cast.sample(0);
+    const neutral = cast.pose(0);
     const combat = createPowerupCombatState();
-    combat.clockMs = 1000;
-    combat.effects.push({ ...attack('blast', 449), durationMs: 1600 });
+    combat.effects.push({ ...attack('reverse-blast', 350), durationMs: 1100 });
     presentation.sync(combat, [], new Map());
-    const pulse = presentation.group.getObjectByName('blast-ping-pulse')!;
-    expect(pulse.visible).toBe(false);
-    presentation.sync(combat, [], new Map(), 1376);
-    expect(pulse.visible).toBe(true);
-    const front = pulse.getObjectByName('blast-pulse-front') as Mesh<BufferGeometry, MeshBasicMaterial>;
-    const authored = presentation.group.getObjectByName('expanding-shock-front') as Mesh<BufferGeometry, MeshBasicMaterial>;
-    expect(front.material.color.equals(authored.material.color)).toBe(true);
-    expect(front.material).not.toBe(pingRing.material);
+    const well = presentation.group.getObjectByName('reverse-blast-dark-well') as Mesh<BufferGeometry, MeshBasicMaterial>;
     presentation.group.updateMatrixWorld(true);
-    expect(new Box3().setFromObject(front).max.x).toBeCloseTo(76);
-    const paused = new Box3().setFromObject(pulse);
-    presentation.sync(combat, [], new Map(), 1376);
-    expect(new Box3().setFromObject(pulse).equals(paused)).toBe(true);
-    presentation.sync(combat, [], new Map(), 1476);
-    expect(new Box3().setFromObject(pulse).equals(paused)).toBe(false);
-    presentation.sync(combat, [], new Map(), 1376);
-    expect(new Box3().setFromObject(pulse).equals(paused)).toBe(true);
-    expect(combat.effects[0].elapsedMs).toBe(449);
-    const resources = new Set<BufferGeometry | Material>();
-    pulse.traverse((object) => {
-      if (!(object instanceof Mesh)) return;
-      const mesh = object as Mesh<BufferGeometry, MeshBasicMaterial>;
-      resources.add(mesh.geometry); resources.add(mesh.material);
-    });
-    const disposals = [...resources].map((resource) => vi.spyOn(resource, 'dispose'));
-    const sharedDisposal = vi.spyOn(authored.geometry, 'dispose');
-    presentation.sync(combat, [], new Map(), 2151);
+    expect(new Box3().setFromObject(well, true).max.x).toBeCloseTo(84);
+    const start = well.scale.x;
+    combat.effects[0].elapsedMs = 720;
+    presentation.sync(combat, [], new Map());
+    expect(well.scale.x).toBeLessThan(start);
+    const paused = well.scale.clone();
+    presentation.sync(combat, [], new Map());
+    expect(well.scale.equals(paused)).toBe(true);
+    combat.effects[0].elapsedMs = 350;
+    presentation.sync(combat, [], new Map());
+    expect(well.scale.x).toBeCloseTo(start);
+    cast.sample(1100);
+    const recovered = cast.pose(0);
+    expect(recovered.position.distanceTo(neutral.position)).toBeLessThan(0.0001);
+    expect(recovered.rotation.angleTo(neutral.rotation)).toBeLessThan(0.0001);
+    expect(recovered.scale.distanceTo(neutral.scale)).toBeLessThan(0.0001);
+    const materialDisposal = vi.spyOn(well.material, 'dispose');
+    const geometryDisposal = vi.spyOn(well.geometry, 'dispose');
+    combat.effects[0].elapsedMs = 1100;
+    presentation.sync(combat, [], new Map());
     expect(presentation.group.children).toHaveLength(0);
-    for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
-    expect(sharedDisposal).not.toHaveBeenCalled();
-    expect(pingRing.material.color.getHex()).toBe(0x68ff72);
-    expect(pingRing.material.opacity).toBeCloseTo(0.4);
-    expect(pingRing.scale.x).toBeCloseTo(66.56);
-    for (const dispose of pingDisposals) expect(dispose).not.toHaveBeenCalled();
-    presentation.dispose(); assets.dispose(); assets.dispose(); ping.dispose();
-    for (const dispose of [...disposals, ...pingDisposals]) expect(dispose).toHaveBeenCalledOnce();
-    expect(sharedDisposal).toHaveBeenCalledOnce();
+    expect(materialDisposal).toHaveBeenCalledOnce();
+    expect(geometryDisposal).not.toHaveBeenCalled();
+    presentation.dispose(); assets.dispose(); assets.dispose();
+    expect(materialDisposal).toHaveBeenCalledOnce();
+    expect(geometryDisposal).toHaveBeenCalledOnce();
   });
 
-  it('animates wall contact at the full beam endpoint after growth, rewinds paused samples, and releases private resources', async () => {
+  it('positions the GLB wall contact at full beam reach, rewinds its clip, and preserves shared geometry', async () => {
     vi.stubGlobal('fetch', fetchModel);
     const assets = await PowerupAssets.load();
     const presentation = new PowerupPresentation(assets);
@@ -209,9 +327,9 @@ describe('Offensive powerup presentation', () => {
     combat.effects.push({ ...attack('laser', 565), length: 90 });
     presentation.sync(combat, [], new Map(), 1084);
     const impact = presentation.group.getObjectByName('laser-wall-impact')!;
-    expect(impact.visible).toBe(false);
+    expect(impact.scale.length()).toBe(0);
     presentation.sync(combat, [], new Map(), 1085);
-    expect(impact.visible).toBe(true);
+    expect(impact.scale.x).toBeCloseTo(1);
     const point = impact.getWorldPosition(new Vector3());
     expect(point.x).toBeCloseTo(203, 1);
     expect(point.y).toBeCloseTo(6.15);
@@ -238,15 +356,17 @@ describe('Offensive powerup presentation', () => {
       geometries.add(mesh.geometry);
       materials.add(mesh.material);
     });
-    const disposals = [...geometries, ...materials].map((resource) => vi.spyOn(resource, 'dispose'));
+    const disposals = [...materials].map((resource) => vi.spyOn(resource, 'dispose'));
+    const geometryDisposals = [...geometries].map((resource) => vi.spyOn(resource, 'dispose'));
     const core = presentation.group.getObjectByName('beam-white-core') as Mesh<BufferGeometry>;
     const sharedDisposal = vi.spyOn(core.geometry, 'dispose');
     combat.effects.length = 0;
     presentation.sync(combat, [], new Map(), 1085);
     for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
+    for (const dispose of geometryDisposals) expect(dispose).not.toHaveBeenCalled();
     expect(sharedDisposal).not.toHaveBeenCalled();
     presentation.dispose(); presentation.dispose(); assets.dispose(); assets.dispose();
-    for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
+    for (const dispose of [...disposals, ...geometryDisposals]) expect(dispose).toHaveBeenCalledOnce();
     expect(sharedDisposal).toHaveBeenCalledOnce();
   });
 

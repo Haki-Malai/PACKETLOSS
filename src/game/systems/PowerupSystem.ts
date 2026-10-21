@@ -29,9 +29,11 @@ export class PowerupSystem {
   private collisionWorld: PowerupCollisionWorld | null = null;
   private collisionKey = '';
 
+  /** Creates solo inventory and routes returned-beam hits through the run's existing death lifecycle. */
   constructor(private readonly world: WorldState, private readonly movement: MovementRules,
     private readonly collectibles: CollectibleSystem, private readonly bonuses?: BonusPickups,
-    private readonly stream?: EndlessMazeStream, private readonly portals?: PortalService) {
+    private readonly stream?: EndlessMazeStream, private readonly portals?: PortalService,
+    private readonly onPacketHit?: () => void) {
     this.seed = stream?.initialPickupSeed ?? buildPointLayout({ map: world.map,
       collisionGrid: world.collisionGrid, startTile: world.packetSpawnTile, tileSize: world.tileSize,
       options: { minPowerPoints: 0, maxPowerPoints: 0 } }).seed;
@@ -52,7 +54,7 @@ export class PowerupSystem {
     }, maximumMs);
   }
 
-  /** Resolves swept weapon hits after topology and actor movement, before contact damage. */
+  /** Resolves swept weapon hits and returned-beam self-hits before ordinary enemy contact damage. */
   update(deltaMs: number): void {
     if (!this.world.isMoving || this.world.outcome) return;
     if (this.world.packet.deathAnimationRemainingMs > 0) this.clearForDeath();
@@ -61,6 +63,7 @@ export class PowerupSystem {
     const hits = stepPowerupCombat(this.world.powerupCombat, deltaMs, actors, walls,
       SPEED.packet * MOVEMENT_STEPS_PER_SECOND);
     for (const hit of hits) {
+      if (hit.targetId === PACKET_ID) { this.onPacketHit?.(); continue; }
       const enemy = this.world.enemies.find((candidate, index) => this.enemyId(index) === hit.targetId
         && candidate.active && !candidate.state.dead);
       if (enemy) defeatEnemy(this.world, this.movement, enemy, 'weapon');
@@ -122,7 +125,7 @@ export class PowerupSystem {
     this.publish();
   }
 
-  /** Rebases retained pickups, released effects, missile corner history, and actor history with the rolling maze. */
+  /** Rebases retained pickups, beam spans, released effects, missile corners, and actor history with the rolling maze. */
   shiftEndlessSection(section: ResidentEndlessSection, rows: number, slot: number): void {
     const pixels = rows * this.world.tileSize;
     const inside = (point: PowerupPoint): boolean => point.y >= 0 && point.y < this.world.map.heightInPixels;
@@ -132,6 +135,8 @@ export class PowerupSystem {
     state.projectiles = state.projectiles.map((projectile) => ({ ...projectile, y: projectile.y + pixels,
       turns: projectile.turns.map((turn) => ({ ...turn, y: turn.y + pixels })) })).filter(inside);
     state.effects = state.effects.map((effect) => ({ ...effect, y: effect.y + pixels,
+      ...(effect.laserSegments ? { laserSegments: effect.laserSegments.map((segment) =>
+        ({ ...segment, y: segment.y + pixels })) } : {}),
       ...(effect.source ? { source: { ...effect.source, y: effect.source.y + pixels } } : {}) })).filter(inside);
     state.casts.forEach((cast) => { if (cast.origin) cast.origin.y += pixels; });
     state.casts = state.casts.filter((cast) => !cast.origin || inside(cast.origin));

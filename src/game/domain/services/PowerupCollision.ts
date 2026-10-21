@@ -1,13 +1,16 @@
 import { buildMazePenFootprint, buildMazeWallFootprint, extendMazeWallFootprint, TILE_FOOTPRINTS,
   type WallConnection } from '../world/MazeFootprint';
-import type { WorldMapData } from '../world/WorldState';
+import type { PortalPair, WorldMapData } from '../world/WorldState';
 import type { PowerupPoint } from '../../shared/offensivePowerups';
 
-export interface PowerupCollisionWorld { width: number; height: number; solid: Uint8Array; tileSize: number }
+export interface PowerupCollisionWorld {
+  width: number; height: number; solid: Uint8Array; tileSize: number;
+  portalPairs?: readonly PortalPair[];
+}
 export interface PowerupWallHit { time: number; position: PowerupPoint }
 const EPSILON = 1e-9;
 
-/** Builds gameplay blockers from the same authored pixels as walls, including prison and temporary rails. */
+/** Builds authored blockers and current portal links, including prison and temporary rails. */
 export function createPowerupCollisionWorld(map: WorldMapData,
   temporaryWalls: readonly WallConnection[] = []): PowerupCollisionWorld {
   const walls = extendMazeWallFootprint(map, buildMazeWallFootprint(map), temporaryWalls);
@@ -20,7 +23,7 @@ export function createPowerupCollisionWorld(map: WorldMapData,
         y * walls.width + (tile.x + 1) * map.tileWidth);
     }
   }
-  return { ...walls, tileSize: map.tileWidth };
+  return { ...walls, tileSize: map.tileWidth, portalPairs: map.portalPairs };
 }
 
 /** Samples a physical segment without allocating or crossing a teleport discontinuity. */
@@ -56,13 +59,13 @@ export function expandingCircleContact(from: PowerupPoint, to: PowerupPoint,
   return times.length ? Math.max(0, Math.min(1, times[0])) : null;
 }
 
-/** Finds circle impacts with rounded corners, or flat-front cardinal beam contact at the wall surface. */
+/** Finds bounded circle impacts or flat-front beam contact with solid walls; beams can leave open map edges. */
 export function firstPowerupWallHit(world: PowerupCollisionWorld, from: PowerupPoint,
   to: PowerupPoint, radius: number, shape: 'circle' | 'beam' = 'circle'): PowerupWallHit | null {
   const horizontal = Math.abs(to.x - from.x) >= Math.abs(to.y - from.y);
   const padX = shape === 'beam' && horizontal ? 0 : radius;
   const padY = shape === 'beam' && !horizontal ? 0 : radius;
-  let earliest = boundaryContact(world, from, to, padX, padY);
+  let earliest = shape === 'beam' ? null : boundaryContact(world, from, to, padX, padY);
   const minX = Math.max(0, Math.ceil(Math.min(from.x, to.x) - padX) - 1);
   const maxX = Math.min(world.width - 1, Math.floor(Math.max(from.x, to.x) + padX));
   const minY = Math.max(0, Math.ceil(Math.min(from.y, to.y) - padY) - 1);
@@ -77,7 +80,7 @@ export function firstPowerupWallHit(world: PowerupCollisionWorld, from: PowerupP
   return earliest === null ? null : { time: earliest, position: interpolatePowerupPoint(from, to, earliest) };
 }
 
-/** Finds where a body or flat beam first leaves its padded map bounds, including open portal mouths. */
+/** Finds where a body first leaves its padded map bounds, including open portal mouths. */
 function boundaryContact(world: PowerupCollisionWorld, from: PowerupPoint, to: PowerupPoint,
   padX: number, padY: number): number | null {
   if (from.x < padX || from.y < padY || from.x > world.width - padX || from.y > world.height - padY) return 0;

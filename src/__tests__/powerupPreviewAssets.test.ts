@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises';
-import { Box3, BufferGeometry, Camera, Material, Mesh, Vector3 } from 'three';
+import { AnimationMixer, Box3, BufferGeometry, Camera, LoopOnce, Material, Mesh, Vector3, type Object3D } from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ASSET_CATALOG, POWERUP_CATALOG } from '../dev/assets/assetCatalog';
 import { AssetPreviewScene } from '../dev/assets/AssetPreviewScene';
 import { PowerupPreviewAssets } from '../dev/assets/PowerupPreviewAssets';
+import { PowerupModel } from '../game/infrastructure/three/PowerupAssets';
+import { disposeGlbResources } from '../game/infrastructure/three/GlbResources';
 import { createCharacterAssets } from './fixtures/characterFixtures';
 
 /** Fetches real authored files locally without starting a server or substituting their animations. */
@@ -25,8 +27,48 @@ function resourceSpies(model: GLTF) {
   return [...resources].map((resource) => vi.spyOn(resource, 'dispose'));
 }
 
+/** Captures asset-owned poses and morph weights for direct GLB/player/gallery parity, independent of world placement. */
+function authoredPose(scene: Object3D) {
+  const nodes: Array<{ name: string; position: number[]; rotation: number[]; scale: number[]; weights?: number[] }> = [];
+  scene.traverse((node) => nodes.push({ name: node.name, position: node.position.toArray().map((value) => value + 0),
+    rotation: node.quaternion.toArray().map((value) => value + 0), scale: node.scale.toArray().map((value) => value + 0),
+    weights: node instanceof Mesh ? node.morphTargetInfluences?.slice() : undefined }));
+  return nodes;
+}
+
 describe('Powerup asset previews', () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('plays every powerup GLB unchanged in gameplay and the gallery, including seek and rewind', async () => {
+    vi.stubGlobal('fetch', fetchModel);
+    const previews = await PowerupPreviewAssets.load(new AbortController().signal);
+    for (const entry of POWERUP_CATALOG) {
+      const bytes = await readFile(new URL(`../../public/assets/models/powerups/${entry.file}`, import.meta.url));
+      const raw = await new GLTFLoader().parseAsync(new Uint8Array(bytes).buffer, '');
+      const clip = raw.animations.find((candidate) => candidate.name === entry.clip)!;
+      const mixer = new AnimationMixer(raw.scene);
+      const action = mixer.clipAction(clip);
+      action.setLoop(LoopOnce, 1); action.clampWhenFinished = true;
+      const gameplay = new PowerupModel(raw, entry.clip, false);
+      const preview = previews.get(entry.id);
+      const sourceMeshes = new Map<string, Mesh>();
+      raw.scene.traverse((node) => { if (node instanceof Mesh) sourceMeshes.set(node.name, node as Mesh); });
+      const runtimeMeshes: Mesh[] = [];
+      gameplay.scene.traverse((node) => { if (node instanceof Mesh) runtimeMeshes.push(node as Mesh); });
+      expect(runtimeMeshes).toHaveLength(sourceMeshes.size);
+      for (const node of runtimeMeshes) expect(node.geometry).toBe(sourceMeshes.get(node.name)!.geometry);
+      for (const time of [0, entry.thumbnailMs, entry.durationMs - 1, entry.durationMs + 100, entry.thumbnailMs]) {
+        mixer.stopAllAction();
+        action.reset().play(); mixer.setTime(Math.min(clip.duration, time / 1000));
+        gameplay.sample(time); previews.sample(entry.id, time);
+        expect(authoredPose(gameplay.scene)).toEqual(authoredPose(raw.scene));
+        expect(authoredPose(preview.model.scene)).toEqual(authoredPose(raw.scene));
+      }
+      gameplay.dispose(); mixer.stopAllAction(); mixer.uncacheRoot(raw.scene);
+      disposeGlbResources([raw.scene]);
+    }
+    previews.dispose();
+  });
 
   it('loads every authored clip and selects each in the gallery with stable full-animation framing', async () => {
     const fetch = vi.fn(fetchModel);
@@ -41,12 +83,12 @@ describe('Powerup asset previews', () => {
     for (const entry of POWERUP_CATALOG) {
       const preview = powerups.get(entry.id);
       disposers.push(...resourceSpies(preview.model));
-      expect(preview.action.getClip().duration * 1000).toBeCloseTo(entry.durationMs, 2);
+      expect(preview.model.animations.find((clip) => clip.name === entry.clip)!.duration * 1000).toBeCloseTo(entry.durationMs, 2);
       scene.select(entry);
       scene.sample(entry.thumbnailMs, camera);
       expect(preview.model.scene.parent).toBe(scene.scene);
       const envelope = scene.bounds.clone();
-      expect(envelope.containsBox(new Box3().setFromObject(preview.model.scene))).toBe(true);
+      expect(envelope.containsBox(new Box3().setFromObject(preview.model.scene, true))).toBe(true);
       expect(envelope.getCenter(new Vector3()).x).toBeCloseTo(128);
       expect(envelope.getCenter(new Vector3()).z).toBeCloseTo(128);
       scene.sample(entry.durationMs, camera);
@@ -78,7 +120,7 @@ describe('Powerup asset previews', () => {
     powerups.sample('powerup-laser-beam', 730);
     expect(core.scale.equals(activeScale)).toBe(true);
     const blast = powerups.get('powerup-blast-burst');
-    const ring = blast.model.scene.getObjectByName('expanding-shock-front') as Mesh;
+    const ring = blast.model.scene.getObjectByName('blast-pulse-front') as Mesh;
     powerups.sample('powerup-blast-burst', 700);
     expect(ring.morphTargetInfluences![0]).toBeCloseTo(0);
     powerups.sample('powerup-blast-burst', 1600);

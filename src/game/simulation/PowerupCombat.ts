@@ -1,6 +1,7 @@
 import { DIRECTION_VECTORS, type Direction } from '../domain/valueObjects/Direction';
 import { expandingCircleContact, firstPowerupWallHit, interpolatePowerupPoint, sweepPowerupBodies,
   type PowerupCollisionWorld } from '../domain/services/PowerupCollision';
+import { traceLaserPath } from '../domain/services/LaserPath';
 import { missileCenterDistance, missileHeading, steerMissile } from '../domain/services/MissileNavigation';
 import { POWERUP_RULES, sampleLaserLength, samplePowerupRadius, type PowerupCast,
   type PowerupCombatActor, type PowerupCombatState, type PowerupEffect, type PowerupHit,
@@ -9,7 +10,10 @@ import { POWERUP_RULES, sampleLaserLength, samplePowerupRadius, type PowerupCast
 const MAX_COMBAT_STEP_MS = 1000 / 120;
 const EPSILON = 1e-9;
 interface IntervalActor extends PowerupCombatActor { endpoint?: PowerupPoint }
-interface TimedHit extends PowerupHit { timeMs: number }
+interface TimedHit extends PowerupHit {
+  timeMs: number;
+  laser?: { ownerId: string; angle: number; radius: number; contact: PowerupPoint };
+}
 interface MissileMotion {
   duration: number; angle: number; targetId: string | null; turned: boolean;
   from: PowerupPoint; to: PowerupPoint; contact: number; victim?: PowerupCombatActor;
@@ -26,7 +30,8 @@ export function clonePowerupCombatState(state: PowerupCombatState): PowerupComba
     casts: state.casts.map((cast) => ({ ...cast, origin: cast.origin ? { ...cast.origin } : null })),
     projectiles: state.projectiles.map((projectile) => ({ ...projectile,
       turns: projectile.turns.map((turn) => ({ ...turn })) })),
-    effects: state.effects.map((effect) => ({ ...effect, ...(effect.source ? { source: { ...effect.source } } : {}) })),
+    effects: state.effects.map((effect) => ({ ...effect, ...(effect.source ? { source: { ...effect.source } } : {}),
+      ...(effect.laserSegments ? { laserSegments: effect.laserSegments.map((segment) => ({ ...segment })) } : {}) })),
   };
 }
 
@@ -56,7 +61,7 @@ export function addPowerupCollection(state: PowerupCombatState, ownerId: string,
     source: { ...source }, angle: 0, elapsedMs: 0, durationMs: 300, radius: 0, length: 0 });
 }
 
-/** Advances casts and swept hits, splitting missile center turns; kills are returned together for mode-owned outcomes. */
+/** Resolves swept hits and publishes confirmed laser contact effects; kills retain mode-owned outcomes. */
 export function stepPowerupCombat(state: PowerupCombatState, deltaMs: number,
   actors: readonly PowerupCombatActor[], walls: PowerupCollisionWorld,
   playerSpeedWorldUnitsPerSecond: number): PowerupHit[] {
@@ -87,6 +92,14 @@ export function stepPowerupCombat(state: PowerupCombatState, deltaMs: number,
     });
     stepInterval(state, stepMs, samples, walls, playerSpeedWorldUnitsPerSecond, hits);
     elapsed += stepMs;
+  }
+  for (const hit of hits.values()) {
+    if (!hit.laser) continue;
+    const elapsedMs = state.clockMs - hit.timeMs;
+    if (elapsedMs >= POWERUP_RULES.laser.impactDurationMs) continue;
+    state.effects.push({ id: state.nextId++, ownerId: hit.laser.ownerId, targetId: hit.targetId,
+      kind: 'laser', role: 'impact', ...hit.laser.contact, angle: hit.laser.angle, elapsedMs,
+      durationMs: POWERUP_RULES.laser.impactDurationMs, radius: hit.laser.radius, length: 0 });
   }
   return [...hits.values()].map(({ targetId, position }) => ({ targetId, position }));
 }
@@ -144,7 +157,7 @@ function stepInterval(state: PowerupCombatState, deltaMs: number, actors: readon
     }
     if (effect && cast.origin) {
       effect.radius = samplePowerupRadius(effect.kind, cast.elapsedMs);
-      if (effect.kind === 'laser') effect.length = laserReach(effect, cast.elapsedMs, walls);
+      if (effect.kind === 'laser') updateLaserPath(effect, cast.elapsedMs, walls);
     }
   }
   state.casts = state.casts.filter((cast) => cast.elapsedMs < POWERUP_RULES[cast.kind].durationMs - EPSILON);
@@ -152,48 +165,64 @@ function stepInterval(state: PowerupCombatState, deltaMs: number, actors: readon
   state.effects = state.effects.filter((effect) => effect.elapsedMs < effect.durationMs - EPSILON);
 }
 
-/** Resolves growing area and beam contact against actor movement during the active part of the interval. */
+/** Resolves growing area and beam contact, preserving the incoming surface and time of the earliest laser hit. */
 function updateAttack(effect: PowerupEffect, previousAge: number, age: number,
   actors: readonly PowerupCombatActor[], walls: PowerupCollisionWorld, hits: Map<string, TimedHit>, intervalStartMs: number): void {
   const rule = POWERUP_RULES[effect.kind];
   effect.radius = samplePowerupRadius(effect.kind, age);
   if (effect.kind === 'reverse-blast' || effect.kind === 'missile') return;
-  const start = Math.max(previousAge, rule.releaseMs), end = Math.min(age, rule.activeUntilMs);
   if (effect.kind === 'laser') {
-    effect.length = laserReach(effect, age, walls);
+    updateLaserPath(effect, age, walls);
+    for (const [index, segment] of effect.laserSegments!.entries()) {
+      const start = Math.max(previousAge, rule.releaseMs + segment.delayMs), end = Math.min(age, rule.activeUntilMs);
+      if (end <= start + EPSILON) continue;
+      const fromLength = sampleLaserLength(start - segment.delayMs, segment.length);
+      const toLength = sampleLaserLength(end - segment.delayMs, segment.length);
+      if (toLength <= EPSILON) continue;
+      const targets = actors.filter((actor) => actor.active
+        && (hits.get(actor.id)?.timeMs ?? Infinity) >= intervalStartMs - EPSILON
+        && (actor.id === effect.ownerId ? index > 0 : !actor.protected));
+      for (const target of targets) {
+        const from = interpolatePowerupPoint(target.previous ?? target, target, (start - previousAge) / (age - previousAge));
+        const to = interpolatePowerupPoint(target.previous ?? target, target, (end - previousAge) / (age - previousAge));
+        const contact = movingBeamContact(from, to, target.radius, segment, effect.angle,
+          fromLength, toLength, effect.radius);
+        if (contact !== null) {
+          const position = interpolatePowerupPoint(from, to, contact);
+          const dx = Math.cos(effect.angle), dy = Math.sin(effect.angle);
+          const across = (position.x - segment.x) * -dy + (position.y - segment.y) * dx;
+          const edge = Math.max(-effect.radius, Math.min(effect.radius, across));
+          const side = edge - across;
+          const back = Math.sqrt(Math.max(0, target.radius ** 2 - side ** 2));
+          recordHit(hits, { targetId: target.id, position,
+            timeMs: intervalStartMs + start - previousAge + (end - start) * contact,
+            laser: { ownerId: effect.ownerId, angle: effect.angle, radius: target.radius,
+              contact: { x: position.x - dx * back - dy * side, y: position.y - dy * back + dx * side } } });
+        }
+      }
+    }
+    return;
   }
+  const start = Math.max(previousAge, rule.releaseMs), end = Math.min(age, rule.activeUntilMs);
   if (end <= start + EPSILON) return;
   const startFraction = (start - previousAge) / (age - previousAge);
   const endFraction = (end - previousAge) / (age - previousAge);
   for (const target of eligibleTargets(actors, effect.ownerId, hits, intervalStartMs)) {
     const from = interpolatePowerupPoint(target.previous ?? target, target, startFraction);
     const to = interpolatePowerupPoint(target.previous ?? target, target, endFraction);
-    let contact: number | null;
-    if (effect.kind === 'blast') {
-      contact = expandingCircleContact({ x: from.x - effect.x, y: from.y - effect.y },
-        { x: to.x - effect.x, y: to.y - effect.y },
-        samplePowerupRadius('blast', start) + target.radius,
-        samplePowerupRadius('blast', end) + target.radius);
-    } else {
-      const origin = muzzlePoint(effect, POWERUP_RULES.laser.muzzle);
-      const fromLength = laserReach(effect, start, walls), toLength = laserReach(effect, end, walls);
-      if (toLength <= EPSILON) continue;
-      contact = movingBeamContact(from, to, target.radius, origin, effect.angle, fromLength, toLength, effect.radius);
-    }
+    const contact = expandingCircleContact({ x: from.x - effect.x, y: from.y - effect.y },
+      { x: to.x - effect.x, y: to.y - effect.y },
+      samplePowerupRadius('blast', start) + target.radius,
+      samplePowerupRadius('blast', end) + target.radius);
     if (contact !== null) recordHit(hits, { targetId: target.id, position: interpolatePowerupPoint(from, to, contact),
       timeMs: intervalStartMs + start - previousAge + (end - start) * contact });
   }
 }
 
-/** Grows the flat beam tip to its first wall surface, checking its width, muzzle offset, and arena boundary. */
-function laserReach(effect: PowerupEffect, age: number, walls: PowerupCollisionWorld): number {
-  const rule = POWERUP_RULES.laser;
-  const origin = muzzlePoint(effect, rule.muzzle);
-  if (firstPowerupWallHit(walls, effect, origin, rule.radius, 'beam')) return 0;
-  const length = Math.hypot(walls.width, walls.height);
-  const destination = { x: origin.x + Math.cos(effect.angle) * length, y: origin.y + Math.sin(effect.angle) * length };
-  const wall = firstPowerupWallHit(walls, origin, destination, rule.radius, 'beam');
-  return sampleLaserLength(age, wall ? length * wall.time : length);
+/** Publishes the physical spans and first visible reach from the current topology, including one portal traversal. */
+function updateLaserPath(effect: PowerupEffect, age: number, walls: PowerupCollisionWorld): void {
+  effect.laserSegments = traceLaserPath(walls, effect, missileHeading(effect.angle));
+  effect.length = sampleLaserLength(age, effect.laserSegments[0].length);
 }
 
 /** Detaches the startup missile from the caster's current corridor position, preserving its presentation identity. */
@@ -325,11 +354,6 @@ function sampleReleasePoint(actor: IntervalActor, fraction: number): PowerupPoin
 function directionAngle(direction: Direction): number {
   const vector = DIRECTION_VECTORS[direction];
   return Math.atan2(vector.dy, vector.dx);
-}
-
-/** Offsets a world origin along a locked attack direction. */
-function muzzlePoint(origin: PowerupPoint & { angle: number }, offset: number): PowerupPoint {
-  return { x: origin.x + Math.cos(origin.angle) * offset, y: origin.y + Math.sin(origin.angle) * offset };
 }
 
 /** Sweeps a circular target to the visible beam tip, retaining exact tangency within numeric tolerance. */

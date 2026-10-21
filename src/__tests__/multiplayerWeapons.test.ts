@@ -47,6 +47,46 @@ function player(game: DataRace, id: string) {
 }
 
 describe('authoritative offensive weapons', () => {
+  it('snapshots a portal return, eliminates its caster, and finishes the beam alongside terminal death', () => {
+    const map = createBattleArenaMap(19);
+    const game = new DataRace(map, 'portal-return', [{ id: 'alice', name: 'Alice' }, { id: 'bob', name: 'Bob' }], 4);
+    const initial = game.snapshot();
+    initial.players.find((candidate) => candidate.id === 'alice')!.movement = createMovement(25 * 49 + 24);
+    for (const candidate of initial.players) candidate.protectionMs = 9000;
+    game.restore(initial);
+    game.equipPowerup('alice', 'laser'); game.activate('alice', 1, 1);
+    steps(game, 39);
+    expect(player(game, 'alice').eliminatedAtTick).toBeNull();
+    const snapshot = game.snapshot();
+    expect(snapshot.combat.effects[0].laserSegments).toHaveLength(2);
+    const envelope = { type: 'snapshot', publication: 1, snapshot: encodeRaceSnapshot(map, snapshot),
+      serverTimeMs: 0, instanceRunId: 'run', processGeneration: 'process' };
+    const parsed = parseServerMessage(JSON.stringify(envelope));
+    expect(parsed?.type === 'snapshot' && decodeRaceSnapshot(map, parsed.snapshot)).toEqual(snapshot);
+    snapshot.combat.effects[0].laserSegments![1].x = -999;
+    expect(game.snapshot().combat.effects[0].laserSegments![1].x).not.toBe(-999);
+    const invalid = structuredClone(envelope);
+    invalid.snapshot.combat.effects[0].laserSegments![1].length = -1;
+    expect(parseServerMessage(JSON.stringify(invalid))).toBeNull();
+    steps(game, 12);
+    expect(player(game, 'alice')).toMatchObject({ deathPosition: { x: 24, y: 25 },
+      score: snapshot.players.find((candidate) => candidate.id === 'alice')!.score, heldPowerup: null });
+    expect(player(game, 'alice').eliminatedAtTick).not.toBeNull();
+    expect(player(game, 'alice').deathMs).toBeGreaterThan(0);
+    const struck = game.snapshot();
+    expect(struck.combat.effects.find((effect) => effect.role === 'impact')).toMatchObject({
+      kind: 'laser', targetId: 'alice', ownerId: 'alice', angle: 0,
+    });
+    const struckMessage = parseServerMessage(JSON.stringify({ ...envelope, snapshot: encodeRaceSnapshot(map, struck) }));
+    expect(struckMessage?.type === 'snapshot' && decodeRaceSnapshot(map, struckMessage.snapshot)).toEqual(struck);
+    const age = game.snapshot().combat.effects[0].elapsedMs;
+    steps(game, 6);
+    expect(game.snapshot().combat.effects[0].elapsedMs).toBeGreaterThan(age);
+    steps(game, 120);
+    expect(game.snapshot().rankings.map(({ playerId }) => playerId)).toEqual(['bob', 'alice']);
+    expect(game.snapshot().combat.effects).toEqual([]);
+  });
+
   it('places two mirrored pickups per weapon with unique IDs outside cores, spawns, and portals', () => {
     const map = createBattleArenaMap(19), weapons = map.pickups.filter((pickup) => isPowerupKind(pickup.kind));
     expect(weapons).toHaveLength(8);

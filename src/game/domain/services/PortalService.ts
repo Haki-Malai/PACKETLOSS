@@ -33,6 +33,13 @@ interface ResolvedPortalContext {
   direction: Direction;
 }
 
+/** Returns the outward heading shared by actor travel and laser routing for an aligned portal pair. */
+export function portalOutwardDirection(source: TilePosition, destination: TilePosition): Direction | undefined {
+  if (source.x === destination.x) return source.y < destination.y ? 'up' : 'down';
+  if (source.y === destination.y) return source.x < destination.x ? 'left' : 'right';
+  return undefined;
+}
+
 export class PortalService {
   private readonly portalPairs = new Map<string, PortalLink>();
   private readonly lastTeleportTick = new WeakMap<object, number>();
@@ -135,14 +142,15 @@ export class PortalService {
     return { departure: { ...motion.departure }, arrival: { ...motion.arrival }, fraction: motion.fraction };
   }
 
+  /** Registers both ends with the same outward headings used by weapon travel. */
   private setPortalPair(from: TilePosition, to: TilePosition): void {
     this.portalPairs.set(tileKey(from), {
       destination: { ...to },
-      outwardDirection: this.resolveOutwardDirection(from, to),
+      outwardDirection: portalOutwardDirection(from, to),
     });
     this.portalPairs.set(tileKey(to), {
       destination: { ...from },
-      outwardDirection: this.resolveOutwardDirection(to, from),
+      outwardDirection: portalOutwardDirection(to, from),
     });
   }
 
@@ -157,18 +165,6 @@ export class PortalService {
 
     const current = entity.direction.current;
     return this.isDirection(current) ? current : undefined;
-  }
-
-  private resolveOutwardDirection(source: TilePosition, destination: TilePosition): Direction | undefined {
-    if (source.x === destination.x) {
-      return source.y < destination.y ? 'up' : 'down';
-    }
-
-    if (source.y === destination.y) {
-      return source.x < destination.x ? 'left' : 'right';
-    }
-
-    return undefined;
   }
 
   private resolvePortalContext(entity: PortalTrackedEntity): ResolvedPortalContext | null {

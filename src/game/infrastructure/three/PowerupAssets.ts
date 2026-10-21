@@ -1,13 +1,11 @@
 import {
-  AdditiveBlending, AnimationMixer, BoxGeometry, BufferGeometry, Group, LoopOnce, LoopRepeat,
-  Material, MathUtils, Mesh, MeshBasicMaterial, Quaternion, RingGeometry, SphereGeometry, TorusGeometry, Vector3,
-  type AnimationAction, type Color, type MeshStandardMaterial, type Object3D,
+  AnimationMixer, BufferGeometry, Group, LoopOnce, LoopRepeat,
+  Material, Mesh, Quaternion, Vector3, type AnimationAction, type Object3D,
 } from 'three';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import manifest from '../../../../public/assets/models/powerups/manifest.json';
-import { POWERUP_RULES, samplePowerupRadius, type PowerupKind } from '../../shared/offensivePowerups';
+import { POWERUP_RULES, type PowerupKind } from '../../shared/offensivePowerups';
 import { disposeGlbResources, loadGlbCollection } from './GlbResources';
-import { createPulseRingGeometry, samplePulseRing } from './PulseRing';
 
 export type PowerupAssetRole = 'pickup' | 'effect' | 'projectile' | 'launch' | 'impact' | 'packet-companion' | 'collection';
 export const OFFENSIVE_POWERUP_ASSETS = manifest.assets.filter(({ kind }) => kind !== 'magnet');
@@ -27,15 +25,13 @@ export class PowerupModel {
   private readonly mixer: AnimationMixer;
   private readonly action: AnimationAction;
   private readonly materials = new Set<Material>();
-  private readonly impactGeometry = new Set<BufferGeometry>();
   private readonly clipPlane = { origin: new Vector3(), direction: new Vector3(0, 0, -1), length: 64 };
   private readonly laserSpan: Group | null = null;
-  private readonly blastPulse: Group | null = null;
-  private laserImpact: Group | null = null;
+  private readonly laserImpact: Group | null = null;
   private elapsedMs = 0;
   private disposed = false;
 
-  /** Clones materials for independent effects; blast replaces its burst with a privately owned Ping pulse. */
+  /** Clones the canonical GLB with private materials; all effect geometry and animation stay asset-owned. */
   constructor(model: GLTF, clipName: string, private readonly loop: boolean) {
     const clip = model.animations.find(({ name }) => name === clipName);
     if (!clip) throw new Error(`Missing powerup animation: ${clipName}`);
@@ -54,18 +50,11 @@ export class PowerupModel {
       };
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(clone) : clone(mesh.material);
     });
-    const muzzle = this.scene.getObjectByName('muzzle-anchor');
-    if (muzzle && this.scene.getObjectByName('beam-white-core')) {
-      this.laserSpan = new Group();
-      this.laserSpan.name = 'laser-span';
-      this.laserSpan.add(...muzzle.children.filter(({ name }) => /^(beam-|helical-beam-filament)/.test(name)));
-      muzzle.add(this.laserSpan);
-    }
-    const blastFront = this.scene.getObjectByName('expanding-shock-front') as Mesh<BufferGeometry, MeshStandardMaterial> | undefined;
-    if (blastFront) {
-      for (const child of this.scene.children) child.visible = false;
-      this.blastPulse = this.createBlastPulse(blastFront.material.color);
-      this.scene.add(this.blastPulse);
+    this.laserSpan = this.scene.getObjectByName('laser-span') as Group | undefined ?? null;
+    this.laserImpact = this.scene.getObjectByName('laser-wall-impact') as Group | undefined ?? null;
+    if (this.laserSpan) {
+      this.scene.traverse((object) => { if (object instanceof Mesh) object.renderOrder = 4; });
+      for (const material of this.materials) { material.depthTest = false; material.depthWrite = false; }
     }
     this.group.add(this.scene);
     this.mixer = new AnimationMixer(this.scene);
@@ -74,40 +63,33 @@ export class PowerupModel {
     this.action.clampWhenFinished = !loop;
   }
 
-  /** Seeks absolute simulation age, samples blast pulses, and resets beam transforms before clipping. */
+  /** Seeks the same GLB clip used in the Asset Lab, including pause, rewind, and clamped one-shots. */
   sample(elapsedMs: number): void {
     this.elapsedMs = Math.max(0, elapsedMs);
-    if (this.laserSpan) this.laserSpan.scale.z = 1;
-    if (this.laserImpact) this.laserImpact.visible = false;
+    if (this.laserImpact) this.laserImpact.visible = true;
     this.mixer.stopAllAction();
     this.action.reset().play();
     const duration = this.action.getClip().duration;
-    this.mixer.setTime(this.loop ? Math.max(0, elapsedMs) / 1000 : Math.min(duration, Math.max(0, elapsedMs) / 1000));
-    if (this.blastPulse) this.setBlastRadius(samplePowerupRadius('blast', this.elapsedMs));
+    this.mixer.setTime(this.loop ? this.elapsedMs / 1000 : Math.min(duration, this.elapsedMs / 1000));
   }
 
-  /** Stretches the complete beam to gameplay reach, sampling wall contact and drawing above the Packet. */
-  clipLaser(x: number, y: number, angle: number, length: number): void {
+  /** Adapts an authored beam span; portal continuations omit charge effects and impacts wait for solid contact. */
+  clipLaser(x: number, y: number, angle: number, length: number,
+    options: { impact?: boolean; continuation?: boolean } = {}): void {
     this.clipPlane.origin.set(x + Math.cos(angle) * POWERUP_RULES.laser.muzzle, 0,
       y + Math.sin(angle) * POWERUP_RULES.laser.muzzle);
     this.clipPlane.direction.set(Math.cos(angle), 0, Math.sin(angle));
     this.clipPlane.length = length;
-    if (this.laserSpan) {
-      this.laserSpan.scale.z = length / POWERUP_RULES.laser.authoredLength;
-      for (const part of this.laserSpan.children) {
-        if (/^(beam-white-core|beam-blue-envelope|helical-beam-filament)/.test(part.name)) part.scale.z = 1;
-      }
-      if (!this.laserImpact) {
-        this.laserImpact = this.createLaserImpact();
-        this.scene.add(this.laserImpact);
-      }
-      this.sampleLaserImpact(length);
+    if (this.laserSpan) this.laserSpan.scale.z = length / POWERUP_RULES.laser.authoredLength;
+    if (this.laserImpact) {
+      this.laserImpact.visible = length > 0 && options.impact !== false;
+      this.laserImpact.position.set(0, 6.15, -POWERUP_RULES.laser.muzzle - length + 0.04);
     }
+    if (options.continuation) this.scene.traverse((object) => {
+      if (object.name.startsWith('charge-')) object.visible = false;
+    });
     if (this.group.userData.laserClipped) return;
     this.group.userData.laserClipped = true;
-    this.scene.traverse((object) => {
-      if (object instanceof Mesh) object.renderOrder = 4;
-    });
     const clipPlane = this.clipPlane;
     for (const material of this.materials) {
       material.transparent = true;
@@ -130,103 +112,6 @@ export class PowerupModel {
     }
   }
 
-  /** Creates one owned white contact flare, cyan pressure ring, and sparks without duplicating GLB geometry. */
-  private createLaserImpact(): Group {
-    const impact = new Group();
-    impact.name = 'laser-wall-impact';
-    const core = new SphereGeometry(1, 12, 8);
-    const ring = new TorusGeometry(1.9, 0.16, 6, 24);
-    const spark = new BoxGeometry(1, 1, 1);
-    for (const geometry of [core, ring, spark]) this.impactGeometry.add(geometry);
-    for (let index = 0; index < 10; index += 1) {
-      const material = new MeshBasicMaterial({
-        color: index === 0 || index % 3 === 0 ? 0xe9fdff : 0x40bcff,
-        transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, toneMapped: false,
-      });
-      this.materials.add(material);
-      const mesh = new Mesh(index === 0 ? core : index === 1 ? ring : spark, material);
-      mesh.name = index === 0 ? 'laser-impact-core' : index === 1 ? 'laser-impact-ring' : `laser-impact-spark-${index - 2}`;
-      impact.add(mesh);
-    }
-    return impact;
-  }
-
-  /** Holds contact on the wall after beam growth; sparks fly back toward the caster and fade with afterglow. */
-  private sampleLaserImpact(length: number): void {
-    const impact = this.laserImpact;
-    if (!impact) return;
-    const rule = POWERUP_RULES.laser;
-    const contactMs = rule.releaseMs + rule.laserGrowMs;
-    impact.visible = length > 0 && this.elapsedMs >= contactMs && this.elapsedMs < rule.durationMs;
-    impact.position.set(0, 6.15, -rule.muzzle - length + 0.04);
-    const age = Math.max(0, this.elapsedMs - contactMs) / 1000;
-    const fade = 1 - MathUtils.smoothstep(this.elapsedMs, rule.activeUntilMs, rule.durationMs);
-    const pulse = 0.8 + Math.sin(age * 28) * 0.2;
-    for (const [index, object] of impact.children.entries()) {
-      const mesh = object as Mesh<BufferGeometry, MeshBasicMaterial>;
-      if (index < 2) {
-        mesh.scale.setScalar(index === 0 ? 1.1 + pulse * 0.35 : 0.85 + pulse * 0.25);
-        mesh.scale.z = index === 0 ? 0.12 : 1;
-        mesh.material.opacity = fade * (index === 0 ? 0.95 : 0.75) * pulse;
-        continue;
-      }
-      const phase = (age * 3.5 + (index - 2) / 8) % 1;
-      const angle = (index - 2) * Math.PI / 4 + age * 0.4;
-      mesh.position.set(Math.cos(angle) * phase * 5, Math.sin(angle) * phase * 5, 0.1 + phase * 4);
-      mesh.rotation.z = angle - Math.PI / 2;
-      mesh.scale.set(0.42, 1.8 + phase * 2.4, 0.42);
-      mesh.material.opacity = fade * (1 - phase);
-    }
-  }
-
-  /** Creates a wide Ping pulse in the original blast color with a broad pressure wave and hot flash. */
-  private createBlastPulse(color: Color): Group {
-    const pulse = new Group();
-    pulse.name = 'blast-ping-pulse';
-    pulse.visible = false;
-    const ring = createPulseRingGeometry(0.72);
-    const pressure = new RingGeometry(0.6, 1, 64).rotateX(-Math.PI / 2);
-    const flash = new SphereGeometry(1, 12, 8);
-    for (const geometry of [ring, pressure, flash]) this.impactGeometry.add(geometry);
-    for (let index = 0; index < 3; index += 1) {
-      const material = new MeshBasicMaterial({
-        color: index === 2 ? 0xe9fdff : color,
-        transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, toneMapped: false,
-      });
-      this.materials.add(material);
-      const mesh = new Mesh(index === 0 ? ring : index === 1 ? pressure : flash, material);
-      mesh.name = index === 0 ? 'blast-pulse-front' : index === 1 ? 'blast-pressure-ring'
-        : 'blast-impact-flash';
-      mesh.position.y = index === 0 ? 0.12 : index === 1 ? 0.14 : 0.35;
-      pulse.add(mesh);
-    }
-    return pulse;
-  }
-
-  /** Samples the shared Ping pulse at the damage radius with impact accents on the same absolute clock. */
-  setBlastRadius(radius: number): void {
-    const pulse = this.blastPulse;
-    if (!pulse) return;
-    const rule = POWERUP_RULES.blast;
-    const age = Math.max(0, this.elapsedMs - rule.releaseMs);
-    const progress = MathUtils.clamp(age / (rule.durationMs - rule.releaseMs), 0, 1);
-    pulse.visible = this.elapsedMs >= rule.releaseMs && progress < 1;
-    const front = pulse.children[0] as Mesh<RingGeometry, MeshBasicMaterial>;
-    samplePulseRing(front, progress, rule.radius, front.material.color, radius);
-    const flash = Math.max(0, 1 - age / 240);
-    for (const [index, object] of pulse.children.entries()) {
-      const mesh = object as Mesh<BufferGeometry, MeshBasicMaterial>;
-      if (index === 0) continue;
-      if (index === 1) {
-        mesh.scale.set(radius * 0.94, 1, radius * 0.94);
-        mesh.material.opacity = (1 - progress) ** 2 * 0.75;
-      } else {
-        mesh.scale.set(16 + (1 - flash) * 16, 0.35, 16 + (1 - flash) * 16);
-        mesh.material.opacity = flash ** 2;
-      }
-    }
-  }
-
   /** Retargets authored companion transforms without displaying its duplicate Packet meshes. */
   pose(angle: number): PowerupPose {
     const nodes: Object3D[] = [];
@@ -241,7 +126,7 @@ export class PowerupModel {
     return { position: pose.position.clone(), rotation: pose.quaternion.clone(), scale: pose.scale.clone(), eyes, angle };
   }
 
-  /** Stops animation bindings and releases private materials and impact geometry once. */
+  /** Stops animation bindings and releases private materials; GLB geometry stays with the asset library. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -249,7 +134,6 @@ export class PowerupModel {
     this.mixer.uncacheRoot(this.scene);
     this.group.removeFromParent();
     for (const material of this.materials) material.dispose();
-    for (const geometry of this.impactGeometry) geometry.dispose();
     this.group.clear();
   }
 }
